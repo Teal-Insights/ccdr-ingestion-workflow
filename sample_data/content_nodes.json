@@ -4459,7 +4459,7 @@
     "parent_component_id": "comp_021",
     "content_node_type": "FIGURE",
     "content": "",
-    "storage_url": "",
+    "storage_url": "s3://sagemaker-us-east-1-864981739658/page_12_image_1.png",
     "description": "This image from the Cabo Verde Country and Climate Development Report shows a dramatic coastal landscape. A towering, dark, rocky cliff face dominates the left side of the frame, plunging down towards a turbulent, deep blue ocean. Waves crash against the shore, creating white foam. In the foreground, a stone wall runs along what appears to be a coastal path or road. The sky above is a mix of blue with scattered white clouds. The overall impression is one of rugged natural beauty, characteristic of the volcanic islands of Cabo Verde.",
     "embedding_source": "DESCRIPTION",
     "sequence_in_parent_major": 1,
