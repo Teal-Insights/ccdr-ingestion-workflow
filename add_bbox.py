@@ -46,7 +46,7 @@ def extract_bounding_boxes(pdf_path, content_nodes_path, similarity_threshold=0.
     doc = pymupdf.open(pdf_path)
 
     # Load content nodes
-    with open(content_nodes_path, 'r') as f:
+    with open(content_nodes_path, 'r', encoding='utf-8') as f:
         nodes = json.load(f)
 
     for node in nodes:
@@ -149,5 +149,5 @@ if __name__ == "__main__":
     content_nodes_path = "sample_data/content_nodes.json"
     # You can adjust the similarity threshold here (0.2 = 80% similarity required)
     nodes = extract_bounding_boxes(pdf_path, content_nodes_path, similarity_threshold=0.2)
-    with open("content_nodes_with_bbox.json", "w") as f:
-        json.dump(nodes, f, indent=2)
+    with open("content_nodes_with_bbox.json", "w", encoding='utf-8') as f:
+        json.dump(nodes, f, indent=2, ensure_ascii=False)
