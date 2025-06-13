@@ -1,8 +1,9 @@
 import pymupdf
 import json
+from Levenshtein import distance
 
-def find_text_in_blocks(page, search_text):
-    """Find text in page blocks, handling rotated text"""
+def find_text_in_blocks(page, search_text, threshold=0.2):
+    """Find text in page blocks, handling rotated text and using fuzzy matching"""
     blocks = page.get_text("dict")
     found_rects = []
     
@@ -16,16 +17,31 @@ def find_text_in_blocks(page, search_text):
                     line_text += span["text"]
                 block_text += line_text + "\n"
             
-            # Check if our search text is in this block
-            if search_text.lower() in block_text.lower():
-                # Return the block's bounding box
+            # Calculate normalized Levenshtein distance
+            block_text = block_text.strip()
+            if not block_text:
+                continue
+                
+            # Calculate similarity ratio (0 to 1, where 1 is identical)
+            max_len = max(len(search_text), len(block_text))
+            if max_len == 0:
+                continue
+                
+            similarity = 1 - (distance(search_text.lower(), block_text.lower()) / max_len)
+            
+            # If similarity is above threshold, consider it a match
+            if similarity >= (1 - threshold):
                 bbox = block["bbox"]
                 rect = pymupdf.Rect(bbox)
-                found_rects.append(rect)
+                found_rects.append((rect, similarity))
     
-    return found_rects
+    # Sort by similarity score and return the best match
+    if found_rects:
+        found_rects.sort(key=lambda x: x[1], reverse=True)
+        return [found_rects[0][0]]
+    return []
 
-def extract_bounding_boxes(pdf_path, content_nodes_path):
+def extract_bounding_boxes(pdf_path, content_nodes_path, similarity_threshold=0.2):
     # Load the PDF
     doc = pymupdf.open(pdf_path)
 
@@ -34,11 +50,21 @@ def extract_bounding_boxes(pdf_path, content_nodes_path):
         nodes = json.load(f)
 
     for node in nodes:
+        # Skip if content is None or empty string
+        if not node.get("content") or not node["content"].strip():
+            continue
+            
+        # Skip if bounding box already exists
+        if (node.get("positional_data") and 
+            len(node["positional_data"]) > 0 and 
+            node["positional_data"][0].get("bounding_box")):
+            continue
+
         page_num = node["positional_data"][0]["page_pdf"] - 1  # Convert to 0-based
         page = doc[page_num]
         search_text = node["content"].strip()
 
-        # 1. Search whole text
+        # 1. Search whole text with fuzzy matching
         text_instances = page.search_for(search_text)
         if text_instances:
             bbox = text_instances[0]  # Take first match
@@ -50,8 +76,8 @@ def extract_bounding_boxes(pdf_path, content_nodes_path):
             }
             continue
 
-        # 2. Search whole text in blocks (handles rotated text)
-        block_rects = find_text_in_blocks(page, search_text)
+        # 2. Search whole text in blocks with fuzzy matching
+        block_rects = find_text_in_blocks(page, search_text, similarity_threshold)
         if block_rects:
             bbox = block_rects[0]
             node["positional_data"][0]["bounding_box"] = {
@@ -60,10 +86,10 @@ def extract_bounding_boxes(pdf_path, content_nodes_path):
                 "x1": round(bbox.x1, 2), 
                 "y1": round(bbox.y1, 2)
             }
-            print(f"Found whole text in block: {search_text[:50]}...")
+            print(f"Found fuzzy match in block: {search_text[:50]}...")
             continue
 
-        # 3. Search lines (split by newlines)
+        # 3. Search lines (split by newlines) with fuzzy matching
         lines = [line.strip() for line in search_text.split('\n') if line.strip()]
         found_bboxes = []
         
@@ -89,10 +115,10 @@ def extract_bounding_boxes(pdf_path, content_nodes_path):
             print(f"Found {len(found_bboxes)} bboxes for multi-line text: {search_text[:50]}...")
             continue
 
-        # 4. Search lines in blocks (for rotated individual lines)
+        # 4. Search lines in blocks with fuzzy matching
         found_bboxes = []
         for line in lines:
-            block_rects = find_text_in_blocks(page, line)
+            block_rects = find_text_in_blocks(page, line, similarity_threshold)
             if block_rects:
                 bbox = block_rects[0]  # Take first match
                 found_bboxes.append({
@@ -108,7 +134,7 @@ def extract_bounding_boxes(pdf_path, content_nodes_path):
 
         if found_bboxes:
             node["positional_data"] = found_bboxes
-            print(f"Found {len(found_bboxes)} rotated/transformed line bboxes: {search_text[:50]}...")
+            print(f"Found {len(found_bboxes)} fuzzy rotated/transformed line bboxes: {search_text[:50]}...")
             continue
 
         # 5. Print warning if nothing worked
@@ -119,8 +145,9 @@ def extract_bounding_boxes(pdf_path, content_nodes_path):
 
 
 if __name__ == "__main__":
-    pdf_path = "output.pdf"
-    content_nodes_path = "content_nodes.json"
-    nodes = extract_bounding_boxes(pdf_path, content_nodes_path)
+    pdf_path = "input.pdf"
+    content_nodes_path = "sample_data/content_nodes.json"
+    # You can adjust the similarity threshold here (0.2 = 80% similarity required)
+    nodes = extract_bounding_boxes(pdf_path, content_nodes_path, similarity_threshold=0.2)
     with open("content_nodes_with_bbox.json", "w") as f:
         json.dump(nodes, f, indent=2)
