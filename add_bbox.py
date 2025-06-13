@@ -148,6 +148,6 @@ if __name__ == "__main__":
     pdf_path = "input.pdf"
     content_nodes_path = "sample_data/content_nodes.json"
     # You can adjust the similarity threshold here (0.2 = 80% similarity required)
-    nodes = extract_bounding_boxes(pdf_path, content_nodes_path, similarity_threshold=0.2)
+    nodes = extract_bounding_boxes(pdf_path, content_nodes_path, similarity_threshold=0.5)
     with open("content_nodes_with_bbox.json", "w", encoding='utf-8') as f:
         json.dump(nodes, f, indent=2, ensure_ascii=False)
