@@ -109,7 +109,7 @@ erDiagram
         EmbeddingSource embedding_source "Which field to use for the vector embedding"
         int sequence_in_parent_major "Order of this chunk within its parent component"
         int sequence_in_parent_minor "Zero unless the node is a footnote or sidebar, in which case it indicates reading order among these supplementary nodes"
-        jsonb positions "[{page_pdf: int, page_logical: int, bbox: {x1: float, y1: float, x2: float, y2: float}}, ...]"
+        jsonb positional_data "[{page_pdf: int, page_logical: int, bbox: {x1: float, y1: float, x2: float, y2: float}}, ...]"
     }
 
     %% ENUM: RelationType (For non-hierarchical links)
