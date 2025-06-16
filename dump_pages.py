@@ -291,18 +291,42 @@ def dump_page_data(doc: pymupdf.Document, output_dir: str = "page_dumps", extrac
         with open(f"{output_dir}/{page_name}_text.txt", "w", encoding="utf-8") as f:
             f.write(page.get_text())
         
-        # Dump text blocks with bounding boxes
+        # Dump text blocks with bounding boxes, font and size info
         with open(f"{output_dir}/{page_name}_blocks.json", "w", encoding="utf-8") as f:
+            # Get detailed text structure to extract font information
+            text_dict = page.get_text("dict")
+            
             # Each tuple: (x0, y0, x1, y1, text, block_no, block_type)
             blocks: List[Tuple[float, float, float, float, str, int, int]] = page.get_text("blocks")
             blocks_data: List[Dict[str, Union[str, List[float], int]]] = []
+            
             for blk in blocks:
                 x0, y0, x1, y1, text, block_no, block_type = blk
+                
+                # Extract font information for this block from the detailed structure
+                fonts_in_block = set()
+                sizes_in_block = set()
+                
+                # Find corresponding block in detailed structure
+                for page_block in text_dict.get("blocks", []):
+                    if page_block.get("number") == block_no and page_block.get("type") == 0:  # text block
+                        for line in page_block.get("lines", []):
+                            for span in line.get("spans", []):
+                                if span.get("font"):
+                                    fonts_in_block.add(span["font"])
+                                if span.get("size"):
+                                    sizes_in_block.add(round(span["size"], 1))
+                
+                # Convert sets to sorted lists for consistent output
+                fonts_list = sorted(list(fonts_in_block)) if fonts_in_block else []
+                sizes_list = sorted(list(sizes_in_block)) if sizes_in_block else []
+                
                 blocks_data.append({
                     "text": text.strip(),
                     "bbox": [x0, y0, x1, y1],
                     "block_no": block_no,
-                    "block_type": block_type  # 0=text, 1=image, 2=drawing
+                    "fonts": fonts_list,
+                    "font_sizes": sizes_list
                 })
             json.dump(blocks_data, f, indent=2, ensure_ascii=False)
         
