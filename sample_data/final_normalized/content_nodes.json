@@ -1,8 +1,8 @@
 [
   {
-    "id": "node_001",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_002",
+    "id": 1,
+    "document_id": 1,
+    "parent_component_id": 2,
     "content_node_type": "PARAGRAPH",
     "content": "WESTERN AND CENTRAL AFRICA",
     "storage_url": null,
@@ -24,9 +24,9 @@
     ]
   },
   {
-    "id": "node_002",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_002",
+    "id": 2,
+    "document_id": 1,
+    "parent_component_id": 2,
     "content_node_type": "TITLE",
     "content": "CABO VERDE",
     "storage_url": null,
@@ -48,9 +48,9 @@
     ]
   },
   {
-    "id": "node_003",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_002",
+    "id": 3,
+    "document_id": 1,
+    "parent_component_id": 2,
     "content_node_type": "AUTHOR",
     "content": "World Bank Group",
     "storage_url": null,
@@ -72,9 +72,9 @@
     ]
   },
   {
-    "id": "node_004",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_002",
+    "id": 4,
+    "document_id": 1,
+    "parent_component_id": 2,
     "content_node_type": "SUBTITLE",
     "content": "COUNTRY CLIMATE AND DEVELOPMENT REPORT",
     "storage_url": null,
@@ -96,9 +96,9 @@
     ]
   },
   {
-    "id": "node_005",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_002",
+    "id": 5,
+    "document_id": 1,
+    "parent_component_id": 2,
     "content_node_type": "PARAGRAPH",
     "content": "January 2025",
     "storage_url": null,
@@ -120,9 +120,9 @@
     ]
   },
   {
-    "id": "node_006",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_002",
+    "id": 6,
+    "document_id": 1,
+    "parent_component_id": 2,
     "content_node_type": "PARAGRAPH",
     "content": "Public Disclosure Authorized\nPublic Disclosure Authorized\nPublic Disclosure Authorized\nPublic Disclosure Authorized",
     "storage_url": null,
@@ -144,9 +144,9 @@
     ]
   },
   {
-    "id": "node_007",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_003",
+    "id": 7,
+    "document_id": 1,
+    "parent_component_id": 3,
     "content_node_type": "PARAGRAPH",
     "content": "© 2025 The World Bank Group\n1818 H Street NW, Washington, DC 20433\nTelephone: 202-473-1000; Internet: www.worldbank.org",
     "storage_url": null,
@@ -168,9 +168,9 @@
     ]
   },
   {
-    "id": "node_008",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_003",
+    "id": 8,
+    "document_id": 1,
+    "parent_component_id": 3,
     "content_node_type": "PARAGRAPH",
     "content": "\nThis work is a product of the staff of the International Bank for Reconstruction and Development (IBRD), the International \nDevelopment Association (IDA), the International Finance Corporation (IFC), and the Multilateral Investment Guarantee \nAgency (MIGA), collectively known as The World Bank Group, with external contributors.",
     "storage_url": null,
@@ -192,9 +192,9 @@
     ]
   },
   {
-    "id": "node_009",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_003",
+    "id": 9,
+    "document_id": 1,
+    "parent_component_id": 3,
     "content_node_type": "PARAGRAPH",
     "content": "The World Bank Group does not guarantee the accuracy, reliability or completeness of the content included in this work, \nor the conclusions or judgments described herein, and accepts no responsibility or liability for any omissions or errors \n(including, without limitation, typographical errors and technical errors) in the content whatsoever or for reliance thereon. \nThe boundaries, colors, denominations, links/footnotes and other information shown in this work do not imply any \njudgment on the part of any of the organizations of The World Bank Group concerning the legal status of any territory or \nthe endorsement or acceptance of such boundaries. The citation of works authored by others does not mean The World \nBank Group endorses the views expressed by those authors or the content of their works. The findings, interpretations, \nand conclusions expressed in this volume do not necessarily reflect the views of IBRD/IDA, IFC and MIGA, their respective \nBoards of Executive Directors, and the governments they represent.",
     "storage_url": null,
@@ -216,9 +216,9 @@
     ]
   },
   {
-    "id": "node_010",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_003",
+    "id": 10,
+    "document_id": 1,
+    "parent_component_id": 3,
     "content_node_type": "PARAGRAPH",
     "content": "The contents of this work are intended for general informational purposes only and are not intended to constitute legal, \nsecurities, or investment advice, an opinion regarding the appropriateness of any investment, or a solicitation of any type. \nSome of the organizations of The World Bank Group or their affiliates may have an investment in, provide other advice or \nservices to, or otherwise have a financial interest in, certain of the companies and parties named herein.",
     "storage_url": null,
@@ -240,9 +240,9 @@
     ]
   },
   {
-    "id": "node_011",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_003",
+    "id": 11,
+    "document_id": 1,
+    "parent_component_id": 3,
     "content_node_type": "PARAGRAPH",
     "content": "Nothing herein shall constitute or be construed or considered to be a limitation upon or waiver of the privileges and \nimmunities of any of IBRD/IDA, IFC and MIGA, all of which are specifically reserved.",
     "storage_url": null,
@@ -264,9 +264,9 @@
     ]
   },
   {
-    "id": "node_012",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_003",
+    "id": 12,
+    "document_id": 1,
+    "parent_component_id": 3,
     "content_node_type": "HEADING",
     "content": "RIGHTS AND PERMISSIONS",
     "storage_url": null,
@@ -288,9 +288,9 @@
     ]
   },
   {
-    "id": "node_013",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_003",
+    "id": 13,
+    "document_id": 1,
+    "parent_component_id": 3,
     "content_node_type": "PARAGRAPH",
     "content": "The material in this work is subject to copyright. Because the World Bank Group encourages dissemination of its knowledge, \nthis work may be reproduced, in whole or in part, for noncommercial purposes as long as full attribution to this work is \ngiven and all further permissions that may be required for such use (as noted herein) are acquired. The World Bank Group \ndoes not warrant that the content contained in this work will not infringe on the rights of third parties and accepts no \nresponsibility or liability in this regard. All queries on rights and licenses should be addressed to World Bank Publications, \nThe World Bank, 1818 H Street NW, Washington, DC 20433, USA; e-mail: pubrights@worldbank.org.",
     "storage_url": null,
@@ -312,9 +312,9 @@
     ]
   },
   {
-    "id": "node_016",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_005",
+    "id": 16,
+    "document_id": 1,
+    "parent_component_id": 5,
     "content_node_type": "PARAGRAPH",
     "content": "WESTERN AND CENTRAL AFRICA",
     "storage_url": null,
@@ -336,9 +336,9 @@
     ]
   },
   {
-    "id": "node_019",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_005",
+    "id": 19,
+    "document_id": 1,
+    "parent_component_id": 5,
     "content_node_type": "TITLE",
     "content": "CABO VERDE",
     "storage_url": null,
@@ -360,9 +360,9 @@
     ]
   },
   {
-    "id": "node_017",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_005",
+    "id": 17,
+    "document_id": 1,
+    "parent_component_id": 5,
     "content_node_type": "AUTHOR",
     "content": "World Bank Group",
     "storage_url": null,
@@ -384,9 +384,9 @@
     ]
   },
   {
-    "id": "node_018",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_005",
+    "id": 18,
+    "document_id": 1,
+    "parent_component_id": 5,
     "content_node_type": "PARAGRAPH",
     "content": "January 2025",
     "storage_url": null,
@@ -408,9 +408,9 @@
     ]
   },
   {
-    "id": "node_020",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 20,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "HEADING",
     "content": "Contents",
     "storage_url": null,
@@ -432,9 +432,9 @@
     ]
   },
   {
-    "id": "node_021",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 21,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "List of Figures\tiv",
     "storage_url": null,
@@ -456,9 +456,9 @@
     ]
   },
   {
-    "id": "node_022",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 22,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "List of Boxes\tv",
     "storage_url": null,
@@ -480,9 +480,9 @@
     ]
   },
   {
-    "id": "node_023",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 23,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "List of Tables\tv",
     "storage_url": null,
@@ -504,9 +504,9 @@
     ]
   },
   {
-    "id": "node_024",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 24,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "Acknowledgements\tvi",
     "storage_url": null,
@@ -528,9 +528,9 @@
     ]
   },
   {
-    "id": "node_025",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 25,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "Acronyms\tvii",
     "storage_url": null,
@@ -552,9 +552,9 @@
     ]
   },
   {
-    "id": "node_026",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 26,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "Executive Summary\t1",
     "storage_url": null,
@@ -576,9 +576,9 @@
     ]
   },
   {
-    "id": "node_027",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 27,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "1. Development and Climate Goals\t11",
     "storage_url": null,
@@ -600,9 +600,9 @@
     ]
   },
   {
-    "id": "node_028",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 28,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "1.1. Cabo Verde's Socioeconomic Development Pathway\t11",
     "storage_url": null,
@@ -624,9 +624,9 @@
     ]
   },
   {
-    "id": "node_029",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 29,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "1.2. Climate risks and socioeconomic impacts of inaction\t14",
     "storage_url": null,
@@ -648,9 +648,9 @@
     ]
   },
   {
-    "id": "node_030",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 30,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "1.3. Poor rural dwellers and women are most affected by climate change\t18",
     "storage_url": null,
@@ -672,9 +672,9 @@
     ]
   },
   {
-    "id": "node_031",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 31,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "1.4. Emission profile and associated externalities\t20",
     "storage_url": null,
@@ -696,9 +696,9 @@
     ]
   },
   {
-    "id": "node_032",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 32,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "1.5. Opportunities for a greener, more resilient and inclusive development pathway\t20",
     "storage_url": null,
@@ -720,9 +720,9 @@
     ]
   },
   {
-    "id": "node_033",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 33,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "2. The Enabling Environment for Climate Action\t23",
     "storage_url": null,
@@ -744,9 +744,9 @@
     ]
   },
   {
-    "id": "node_034",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 34,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "2.1. Cabo Verde is committed to combating climate change\t23",
     "storage_url": null,
@@ -768,9 +768,9 @@
     ]
   },
   {
-    "id": "node_035",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 35,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "2.2. Cabo Verde's legal and institutional framework for climate action needs reinforcement\t24",
     "storage_url": null,
@@ -792,9 +792,9 @@
     ]
   },
   {
-    "id": "node_036",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 36,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "2.3. The adaptation and resilience framework needs further strengthening\t26",
     "storage_url": null,
@@ -816,9 +816,9 @@
     ]
   },
   {
-    "id": "node_037",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 37,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "2.4. Strengthening the measurement, reporting and verification system\t28",
     "storage_url": null,
@@ -840,9 +840,9 @@
     ]
   },
   {
-    "id": "node_038",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 38,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "2.5. Preparing for carbon markets\t28",
     "storage_url": null,
@@ -864,9 +864,9 @@
     ]
   },
   {
-    "id": "node_039",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 39,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "2.6. Policy options to create a stronger enabling environment\t29",
     "storage_url": null,
@@ -888,9 +888,9 @@
     ]
   },
   {
-    "id": "node_040",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 40,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "3. Promoting the sustainable use of natural resources and building resilient infrastructure systems\t31",
     "storage_url": null,
@@ -912,9 +912,9 @@
     ]
   },
   {
-    "id": "node_041",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 41,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "3.1. Reducing climate change impacts with adaptation\t31",
     "storage_url": null,
@@ -936,9 +936,9 @@
     ]
   },
   {
-    "id": "node_042",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 42,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "3.2. Enhancing integrated land and water management\t31",
     "storage_url": null,
@@ -960,9 +960,9 @@
     ]
   },
   {
-    "id": "node_043",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 43,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "3.3. Building a climate-resilient blue economy\t37",
     "storage_url": null,
@@ -984,9 +984,9 @@
     ]
   },
   {
-    "id": "node_044",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 44,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "3.4 Toward resilient and inclusive infrastructure systems—urban and transport\t42",
     "storage_url": null,
@@ -1008,9 +1008,9 @@
     ]
   },
   {
-    "id": "node_045",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 45,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "3.5. Policy options for a climate-resilient development path\t47",
     "storage_url": null,
@@ -1032,9 +1032,9 @@
     ]
   },
   {
-    "id": "node_046",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_007",
+    "id": 46,
+    "document_id": 1,
+    "parent_component_id": 7,
     "content_node_type": "PAGE_NUMBER",
     "content": "ii",
     "storage_url": null,
@@ -1056,9 +1056,9 @@
     ]
   },
   {
-    "id": "node_047",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 47,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "4. Leveraging Opportunities from the Low-Carbon Transition\t51",
     "storage_url": null,
@@ -1080,9 +1080,9 @@
     ]
   },
   {
-    "id": "node_048",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 48,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "4.1. Leveraging sector transitions to avoid lock-ins and embrace innovation\t51",
     "storage_url": null,
@@ -1104,9 +1104,9 @@
     ]
   },
   {
-    "id": "node_049",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 49,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "4.2. Accelerating the green energy transition\t51",
     "storage_url": null,
@@ -1128,9 +1128,9 @@
     ]
   },
   {
-    "id": "node_050",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 50,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "4.3. Transport\t56",
     "storage_url": null,
@@ -1152,9 +1152,9 @@
     ]
   },
   {
-    "id": "node_051",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 51,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "4.4. Waste Management\t58",
     "storage_url": null,
@@ -1176,9 +1176,9 @@
     ]
   },
   {
-    "id": "node_052",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 52,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "4.5. Digital development in support of the transition\t59",
     "storage_url": null,
@@ -1200,9 +1200,9 @@
     ]
   },
   {
-    "id": "node_053",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 53,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "4.6. Policy recommendations for a low-carbon development pathway\t60",
     "storage_url": null,
@@ -1224,9 +1224,9 @@
     ]
   },
   {
-    "id": "node_054",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 54,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "5. Building the Resilience of Firms and Households\t65",
     "storage_url": null,
@@ -1248,9 +1248,9 @@
     ]
   },
   {
-    "id": "node_055",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 55,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "5.1. Firms need greater support to build resilience amid climate change\t65",
     "storage_url": null,
@@ -1272,9 +1272,9 @@
     ]
   },
   {
-    "id": "node_056",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 56,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "5.2. Financial institutions face risks from climate change and the transition\t69",
     "storage_url": null,
@@ -1296,9 +1296,9 @@
     ]
   },
   {
-    "id": "node_057",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 57,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "5.3. Building social resilience can reduce climate change impacts and support more inclusive growth\t72",
     "storage_url": null,
@@ -1320,9 +1320,9 @@
     ]
   },
   {
-    "id": "node_058",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 58,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "5.3.1. Shock-responsive social protection exists in Cabo Verde\t72",
     "storage_url": null,
@@ -1344,9 +1344,9 @@
     ]
   },
   {
-    "id": "node_059",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 59,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "5.3.2. Skills for the future\t74",
     "storage_url": null,
@@ -1368,9 +1368,9 @@
     ]
   },
   {
-    "id": "node_060",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 60,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "5.3.3. Public health\t75",
     "storage_url": null,
@@ -1392,9 +1392,9 @@
     ]
   },
   {
-    "id": "node_061",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 61,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "5.3.4. Reducing gender gaps\t76",
     "storage_url": null,
@@ -1416,9 +1416,9 @@
     ]
   },
   {
-    "id": "node_062",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 62,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "5.4. Policy recommendations to build firm-level and household-level resilience\t78",
     "storage_url": null,
@@ -1440,9 +1440,9 @@
     ]
   },
   {
-    "id": "node_063",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 63,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "6. Making It Happen: Investments, Benefits and Financing Options\t81",
     "storage_url": null,
@@ -1464,9 +1464,9 @@
     ]
   },
   {
-    "id": "node_064",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 64,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "6.1. Investment needs for development and climate action\t81",
     "storage_url": null,
@@ -1488,9 +1488,9 @@
     ]
   },
   {
-    "id": "node_065",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 65,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "6.2. Ambitious climate action would support growth and yield significant benefits\t82",
     "storage_url": null,
@@ -1512,9 +1512,9 @@
     ]
   },
   {
-    "id": "node_066",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 66,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "6.3. Climate action would reduce the social costs of climate change for Cabo Verdeans\t83",
     "storage_url": null,
@@ -1536,9 +1536,9 @@
     ]
   },
   {
-    "id": "node_067",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 67,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "6.4 External and fiscal pressures increase in the climate action scenario\t84",
     "storage_url": null,
@@ -1560,9 +1560,9 @@
     ]
   },
   {
-    "id": "node_068",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 68,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "6.5. Financing the transition\t85",
     "storage_url": null,
@@ -1584,9 +1584,9 @@
     ]
   },
   {
-    "id": "node_069",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 69,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "6.5.1. Leveraging public and private financing\t85",
     "storage_url": null,
@@ -1608,9 +1608,9 @@
     ]
   },
   {
-    "id": "node_070",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 70,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "6.5.2. Creating fiscal space for green spending\t87",
     "storage_url": null,
@@ -1632,9 +1632,9 @@
     ]
   },
   {
-    "id": "node_071",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 71,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "6.5.3. Innovative climate financing tools could leverage vital resources\t88",
     "storage_url": null,
@@ -1656,9 +1656,9 @@
     ]
   },
   {
-    "id": "node_072",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 72,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "6.6. Policy options for financing the transition\t91",
     "storage_url": null,
@@ -1680,9 +1680,9 @@
     ]
   },
   {
-    "id": "node_073",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 73,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "7. Conclusion\t93",
     "storage_url": null,
@@ -1704,9 +1704,9 @@
     ]
   },
   {
-    "id": "node_074",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 74,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "Bibliography\t95",
     "storage_url": null,
@@ -1728,9 +1728,9 @@
     ]
   },
   {
-    "id": "node_075",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 75,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "ANNEX 1: MFMod-CC—A Macro-Structural Model for Assessing Climate Change Impacts\t96",
     "storage_url": null,
@@ -1752,9 +1752,9 @@
     ]
   },
   {
-    "id": "node_076",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_006",
+    "id": 76,
+    "document_id": 1,
+    "parent_component_id": 6,
     "content_node_type": "LIST_ITEM",
     "content": "Endnotes\t97",
     "storage_url": null,
@@ -1776,9 +1776,9 @@
     ]
   },
   {
-    "id": "node_077",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_008",
+    "id": 77,
+    "document_id": 1,
+    "parent_component_id": 8,
     "content_node_type": "PAGE_NUMBER",
     "content": "iii",
     "storage_url": null,
@@ -1800,9 +1800,9 @@
     ]
   },
   {
-    "id": "node_078",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 78,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "HEADING",
     "content": "List of Figures",
     "storage_url": null,
@@ -1824,9 +1824,9 @@
     ]
   },
   {
-    "id": "node_079",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 79,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure ES1. Conceptual framework for climate and development actions in Cabo Verde\t2",
     "storage_url": null,
@@ -1848,9 +1848,9 @@
     ]
   },
   {
-    "id": "node_080",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 80,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure ES2. Average change in GDP over time relative to baseline\t5",
     "storage_url": null,
@@ -1872,9 +1872,9 @@
     ]
   },
   {
-    "id": "node_081",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 81,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure ES3. Estimated total climate action spending, 2024–2050, by sector\t5",
     "storage_url": null,
@@ -1896,9 +1896,9 @@
     ]
   },
   {
-    "id": "node_082",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 82,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.1. Cabo Verde's economy is services-driven\t12",
     "storage_url": null,
@@ -1920,9 +1920,9 @@
     ]
   },
   {
-    "id": "node_083",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 83,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.2. Growth has been robust but volatile\t12",
     "storage_url": null,
@@ -1944,9 +1944,9 @@
     ]
   },
   {
-    "id": "node_084",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 84,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.3. Fiscal deficits fell, but public debt remained high\t12",
     "storage_url": null,
@@ -1968,9 +1968,9 @@
     ]
   },
   {
-    "id": "node_085",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 85,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.4. Reliance on tourism, remittances and imports is a source of external vulnerability\t12",
     "storage_url": null,
@@ -1992,9 +1992,9 @@
     ]
   },
   {
-    "id": "node_086",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 86,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.5. Santiago Island hosts half the population\t13",
     "storage_url": null,
@@ -2016,9 +2016,9 @@
     ]
   },
   {
-    "id": "node_087",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 87,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.6. Economic activity is concentrated on a few islands\t13",
     "storage_url": null,
@@ -2040,9 +2040,9 @@
     ]
   },
   {
-    "id": "node_088",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 88,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.7. Temperatures rise significantly under both pessimistic and optimistic scenarios\t14",
     "storage_url": null,
@@ -2064,9 +2064,9 @@
     ]
   },
   {
-    "id": "node_089",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 89,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.8. Precipitation increases in the wet scenario and decreases in the dry scenario\t14",
     "storage_url": null,
@@ -2088,9 +2088,9 @@
     ]
   },
   {
-    "id": "node_090",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 90,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.9. Change in revenue from leisure travelers under two climate scenarios, 2041–2050, relative to baseline\t16",
     "storage_url": null,
@@ -2112,9 +2112,9 @@
     ]
   },
   {
-    "id": "node_091",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 91,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.10. Production change, by rainfed crop, 2041–2050\t16",
     "storage_url": null,
@@ -2136,9 +2136,9 @@
     ]
   },
   {
-    "id": "node_092",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 92,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.11. Impact on Rainfed Vegetables Yield\t17",
     "storage_url": null,
@@ -2160,9 +2160,9 @@
     ]
   },
   {
-    "id": "node_093",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 93,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.12. Visitors per island, 2023\t17",
     "storage_url": null,
@@ -2184,9 +2184,9 @@
     ]
   },
   {
-    "id": "node_094",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 94,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.13. In both climate change futures, GDP declines\t17",
     "storage_url": null,
@@ -2208,9 +2208,9 @@
     ]
   },
   {
-    "id": "node_095",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 95,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.14. The trade balance deteriorates more in the hot and dry scenario by 2050, given higher import needs\t17",
     "storage_url": null,
@@ -2232,9 +2232,9 @@
     ]
   },
   {
-    "id": "node_096",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 96,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.15. The poor are disproportionally exposed to extreme events, especially droughts\t18",
     "storage_url": null,
@@ -2256,9 +2256,9 @@
     ]
   },
   {
-    "id": "node_097",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 97,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.17. The impact of climate change on the incidence and depth of poverty accelerates over time\t19",
     "storage_url": null,
@@ -2280,9 +2280,9 @@
     ]
   },
   {
-    "id": "node_098",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 98,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.18. The impact of climate change on the incidence and depth of poverty accelerates over time\t19",
     "storage_url": null,
@@ -2304,9 +2304,9 @@
     ]
   },
   {
-    "id": "node_099",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 99,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.19. Per capita GHG emissions have risen by 75 percent since 1995\t20",
     "storage_url": null,
@@ -2328,9 +2328,9 @@
     ]
   },
   {
-    "id": "node_100",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 100,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 1.20. The energy sector releases 73 percent of total GHG emissions\t20",
     "storage_url": null,
@@ -2352,9 +2352,9 @@
     ]
   },
   {
-    "id": "node_101",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 101,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 2.1. A&R Diagnostic Outcomes\t27",
     "storage_url": null,
@@ -2376,9 +2376,9 @@
     ]
   },
   {
-    "id": "node_102",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 102,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 3.1. Koppen-Geiger Climate Classification Map, 1991–2020\t32",
     "storage_url": null,
@@ -2400,9 +2400,9 @@
     ]
   },
   {
-    "id": "node_103",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 103,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 3.2. Monthly Mean Temperature and Precipitation, 1991–2022\t32",
     "storage_url": null,
@@ -2424,9 +2424,9 @@
     ]
   },
   {
-    "id": "node_104",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 104,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 3.3. Mean Precipitation and Temperature by 1/4 Degree Grid Cell, 1995–2020\t32",
     "storage_url": null,
@@ -2448,9 +2448,9 @@
     ]
   },
   {
-    "id": "node_105",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 105,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 3.4. Median sea level rise by 2100\t33",
     "storage_url": null,
@@ -2472,9 +2472,9 @@
     ]
   },
   {
-    "id": "node_106",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 106,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 3.5. Cabo Verde has only a small area installed with irrigation (left graph), but a high share of water withdrawal by agriculture (right graph)\t33",
     "storage_url": null,
@@ -2496,9 +2496,9 @@
     ]
   },
   {
-    "id": "node_107",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 107,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 3.6. Import dependency is high, including for food (left graph), with only fish showing a positive net trade balance (right graph)\t34",
     "storage_url": null,
@@ -2520,9 +2520,9 @@
     ]
   },
   {
-    "id": "node_108",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 108,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 3.7. Food insecurity remains unevenly spread across the islands but affects the rural poor the most\t35",
     "storage_url": null,
@@ -2544,9 +2544,9 @@
     ]
   },
   {
-    "id": "node_109",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 109,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 3.8. Coastal flooding risk is worsened by sea-level rise\t42",
     "storage_url": null,
@@ -2568,9 +2568,9 @@
     ]
   },
   {
-    "id": "node_110",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 110,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 3.9. A large and increasing share of the population is exposed to floods, particularly in urban areas\t43",
     "storage_url": null,
@@ -2592,9 +2592,9 @@
     ]
   },
   {
-    "id": "node_111",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 111,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 3.10. Probable maximum losses due to floods vary for each island\t44",
     "storage_url": null,
@@ -2616,9 +2616,9 @@
     ]
   },
   {
-    "id": "node_112",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 112,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 3.11. Floods could cause major disruptions to Cabo Verde's road network\t46",
     "storage_url": null,
@@ -2640,9 +2640,9 @@
     ]
   },
   {
-    "id": "node_113",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_010",
+    "id": 113,
+    "document_id": 1,
+    "parent_component_id": 10,
     "content_node_type": "PAGE_NUMBER",
     "content": "iv",
     "storage_url": null,
@@ -2664,9 +2664,9 @@
     ]
   },
   {
-    "id": "node_114",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 114,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 4.1. Renewable energy targets according to the Electricity Mast Plan 2018–2040\t52",
     "storage_url": null,
@@ -2688,9 +2688,9 @@
     ]
   },
   {
-    "id": "node_115",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 115,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 4.2. A net zero power emissions scenario would entail significant increases in renewable energy\t54",
     "storage_url": null,
@@ -2712,9 +2712,9 @@
     ]
   },
   {
-    "id": "node_116",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 116,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 4.3. Comparison of investment needs for the business-as-usual (base) scenario versus NZP emissions by end date scenario\t56",
     "storage_url": null,
@@ -2736,9 +2736,9 @@
     ]
   },
   {
-    "id": "node_117",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 117,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 5.1. Tourism drove foreign direct investment inflows into Cabo Verde, 2010–2022\t65",
     "storage_url": null,
@@ -2760,9 +2760,9 @@
     ]
   },
   {
-    "id": "node_118",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 118,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 5.2. Climate risks can affect the banking sector through multiple channels\t69",
     "storage_url": null,
@@ -2784,9 +2784,9 @@
     ]
   },
   {
-    "id": "node_119",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 119,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 5.3. Low levels of irrigation have exposed the agricultural sector to drought\t70",
     "storage_url": null,
@@ -2808,9 +2808,9 @@
     ]
   },
   {
-    "id": "node_120",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 120,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 5.4. Economic sectors vary in their emission intensity and transition sensitivity\t71",
     "storage_url": null,
@@ -2832,9 +2832,9 @@
     ]
   },
   {
-    "id": "node_121",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 121,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 6.1. Percentage change in average annual GDP over three successive decades under two climate scenarios, relative to baseline\t83",
     "storage_url": null,
@@ -2856,9 +2856,9 @@
     ]
   },
   {
-    "id": "node_122",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 122,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 6.2. Difference in the incidence of poverty over three successive decades under two climate scenarios, relative to baseline\t83",
     "storage_url": null,
@@ -2880,9 +2880,9 @@
     ]
   },
   {
-    "id": "node_123",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 123,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 6.3. Climate action would increase external financing needs initially, but improve the trade balance in the long run\t85",
     "storage_url": null,
@@ -2904,9 +2904,9 @@
     ]
   },
   {
-    "id": "node_124",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 124,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 6.4. Climate action financing through debt-financed fiscal deficits would increase fiscal pressure\t85",
     "storage_url": null,
@@ -2928,9 +2928,9 @@
     ]
   },
   {
-    "id": "node_125",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_009",
+    "id": 125,
+    "document_id": 1,
+    "parent_component_id": 9,
     "content_node_type": "LIST_ITEM",
     "content": "Figure 6.5. Estimated climate action spending, 2024–2050, by sector\t85",
     "storage_url": null,
@@ -2952,9 +2952,9 @@
     ]
   },
   {
-    "id": "node_126",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_011",
+    "id": 126,
+    "document_id": 1,
+    "parent_component_id": 11,
     "content_node_type": "HEADING",
     "content": "List of Boxes",
     "storage_url": null,
@@ -2976,9 +2976,9 @@
     ]
   },
   {
-    "id": "node_127",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_011",
+    "id": 127,
+    "document_id": 1,
+    "parent_component_id": 11,
     "content_node_type": "LIST_ITEM",
     "content": "Box 5.1. How ProEmpresa, ProGarante and ProImpacto support small businesses\t66",
     "storage_url": null,
@@ -3000,9 +3000,9 @@
     ]
   },
   {
-    "id": "node_128",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_011",
+    "id": 128,
+    "document_id": 1,
+    "parent_component_id": 11,
     "content_node_type": "LIST_ITEM",
     "content": "Box 5.2. An overview of Cabo Verde's privatization agenda\t67",
     "storage_url": null,
@@ -3024,9 +3024,9 @@
     ]
   },
   {
-    "id": "node_129",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_011",
+    "id": 129,
+    "document_id": 1,
+    "parent_component_id": 11,
     "content_node_type": "LIST_ITEM",
     "content": "Box 5.3. Integrating climate considerations into the public–private partnership cycle\t68",
     "storage_url": null,
@@ -3048,9 +3048,9 @@
     ]
   },
   {
-    "id": "node_130",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_011",
+    "id": 130,
+    "document_id": 1,
+    "parent_component_id": 11,
     "content_node_type": "LIST_ITEM",
     "content": "Box 6.1. Ensuring the success of a carbon pricing policy\t88",
     "storage_url": null,
@@ -3072,9 +3072,9 @@
     ]
   },
   {
-    "id": "node_131",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_011",
+    "id": 131,
+    "document_id": 1,
+    "parent_component_id": 11,
     "content_node_type": "LIST_ITEM",
     "content": "Box 6.2. A potential sustainability-linked framework KPI: How ambitious are Cabo Verde's renewable energy targets?\t90",
     "storage_url": null,
@@ -3096,9 +3096,9 @@
     ]
   },
   {
-    "id": "node_132",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_012",
+    "id": 132,
+    "document_id": 1,
+    "parent_component_id": 12,
     "content_node_type": "HEADING",
     "content": "List of Tables",
     "storage_url": null,
@@ -3120,9 +3120,9 @@
     ]
   },
   {
-    "id": "node_133",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_012",
+    "id": 133,
+    "document_id": 1,
+    "parent_component_id": 12,
     "content_node_type": "LIST_ITEM",
     "content": "Table ES1. Costs and benefits of climate action adaptation and low-carbon development policies\t6",
     "storage_url": null,
@@ -3144,9 +3144,9 @@
     ]
   },
   {
-    "id": "node_134",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_012",
+    "id": 134,
+    "document_id": 1,
+    "parent_component_id": 12,
     "content_node_type": "LIST_ITEM",
     "content": "Table ES2. High-level objectives and recommendations\t9",
     "storage_url": null,
@@ -3168,9 +3168,9 @@
     ]
   },
   {
-    "id": "node_135",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_012",
+    "id": 135,
+    "document_id": 1,
+    "parent_component_id": 12,
     "content_node_type": "LIST_ITEM",
     "content": "Table 1.1. Eight climate channels and their impacts in the model\t15",
     "storage_url": null,
@@ -3192,9 +3192,9 @@
     ]
   },
   {
-    "id": "node_136",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_012",
+    "id": 136,
+    "document_id": 1,
+    "parent_component_id": 12,
     "content_node_type": "LIST_ITEM",
     "content": "Table 2.1. Policy recommendations to strengthen the enabling environment\t29",
     "storage_url": null,
@@ -3216,9 +3216,9 @@
     ]
   },
   {
-    "id": "node_137",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_012",
+    "id": 137,
+    "document_id": 1,
+    "parent_component_id": 12,
     "content_node_type": "LIST_ITEM",
     "content": "Table 3.1. Policy recommendations for a resilient development path\t47",
     "storage_url": null,
@@ -3240,9 +3240,9 @@
     ]
   },
   {
-    "id": "node_138",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_012",
+    "id": 138,
+    "document_id": 1,
+    "parent_component_id": 12,
     "content_node_type": "LIST_ITEM",
     "content": "Table 4.1. Policy recommendations for a resilient development pathway\t60",
     "storage_url": null,
@@ -3264,9 +3264,9 @@
     ]
   },
   {
-    "id": "node_139",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_012",
+    "id": 139,
+    "document_id": 1,
+    "parent_component_id": 12,
     "content_node_type": "LIST_ITEM",
     "content": "Table 5.1. Policy recommendations for a resilient development pathway\t78",
     "storage_url": null,
@@ -3288,9 +3288,9 @@
     ]
   },
   {
-    "id": "node_140",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_012",
+    "id": 140,
+    "document_id": 1,
+    "parent_component_id": 12,
     "content_node_type": "LIST_ITEM",
     "content": "Table 6.1. The costs and benefits of adaptation and low-carbon development policies\t82",
     "storage_url": null,
@@ -3312,9 +3312,9 @@
     ]
   },
   {
-    "id": "node_141",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_012",
+    "id": 141,
+    "document_id": 1,
+    "parent_component_id": 12,
     "content_node_type": "LIST_ITEM",
     "content": "Table 6.2. Share of public sector financing, by sector, and opportunities for private sector participation\t86",
     "storage_url": null,
@@ -3336,9 +3336,9 @@
     ]
   },
   {
-    "id": "node_142",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_012",
+    "id": 142,
+    "document_id": 1,
+    "parent_component_id": 12,
     "content_node_type": "LIST_ITEM",
     "content": "Table 6.3. Policy options for financing climate action\t91",
     "storage_url": null,
@@ -3360,9 +3360,9 @@
     ]
   },
   {
-    "id": "node_143",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_012",
+    "id": 143,
+    "document_id": 1,
+    "parent_component_id": 12,
     "content_node_type": "LIST_ITEM",
     "content": "Table 7.1. High-level objectives and a snapshot of key recommendations\t94",
     "storage_url": null,
@@ -3384,9 +3384,9 @@
     ]
   },
   {
-    "id": "node_144",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_013",
+    "id": 144,
+    "document_id": 1,
+    "parent_component_id": 13,
     "content_node_type": "PAGE_NUMBER",
     "content": "v",
     "storage_url": null,
@@ -3408,9 +3408,9 @@
     ]
   },
   {
-    "id": "node_145",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_014",
+    "id": 145,
+    "document_id": 1,
+    "parent_component_id": 14,
     "content_node_type": "HEADING",
     "content": "Acknowledgements",
     "storage_url": null,
@@ -3432,9 +3432,9 @@
     ]
   },
   {
-    "id": "node_146",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_014",
+    "id": 146,
+    "document_id": 1,
+    "parent_component_id": 14,
     "content_node_type": "PARAGRAPH",
     "content": "This report was authored by a World Bank Group task team led by Lorenzo Carrera, Veruschka Schmidt, and Cyril Desponts.",
     "storage_url": null,
@@ -3456,9 +3456,9 @@
     ]
   },
   {
-    "id": "node_147",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_014",
+    "id": 147,
+    "document_id": 1,
+    "parent_component_id": 14,
     "content_node_type": "PARAGRAPH",
     "content": "The report benefited from invaluable inputs from a wider task team that included Abdoulaye Boly, Ahmed Al Qabany, Anna Carlotta Allen Massingue, Antonio Manuel Baptista, Anupurba Roy, Asha Johnson, Camila Mejia Giraldo, Christina Jutta Paul, Claudia Soto, Cyrille Valence Ngouana Kengne, Daniel Valderrama Gonzalez, Daniela Marotta, Damien Matthias Valentin Boucher, Emily Elaine Gardner, Eduardo Carbonel, Elisson M. Wright, Fabio Aparecido da Silva, Fred Kizito, GianLeo Frisari, Jorge Barreto, Jia Jun Lee, Karamba Badio, Laura Ximena Bermeo Rojas, Laurent Damblat, Louise Twining-Ward, Luisa Teixeira De Melo De C Felino, Luca Bernasconi, Marc-Anton Wilhelm Pruefer, Mathias Shabanaj Jankila, Michel Matera, Miles Bernard Johnson, Miguel Angel Jorge, Miguel Heleno, Nyandeng V. Gajang, Oscar Anil Ishizawa Escudero, Philippe Neves, Rafael Pardo, Raluca Georgiana Golumbeanu, Rodrigo Andrade, Rodrigo Pereira Porto, Ronak Makhani, Rosa Brito Delgado, Shreya Rangarajan, Sujatha Venkat Ganeshan, Tom Remy, Unnada Chewpreecha, and Zineb Benkirane.",
     "storage_url": null,
@@ -3480,9 +3480,9 @@
     ]
   },
   {
-    "id": "node_148",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_014",
+    "id": 148,
+    "document_id": 1,
+    "parent_component_id": 14,
     "content_node_type": "PARAGRAPH",
     "content": "The team would like to extend sincere thanks to the Industrial Economics (IEc) team of Brent Boehlert, Diego Castillo, Kim Smet, and Kenneth Strzepek, who led the impact channel and adaptation modeling.",
     "storage_url": null,
@@ -3504,9 +3504,9 @@
     ]
   },
   {
-    "id": "node_149",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_014",
+    "id": 149,
+    "document_id": 1,
+    "parent_component_id": 14,
     "content_node_type": "PARAGRAPH",
     "content": "The team benefited immensely from the guidance of, and is grateful to, the peer reviewers: Craig Meisner, Kodzovi Senu Abalo, Pablo Andres Salas Bravo, Philippe Ambrosi and Urvashi Narain. Additional guidance was also received from Sebastian Molineus, Victor Bundi Mosoti, and Kevin Carey.",
     "storage_url": null,
@@ -3528,9 +3528,9 @@
     ]
   },
   {
-    "id": "node_150",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_014",
+    "id": 150,
+    "document_id": 1,
+    "parent_component_id": 14,
     "content_node_type": "PARAGRAPH",
     "content": "Additionally, the task team would like to express heartfelt gratitude to the participants in the Country Climate and Development Report (CCDR) consultations for their availability, their collaborative spirit, and the quality of their contributions. They comprise representatives of ministries, government agencies, academia, civil society, the private sector, and the development community. A special thanks goes to Gilson Pina and Andrea Lucy Martins from the Ministry of Finance, and to Alexandre Nevsky Rodrigues from the Ministry of Agriculture and Environment.",
     "storage_url": null,
@@ -3552,9 +3552,9 @@
     ]
   },
   {
-    "id": "node_151",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_014",
+    "id": 151,
+    "document_id": 1,
+    "parent_component_id": 14,
     "content_node_type": "PARAGRAPH",
     "content": "Thanks are also extended to World Bank management and their teams for their guidance, in particular, Keiko Meiwa, Chakib Jenane, Olivier Buyoya, Moritz Nikolaus, Abebe Adugna, Eneida Fernandes, Indira Campos, Ellysar Baroudy, Kanta Kumari, Edouard Al-Dahdah, Frederic Verdol, Asha Johnson, Rebekka E. Grun, and Angela Armstrong.",
     "storage_url": null,
@@ -3576,9 +3576,9 @@
     ]
   },
   {
-    "id": "node_152",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_014",
+    "id": 152,
+    "document_id": 1,
+    "parent_component_id": 14,
     "content_node_type": "PARAGRAPH",
     "content": "Editorial support and graphical design were provided by Global Corporate Solutions Translation and Interpretation Services (GCSTI).",
     "storage_url": null,
@@ -3600,9 +3600,9 @@
     ]
   },
   {
-    "id": "node_153",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_015",
+    "id": 153,
+    "document_id": 1,
+    "parent_component_id": 15,
     "content_node_type": "PAGE_NUMBER",
     "content": "vi",
     "storage_url": null,
@@ -3624,9 +3624,9 @@
     ]
   },
   {
-    "id": "node_154",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 154,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "HEADING",
     "content": "Acronyms",
     "storage_url": null,
@@ -3648,9 +3648,9 @@
     ]
   },
   {
-    "id": "node_155",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 155,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "A&R\tAdaptation and Resilience (Diagnostic)",
     "storage_url": null,
@@ -3672,9 +3672,9 @@
     ]
   },
   {
-    "id": "node_156",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 156,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "AAL\tAverage Annual Losses",
     "storage_url": null,
@@ -3696,9 +3696,9 @@
     ]
   },
   {
-    "id": "node_157",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 157,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "ANAS\tNational Agency for Water and Sanitation",
     "storage_url": null,
@@ -3720,9 +3720,9 @@
     ]
   },
   {
-    "id": "node_158",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 158,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "BDS\tBusiness Development Services",
     "storage_url": null,
@@ -3744,9 +3744,9 @@
     ]
   },
   {
-    "id": "node_159",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 159,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "BVC\tCabo Verde Stock Exchange (*Bolsa de Valores de Cabo Verde*)",
     "storage_url": null,
@@ -3768,9 +3768,9 @@
     ]
   },
   {
-    "id": "node_160",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 160,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "CCDR\tCountry Climate and Development Report",
     "storage_url": null,
@@ -3792,9 +3792,9 @@
     ]
   },
   {
-    "id": "node_161",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 161,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "CC-MFMOD\tClimate Change Macro-Fiscal Model",
     "storage_url": null,
@@ -3816,9 +3816,9 @@
     ]
   },
   {
-    "id": "node_162",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 162,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "CEA\tCountry Environmental Assessment",
     "storage_url": null,
@@ -3840,9 +3840,9 @@
     ]
   },
   {
-    "id": "node_163",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 163,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "CO<sub>2</sub>\tCarbon Dioxide",
     "storage_url": null,
@@ -3864,9 +3864,9 @@
     ]
   },
   {
-    "id": "node_164",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 164,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "CO<sub>2</sub>eq\tCarbon Dioxide Equivalent",
     "storage_url": null,
@@ -3888,9 +3888,9 @@
     ]
   },
   {
-    "id": "node_165",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 165,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "CPSD\tCountry Private Sector Diagnostic",
     "storage_url": null,
@@ -3912,9 +3912,9 @@
     ]
   },
   {
-    "id": "node_166",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 166,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "CSA\tClimate-smart Agriculture",
     "storage_url": null,
@@ -3936,9 +3936,9 @@
     ]
   },
   {
-    "id": "node_167",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 167,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "CSU\tSocial Registry (*Cadastro Social Unico*)",
     "storage_url": null,
@@ -3960,9 +3960,9 @@
     ]
   },
   {
-    "id": "node_168",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 168,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "DNP\tNational Planning Directorate",
     "storage_url": null,
@@ -3984,9 +3984,9 @@
     ]
   },
   {
-    "id": "node_169",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 169,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "DRF\tDisaster Risk Finance",
     "storage_url": null,
@@ -4008,9 +4008,9 @@
     ]
   },
   {
-    "id": "node_170",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 170,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "DRM\tDisaster Risk Management",
     "storage_url": null,
@@ -4032,9 +4032,9 @@
     ]
   },
   {
-    "id": "node_171",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 171,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "EEZ\tExclusive Economic Zone",
     "storage_url": null,
@@ -4056,9 +4056,9 @@
     ]
   },
   {
-    "id": "node_172",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 172,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "ENRRD\tNational Strategy for Disaster Risk Reduction",
     "storage_url": null,
@@ -4080,9 +4080,9 @@
     ]
   },
   {
-    "id": "node_173",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 173,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "ESCO\tEnergy Service Company",
     "storage_url": null,
@@ -4104,9 +4104,9 @@
     ]
   },
   {
-    "id": "node_174",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 174,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "ESIA\tEnvironmental and Social Impact Assessment",
     "storage_url": null,
@@ -4128,9 +4128,9 @@
     ]
   },
   {
-    "id": "node_175",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 175,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "EU\tEuropean Union",
     "storage_url": null,
@@ -4152,9 +4152,9 @@
     ]
   },
   {
-    "id": "node_176",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 176,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "EIB\tEuropean Investment Bank",
     "storage_url": null,
@@ -4176,9 +4176,9 @@
     ]
   },
   {
-    "id": "node_177",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 177,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "EV\tElectric Vehicle",
     "storage_url": null,
@@ -4200,9 +4200,9 @@
     ]
   },
   {
-    "id": "node_178",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 178,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "FAO\t(United Nations) Food and Agriculture Organization",
     "storage_url": null,
@@ -4224,9 +4224,9 @@
     ]
   },
   {
-    "id": "node_179",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 179,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "FDI\tForeign Direct Investment",
     "storage_url": null,
@@ -4248,9 +4248,9 @@
     ]
   },
   {
-    "id": "node_180",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 180,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "GreenH<sub>2</sub>\tGreen Hydrogen",
     "storage_url": null,
@@ -4272,9 +4272,9 @@
     ]
   },
   {
-    "id": "node_181",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 181,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "GCAM\tGlobal Climate Change Analysis Model",
     "storage_url": null,
@@ -4296,9 +4296,9 @@
     ]
   },
   {
-    "id": "node_182",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 182,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "GDP\tGross Domestic Product",
     "storage_url": null,
@@ -4320,9 +4320,9 @@
     ]
   },
   {
-    "id": "node_183",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 183,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "Gg\tGigagrams (10<sup>9</sup> g or 1,000,000 kg)",
     "storage_url": null,
@@ -4344,9 +4344,9 @@
     ]
   },
   {
-    "id": "node_184",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 184,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "GHG\tGreenhouse Gas",
     "storage_url": null,
@@ -4368,9 +4368,9 @@
     ]
   },
   {
-    "id": "node_185",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 185,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "GoCV\tGovernment of Cabo Verde",
     "storage_url": null,
@@ -4392,9 +4392,9 @@
     ]
   },
   {
-    "id": "node_186",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 186,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "ha\tHectares",
     "storage_url": null,
@@ -4416,9 +4416,9 @@
     ]
   },
   {
-    "id": "node_187",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_017",
+    "id": 187,
+    "document_id": 1,
+    "parent_component_id": 17,
     "content_node_type": "PAGE_NUMBER",
     "content": "vii",
     "storage_url": null,
@@ -4440,9 +4440,9 @@
     ]
   },
   {
-    "id": "node_188",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 188,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "ICE\tInternal Combustion Engine",
     "storage_url": null,
@@ -4464,9 +4464,9 @@
     ]
   },
   {
-    "id": "node_189",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 189,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "ICMA\tInternational Capital Markets Association",
     "storage_url": null,
@@ -4488,9 +4488,9 @@
     ]
   },
   {
-    "id": "node_190",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 190,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "IDA\tInternational Development Association",
     "storage_url": null,
@@ -4512,9 +4512,9 @@
     ]
   },
   {
-    "id": "node_191",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 191,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "IDRF\tInstituto Nacional de Estatística",
     "storage_url": null,
@@ -4536,9 +4536,9 @@
     ]
   },
   {
-    "id": "node_192",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 192,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "IFC\tInternational Finance Corporation",
     "storage_url": null,
@@ -4560,9 +4560,9 @@
     ]
   },
   {
-    "id": "node_193",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 193,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "IMF\tInternational Monetary Fund",
     "storage_url": null,
@@ -4584,9 +4584,9 @@
     ]
   },
   {
-    "id": "node_194",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 194,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "IPP\tIndependent Power Producer",
     "storage_url": null,
@@ -4608,9 +4608,9 @@
     ]
   },
   {
-    "id": "node_195",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 195,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "IPPU\tIndustrial Processes and Product Use",
     "storage_url": null,
@@ -4632,9 +4632,9 @@
     ]
   },
   {
-    "id": "node_196",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 196,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "IUU\tIllegal, Unreported and Unregulated",
     "storage_url": null,
@@ -4656,9 +4656,9 @@
     ]
   },
   {
-    "id": "node_197",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 197,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "KPI\tKey Performance Indicator",
     "storage_url": null,
@@ -4680,9 +4680,9 @@
     ]
   },
   {
-    "id": "node_198",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 198,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "LFP\tLabor Force Participation",
     "storage_url": null,
@@ -4704,9 +4704,9 @@
     ]
   },
   {
-    "id": "node_199",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 199,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "LULUCF\tLand Use, Land-Use Change, and Forestry",
     "storage_url": null,
@@ -4728,9 +4728,9 @@
     ]
   },
   {
-    "id": "node_200",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 200,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "MAA\tMinistry of Agriculture and Environment",
     "storage_url": null,
@@ -4752,9 +4752,9 @@
     ]
   },
   {
-    "id": "node_201",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 201,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "MFIDS\tMinistry of Family, Inclusion and Social Development",
     "storage_url": null,
@@ -4776,9 +4776,9 @@
     ]
   },
   {
-    "id": "node_202",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 202,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "MIGA\tMultilateral Investment Guarantee Agency",
     "storage_url": null,
@@ -4800,9 +4800,9 @@
     ]
   },
   {
-    "id": "node_203",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 203,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "mm\tMillimeters",
     "storage_url": null,
@@ -4824,9 +4824,9 @@
     ]
   },
   {
-    "id": "node_204",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 204,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "MoU\tMemorandum of Understanding",
     "storage_url": null,
@@ -4848,9 +4848,9 @@
     ]
   },
   {
-    "id": "node_205",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 205,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "MRV\tMonitoring, Reporting and Verification",
     "storage_url": null,
@@ -4872,9 +4872,9 @@
     ]
   },
   {
-    "id": "node_206",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 206,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "MW\tMegawatt",
     "storage_url": null,
@@ -4896,9 +4896,9 @@
     ]
   },
   {
-    "id": "node_207",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 207,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "MWh\tMegawatt-hour",
     "storage_url": null,
@@ -4920,9 +4920,9 @@
     ]
   },
   {
-    "id": "node_208",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 208,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "NbS\tNature-based Solutions",
     "storage_url": null,
@@ -4944,9 +4944,9 @@
     ]
   },
   {
-    "id": "node_209",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 209,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "NDC\tNationally Determined Contribution",
     "storage_url": null,
@@ -4968,9 +4968,9 @@
     ]
   },
   {
-    "id": "node_210",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 210,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "NZP\tNet Zero Power (Emissions)",
     "storage_url": null,
@@ -4992,9 +4992,9 @@
     ]
   },
   {
-    "id": "node_211",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 211,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "ONSEC\tNational Operator of the Cabo Verde Electricity System (*Operador Nacional do Sistema Elétrico de Cabo Verde*)",
     "storage_url": null,
@@ -5016,9 +5016,9 @@
     ]
   },
   {
-    "id": "node_212",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 212,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "OWMP\tOperational Waste Management Plan",
     "storage_url": null,
@@ -5040,9 +5040,9 @@
     ]
   },
   {
-    "id": "node_213",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 213,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "PEDS II\tStrategic Plan for Sustainable Development 2022–2026 (*Plano Estrategico de Desenvolvimento Sustentavel*)",
     "storage_url": null,
@@ -5064,9 +5064,9 @@
     ]
   },
   {
-    "id": "node_214",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 214,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "PNI\tNational Infrastructure Plan",
     "storage_url": null,
@@ -5088,9 +5088,9 @@
     ]
   },
   {
-    "id": "node_215",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 215,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "PNSE\tNational Program for Sustainable Energy",
     "storage_url": null,
@@ -5112,9 +5112,9 @@
     ]
   },
   {
-    "id": "node_216",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 216,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "pp\tPercentage Point(s)",
     "storage_url": null,
@@ -5136,9 +5136,9 @@
     ]
   },
   {
-    "id": "node_217",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 217,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "PPIAF\tPublic–Private Infrastructure Advisory Facility",
     "storage_url": null,
@@ -5160,9 +5160,9 @@
     ]
   },
   {
-    "id": "node_218",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 218,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "PPP\tPublic–Private Partnership",
     "storage_url": null,
@@ -5184,9 +5184,9 @@
     ]
   },
   {
-    "id": "node_219",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 219,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "ProMEC\tPromotion of Electric Mobility in Cabo Verde Project",
     "storage_url": null,
@@ -5208,9 +5208,9 @@
     ]
   },
   {
-    "id": "node_220",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 220,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "PV\tPhotovoltaic",
     "storage_url": null,
@@ -5232,9 +5232,9 @@
     ]
   },
   {
-    "id": "node_221",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_018",
+    "id": 221,
+    "document_id": 1,
+    "parent_component_id": 18,
     "content_node_type": "PAGE_NUMBER",
     "content": "viii",
     "storage_url": null,
@@ -5256,9 +5256,9 @@
     ]
   },
   {
-    "id": "node_222",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 222,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "QRP\tQuick Recovery Plan",
     "storage_url": null,
@@ -5280,9 +5280,9 @@
     ]
   },
   {
-    "id": "node_223",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 223,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "RE\tRenewable Energy",
     "storage_url": null,
@@ -5304,9 +5304,9 @@
     ]
   },
   {
-    "id": "node_224",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 224,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "RSIE\tEmergency Cash Transfer Program (*Rendimento Social de Inclusão Emergencial*)",
     "storage_url": null,
@@ -5328,9 +5328,9 @@
     ]
   },
   {
-    "id": "node_225",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 225,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "SIDS\tSmall Island Developing State",
     "storage_url": null,
@@ -5352,9 +5352,9 @@
     ]
   },
   {
-    "id": "node_226",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 226,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "SLB\tSustainability-linked Bond",
     "storage_url": null,
@@ -5376,9 +5376,9 @@
     ]
   },
   {
-    "id": "node_227",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 227,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "SMEs\tSmall- and Medium-size Enterprises",
     "storage_url": null,
@@ -5400,9 +5400,9 @@
     ]
   },
   {
-    "id": "node_228",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 228,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "SOE\tState-owned Enterprise",
     "storage_url": null,
@@ -5424,9 +5424,9 @@
     ]
   },
   {
-    "id": "node_229",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 229,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "tCO<sub>2</sub>eq\tTons of Carbon Dioxide Equivalent",
     "storage_url": null,
@@ -5448,9 +5448,9 @@
     ]
   },
   {
-    "id": "node_230",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 230,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "toe\tTons of Oil Equivalent",
     "storage_url": null,
@@ -5472,9 +5472,9 @@
     ]
   },
   {
-    "id": "node_231",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 231,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "TVET\tTechnical and Vocational Education and Training",
     "storage_url": null,
@@ -5496,9 +5496,9 @@
     ]
   },
   {
-    "id": "node_232",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_016",
+    "id": 232,
+    "document_id": 1,
+    "parent_component_id": 16,
     "content_node_type": "LIST_ITEM",
     "content": "VRE\tVariable Renewable Energy",
     "storage_url": null,
@@ -5520,9 +5520,9 @@
     ]
   },
   {
-    "id": "node_233",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_019",
+    "id": 233,
+    "document_id": 1,
+    "parent_component_id": 19,
     "content_node_type": "PAGE_NUMBER",
     "content": "ix",
     "storage_url": null,
@@ -5544,9 +5544,9 @@
     ]
   },
   {
-    "id": "node_234",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_021",
+    "id": 234,
+    "document_id": 1,
+    "parent_component_id": 21,
     "content_node_type": "FIGURE",
     "content": "",
     "storage_url": "s3://sagemaker-us-east-1-864981739658/page_12_image_1.png",
@@ -5563,9 +5563,9 @@
     ]
   },
   {
-    "id": "node_235",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_021",
+    "id": 235,
+    "document_id": 1,
+    "parent_component_id": 21,
     "content_node_type": "CAPTION",
     "content": "Cabo Verde © David Boutin Photography / iStock",
     "storage_url": "",
@@ -5587,9 +5587,9 @@
     ]
   },
   {
-    "id": "node_236",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_022",
+    "id": 236,
+    "document_id": 1,
+    "parent_component_id": 22,
     "content_node_type": "HEADING",
     "content": "Executive Summary",
     "storage_url": "",
@@ -5611,9 +5611,9 @@
     ]
   },
   {
-    "id": "node_237",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_022",
+    "id": 237,
+    "document_id": 1,
+    "parent_component_id": 22,
     "content_node_type": "PARAGRAPH",
     "content": "Climate change will compound Cabo Verde's economic and climate vulnerabilities",
     "storage_url": "",
@@ -5635,9 +5635,9 @@
     ]
   },
   {
-    "id": "node_238",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_022",
+    "id": 238,
+    "document_id": 1,
+    "parent_component_id": 22,
     "content_node_type": "PARAGRAPH",
     "content": "As a small island developing state (SIDS), Cabo Verde is highly vulnerable to extreme climate events. Some 500 km off the west coast of Africa, it is an archipelago of ten islands with a population of 556,000, half of them on Santiago Island. Because of its location, Cabo Verde is highly vulnerable to natural hazards, including extreme heat, floods, droughts, tropical storms, landslides, volcanic eruptions, coastal erosion and sea level rise. This vulnerability is compounded by its sparse population and archipelagic geography, which make inter-island connectivity and hence service provision challenging, yet increase the population's dependence on maritime transport. Structural factors such as rapid rural–urban migration and land degradation further aggravate the country's vulnerability to natural hazards.",
     "storage_url": "",
@@ -5659,9 +5659,9 @@
     ]
   },
   {
-    "id": "node_239",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_022",
+    "id": 239,
+    "document_id": 1,
+    "parent_component_id": 22,
     "content_node_type": "PARAGRAPH",
     "content": "On average, adverse natural events have historically been associated with a decrease in GDP per capita of almost 1 percentage point in the year of impact. Approximately a third of Cabo Verdeans are at risk of being affected by an extreme climate event, especially droughts and floods.",
     "storage_url": "",
@@ -5683,9 +5683,9 @@
     ]
   },
   {
-    "id": "node_240",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_022",
+    "id": 240,
+    "document_id": 1,
+    "parent_component_id": 22,
     "content_node_type": "PARAGRAPH",
     "content": "Cabo Verde's climate exposure, partly also because of its geography, is compounded by economic vulnerabilities. The country has experienced robust economic growth since the early 1990s and achieved a substantial reduction in poverty, but growth has been volatile and has slowed in recent years. Reflecting the comparative advantage of its attractive natural geography, growth has primarily been driven by the tourism sector, which accounts for a quarter of GDP, over half of exports, and most foreign direct investment. For similar reasons, the archipelago is heavily reliant on imports, notably those of fuel and food. High levels of remittance and concessional international financing serve to bridge its external financing needs but they generate additional external vulnerabilities. Adding to this, although recurrent fiscal deficits have recently resorbed, public spending is rigid1 and public debt remains above 100 percent of GDP. The COVID-19 pandemic put Cabo Verde's external vulnerabilities on display, causing a steep decline in tourism revenue and a surge in the food and fuel import bill before the economy returned to pre-pandemic conditions in 2023.",
     "storage_url": "",
@@ -5707,9 +5707,9 @@
     ]
   },
   {
-    "id": "node_241",
-    "document_id": "dl_001",
-    "parent_component_id": "comp_023",
+    "id": 241,
+    "document_id": 1,
+    "parent_component_id": 23,
     "content_node_type": "PAGE_NUMBER",
     "content": "1",
     "storage_url": "",

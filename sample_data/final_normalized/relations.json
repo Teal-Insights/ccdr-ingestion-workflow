@@ -1,8 +1,8 @@
 [
     {
-        "id": "rel_001",
-        "source_node_id": "node_234",
-        "target_node_id": "node_235",
+        "id": 1,
+        "source_node_id": 234,
+        "target_node_id": 235,
         "relation_type": "IS_CAPTIONED_BY",
         "marker_text": null
     }

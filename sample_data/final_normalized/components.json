@@ -1,232 +1,301 @@
 [
   {
-    "id": "comp_001",
-    "document_id": "dl_001",
+    "id": 1,
+    "document_id": 1,
     "component_type": "FRONT_MATTER",
     "title": null,
     "parent_component_id": null,
     "sequence_in_parent_major": 1,
     "sequence_in_parent_minor": null,
-    "page_range": [1, 11]
+    "page_range": [
+      1,
+      11
+    ]
   },
   {
-    "id": "comp_002",
-    "document_id": "dl_001",
+    "id": 2,
+    "document_id": 1,
     "component_type": "TITLE_PAGE",
     "title": null,
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 1,
     "sequence_in_parent_minor": null,
-    "page_range": [1, 1]
+    "page_range": [
+      1,
+      1
+    ]
   },
   {
-    "id": "comp_003",
-    "document_id": "dl_001",
+    "id": 3,
+    "document_id": 1,
     "component_type": "COPYRIGHT_PAGE",
     "title": null,
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 2,
     "sequence_in_parent_minor": null,
-    "page_range": [2, 2]
+    "page_range": [
+      2,
+      2
+    ]
   },
   {
-    "id": "comp_004",
-    "document_id": "dl_001",
+    "id": 4,
+    "document_id": 1,
     "component_type": "SECTION",
     "title": "RIGHTS AND PERMISSIONS",
-    "parent_component_id": "comp_003",
+    "parent_component_id": 3,
     "sequence_in_parent_major": 1,
     "sequence_in_parent_minor": null,
-    "page_range": [2, 2]
+    "page_range": [
+      2,
+      2
+    ]
   },
   {
-    "id": "comp_005",
-    "document_id": "dl_001",
+    "id": 5,
+    "document_id": 1,
     "component_type": "TITLE_PAGE",
     "title": null,
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 3,
     "sequence_in_parent_minor": null,
-    "page_range": [3, 3]
+    "page_range": [
+      3,
+      3
+    ]
   },
   {
-    "id": "comp_006",
-    "document_id": "dl_001",
+    "id": 6,
+    "document_id": 1,
     "component_type": "TABLE_OF_CONTENTS",
     "title": "CONTENTS",
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 4,
     "sequence_in_parent_minor": null,
-    "page_range": [4, 5]
+    "page_range": [
+      4,
+      5
+    ]
   },
   {
-    "id": "comp_007",
-    "document_id": "dl_001",
+    "id": 7,
+    "document_id": 1,
     "component_type": "FOOTER",
     "title": null,
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 4,
     "sequence_in_parent_minor": 1,
-    "page_range": [4, 4]
+    "page_range": [
+      4,
+      4
+    ]
   },
   {
-    "id": "comp_008",
-    "document_id": "dl_001",
+    "id": 8,
+    "document_id": 1,
     "component_type": "FOOTER",
     "title": null,
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 4,
     "sequence_in_parent_minor": 2,
-    "page_range": [5, 5]
+    "page_range": [
+      5,
+      5
+    ]
   },
   {
-    "id": "comp_009",
-    "document_id": "dl_001",
+    "id": 9,
+    "document_id": 1,
     "component_type": "LIST_OF_FIGURES",
     "title": "List of Figures",
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 5,
     "sequence_in_parent_minor": null,
-    "page_range": [6, 7]
+    "page_range": [
+      6,
+      7
+    ]
   },
   {
-    "id": "comp_010",
-    "document_id": "dl_001",
+    "id": 10,
+    "document_id": 1,
     "component_type": "FOOTER",
     "title": null,
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 5,
     "sequence_in_parent_minor": 1,
-    "page_range": [6, 6]
+    "page_range": [
+      6,
+      6
+    ]
   },
   {
-    "id": "comp_011",
-    "document_id": "dl_001",
+    "id": 11,
+    "document_id": 1,
     "component_type": "LIST_OF_BOXES",
     "title": "List of Boxes",
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 6,
     "sequence_in_parent_minor": null,
-    "page_range": [7, 7]
+    "page_range": [
+      7,
+      7
+    ]
   },
   {
-    "id": "comp_012",
-    "document_id": "dl_001",
+    "id": 12,
+    "document_id": 1,
     "component_type": "LIST_OF_TABLES",
     "title": "List of Tables",
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 7,
     "sequence_in_parent_minor": null,
-    "page_range": [7, 7]
+    "page_range": [
+      7,
+      7
+    ]
   },
   {
-    "id": "comp_013",
-    "document_id": "dl_001",
+    "id": 13,
+    "document_id": 1,
     "component_type": "FOOTER",
     "title": null,
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 7,
     "sequence_in_parent_minor": 1,
-    "page_range": [7, 7]
+    "page_range": [
+      7,
+      7
+    ]
   },
   {
-    "id": "comp_014",
-    "document_id": "dl_001",
+    "id": 14,
+    "document_id": 1,
     "component_type": "ACKNOWLEDGEMENTS",
     "title": "Acknowledgements",
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 8,
     "sequence_in_parent_minor": null,
-    "page_range": [8, 8]
+    "page_range": [
+      8,
+      8
+    ]
   },
   {
-    "id": "comp_015",
-    "document_id": "dl_001",
+    "id": 15,
+    "document_id": 1,
     "component_type": "FOOTER",
     "title": null,
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 8,
     "sequence_in_parent_minor": 1,
-    "page_range": [8, 8]
+    "page_range": [
+      8,
+      8
+    ]
   },
   {
-    "id": "comp_016",
-    "document_id": "dl_001",
+    "id": 16,
+    "document_id": 1,
     "component_type": "LIST",
     "title": "Acronyms",
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 9,
     "sequence_in_parent_minor": null,
-    "page_range": [9, 11]
+    "page_range": [
+      9,
+      11
+    ]
   },
   {
-    "id": "comp_017",
-    "document_id": "dl_001",
+    "id": 17,
+    "document_id": 1,
     "component_type": "FOOTER",
     "title": null,
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 9,
     "sequence_in_parent_minor": 1,
-    "page_range": [9, 9]
+    "page_range": [
+      9,
+      9
+    ]
   },
   {
-    "id": "comp_018",
-    "document_id": "dl_001",
+    "id": 18,
+    "document_id": 1,
     "component_type": "FOOTER",
     "title": null,
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 9,
     "sequence_in_parent_minor": 2,
-    "page_range": [10, 10]
+    "page_range": [
+      10,
+      10
+    ]
   },
   {
-    "id": "comp_019",
-    "document_id": "dl_001",
+    "id": 19,
+    "document_id": 1,
     "component_type": "FOOTER",
     "title": null,
-    "parent_component_id": "comp_001",
+    "parent_component_id": 1,
     "sequence_in_parent_major": 9,
     "sequence_in_parent_minor": 3,
-    "page_range": [11, 11]
+    "page_range": [
+      11,
+      11
+    ]
   },
   {
-    "id": "comp_020", 
-    "document_id": "dl_001",
+    "id": 20,
+    "document_id": 1,
     "component_type": "BODY_MATTER",
     "title": null,
     "parent_component_id": null,
     "sequence_in_parent_major": 2,
     "sequence_in_parent_minor": null,
-    "page_range": [12, 13]
+    "page_range": [
+      12,
+      13
+    ]
   },
   {
-    "id": "comp_021",
-    "document_id": "dl_001",
+    "id": 21,
+    "document_id": 1,
     "component_type": "CONTAINER",
     "title": null,
-    "parent_component_id": "comp_020",
+    "parent_component_id": 20,
     "sequence_in_parent_major": 1,
     "sequence_in_parent_minor": null,
-    "page_range": [12, 12]
+    "page_range": [
+      12,
+      12
+    ]
   },
   {
-    "id": "comp_022",
-    "document_id": "dl_001",
+    "id": 22,
+    "document_id": 1,
     "component_type": "EXECUTIVE_SUMMARY",
     "title": "Executive Summary",
-    "parent_component_id": "comp_020",
+    "parent_component_id": 20,
     "sequence_in_parent_major": 1,
     "sequence_in_parent_minor": null,
-    "page_range": [13, 13]
+    "page_range": [
+      13,
+      13
+    ]
   },
   {
-    "id": "comp_023",
-    "document_id": "dl_001",
+    "id": 23,
+    "document_id": 1,
     "component_type": "FOOTER",
     "title": null,
-    "parent_component_id": "comp_020",
+    "parent_component_id": 20,
     "sequence_in_parent_major": 1,
     "sequence_in_parent_minor": 1,
-    "page_range": [13, 13]
+    "page_range": [
+      13,
+      13
+    ]
   }
 ]
