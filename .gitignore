@@ -12,6 +12,7 @@ page_dumps/
 
 # IDE
 .vscode/
+.cursor/
 
 # Input data
 *.pdf
