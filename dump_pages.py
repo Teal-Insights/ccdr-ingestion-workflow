@@ -36,17 +36,20 @@ def extract_images_from_page(page: pymupdf.Page, page_name: str, output_dir: str
             
             # Get image info
             bbox = page.get_image_bbox(img)
-            image_info = {
-                "filename": image_filename,
-                "xref": xref,
-                "bbox": [bbox.x0, bbox.y0, bbox.x1, bbox.y1],
-                "width": pix.width,
-                "height": pix.height,
-                "colorspace": pix.colorspace.name if pix.colorspace else "unknown",
-                "alpha": bool(pix.alpha),
-                "size_bytes": len(pix.pil_tobytes("PNG"))
-            }
-            images_info.append(image_info)
+            if isinstance(bbox, pymupdf.Rect):
+                image_info = {
+                    "filename": image_filename,
+                    "xref": xref,
+                    "bbox": [bbox.x0, bbox.y0, bbox.x1, bbox.y1],
+                    "width": pix.width,
+                    "height": pix.height,
+                    "colorspace": pix.colorspace.name if pix.colorspace else "unknown",
+                    "alpha": bool(pix.alpha),
+                    "size_bytes": len(pix.pil_tobytes("PNG"))
+                }
+                images_info.append(image_info)
+            else:
+                print(f"    Error: bbox is not a pymupdf.Rect object: {bbox}")
         else:
             # Convert CMYK to RGB first
             pix1 = pymupdf.Pixmap(pymupdf.csRGB, pix)
@@ -55,18 +58,21 @@ def extract_images_from_page(page: pymupdf.Page, page_name: str, output_dir: str
             pix1.save(image_path)
             
             bbox = page.get_image_bbox(img)
-            image_info = {
-                "filename": image_filename,
-                "xref": xref,
-                "bbox": [bbox.x0, bbox.y0, bbox.x1, bbox.y1],
-                "width": pix1.width,
-                "height": pix1.height,
-                "colorspace": "RGB (converted from CMYK)",
-                "alpha": bool(pix1.alpha),
-                "size_bytes": len(pix1.pil_tobytes("PNG"))
-            }
-            images_info.append(image_info)
-            pix1 = None
+            if isinstance(bbox, pymupdf.Rect):
+                image_info = {
+                    "filename": image_filename,
+                    "xref": xref,
+                    "bbox": [bbox.x0, bbox.y0, bbox.x1, bbox.y1],
+                    "width": pix1.width,
+                    "height": pix1.height,
+                    "colorspace": "RGB (converted from CMYK)",
+                    "alpha": bool(pix1.alpha),
+                    "size_bytes": len(pix1.pil_tobytes("PNG"))
+                }
+                images_info.append(image_info)
+                pix1 = None
+            else:
+                print(f"    Error: bbox is not a pymupdf.Rect object: {bbox}")
         
         pix = None
     
@@ -138,16 +144,58 @@ def extract_drawings_from_page(page: pymupdf.Page) -> List[Dict[str, Any]]:
 
 
 
+def remove_unused_clippaths(svg_content: str) -> str:
+    """Remove clipPath definitions that are not referenced elsewhere in the document"""
+    # Find all clipPath definitions and their IDs
+    clippath_pattern = r'<clipPath[^>]*id="([^"]+)"[^>]*>.*?</clipPath>'
+    clippath_matches = re.findall(clippath_pattern, svg_content, flags=re.DOTALL)
+    
+    print(f"DEBUG: Found {len(clippath_matches)} clipPath definitions: {clippath_matches}")
+    
+    if not clippath_matches:
+        return svg_content
+    
+    removed_count = 0
+    # Remove unused clipPath definitions
+    for clippath_id in clippath_matches:
+        # Count how many times this ID appears in the document
+        # If it only appears once, it's just the definition and not used anywhere
+        id_count = svg_content.count(clippath_id)
+        
+        if id_count == 1:
+            # Remove this specific clipPath definition
+            unused_clippath_pattern = rf'<clipPath[^>]*id="{re.escape(clippath_id)}"[^>]*>.*?</clipPath>'
+            before_length = len(svg_content)
+            svg_content = re.sub(unused_clippath_pattern, '', svg_content, flags=re.DOTALL)
+            after_length = len(svg_content)
+            if before_length != after_length:
+                removed_count += 1
+    
+    return svg_content
+
 def create_filtered_svg(svg_content: str) -> str:
     """Remove text and image elements from SVG, keeping only vector graphics"""
     # Remove text-related elements
-    svg_content = re.sub(r'<path[^>]*id="font_[^"]*"[^>]*>[^<]*</path>', '', svg_content)
+    # Handle both self-closing and paired font path elements
+    svg_content = re.sub(r'<path[^>]*id="font_[^"]*"[^>]*/?>', '', svg_content)
     svg_content = re.sub(r'<use[^>]*data-text[^>]*>', '', svg_content)
     svg_content = re.sub(r'<text[^>]*>.*?</text>', '', svg_content, flags=re.DOTALL)
     
     # Remove image elements
     svg_content = re.sub(r'<image[^>]*>.*?</image>', '', svg_content, flags=re.DOTALL)
     svg_content = re.sub(r'<image[^>]*/>', '', svg_content)
+    
+    # Remove empty group tags
+    # This needs to be done iteratively as removing inner groups may make outer groups empty
+    prev_content = ""
+    while prev_content != svg_content:
+        prev_content = svg_content
+        # Remove empty groups (both self-closing and paired)
+        svg_content = re.sub(r'<g[^>]*>\s*</g>', '', svg_content)
+        svg_content = re.sub(r'<g[^>]*/>', '', svg_content)
+    
+    # Remove unused clipPath definitions (after text/images/groups are removed)
+    svg_content = remove_unused_clippaths(svg_content)
     
     # Clean up empty lines and excessive whitespace
     svg_content = re.sub(r'\n\s*\n', '\n', svg_content)
@@ -219,7 +267,7 @@ def extract_svg_from_page(page: pymupdf.Page, page_name: str, output_dir: str, s
     except Exception as e:
         return {"error": str(e)}
 
-def extract_svg_images(svg_content: str, page_name: str, output_dir: str) -> List[Dict[str, Any]]:
+def extract_images_from_svg(svg_content: str, page_name: str, output_dir: str) -> List[Dict[str, Any]]:
     """Extract base64 images from SVG content as fallback"""
     import base64
     svg_images = []
@@ -366,7 +414,7 @@ def dump_page_data(doc: pymupdf.Document, output_dir: str = "page_dumps", extrac
             try:
                 with open(f"{output_dir}/svg/{page_name}.svg", "r", encoding="utf-8") as f:
                     svg_content = f.read()
-                svg_images = extract_svg_images(svg_content, page_name, f"{output_dir}/images")
+                svg_images = extract_images_from_svg(svg_content, page_name, f"{output_dir}/images")
                 if svg_images:
                     print(f"  Found {len(svg_images)} additional images in SVG (backgrounds/gradients)")
                     # Add SVG images to the images info
