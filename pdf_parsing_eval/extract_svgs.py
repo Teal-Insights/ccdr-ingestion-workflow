@@ -284,11 +284,26 @@ async def enrich_svg_block_with_description(svg_block_data: dict, api_key: str, 
         
         start_time = time.time()
         print(f"  🚀 Starting description generation for SVG block {block_idx + 1}...")
-        description = await describe_svg_with_llm(svg_content, api_key, semaphore)
-        end_time = time.time()
+        description_json = await describe_svg_with_llm(svg_content, api_key, semaphore)
         
-        # Update the block with the description
-        svg_block_data["description"] = description
+        # Parse the JSON response and format as "label: description"
+        try:
+            description_data = json.loads(description_json)
+            formatted_description = f"{description_data.get('label', 'unknown')}: {description_data.get('description', 'No description available')}"
+            svg_block_data["description"] = formatted_description
+        except (json.JSONDecodeError, KeyError, TypeError) as parse_error:
+            print(f"    Warning: Failed to parse description JSON for block {block_idx + 1}: {parse_error}")
+            # Fallback: try to extract from markdown if present, otherwise use raw response
+            try:
+                json_str = extract_json_from_markdown(description_json)
+                description_data = json.loads(json_str)
+                formatted_description = f"{description_data.get('label', 'unknown')}: {description_data.get('description', 'No description available')}"
+                svg_block_data["description"] = formatted_description
+            except:
+                # Final fallback: use raw response
+                svg_block_data["description"] = description_json
+        
+        end_time = time.time()
         print(f"  ✅ Description completed for SVG block {block_idx + 1} (took {end_time - start_time:.1f}s)")
         
     except Exception as e:

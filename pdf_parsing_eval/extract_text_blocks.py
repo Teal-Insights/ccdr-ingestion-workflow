@@ -222,9 +222,9 @@ def main():
     import sys
     
     if len(sys.argv) < 2:
-        print("Usage: python extract_text_blocks.py <pdf_file> [output_filename]")
-        print("Example: python extract_text_blocks.py document.pdf")
-        print("Example: python extract_text_blocks.py document.pdf my_blocks.json")
+        print("Usage: uv run extract_text_blocks.py <pdf_file> [output_filename]")
+        print("Example: uv run extract_text_blocks.py document.pdf")
+        print("Example: uv run extract_text_blocks.py document.pdf my_blocks.json")
         sys.exit(1)
     
     pdf_path = sys.argv[1]
