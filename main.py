@@ -62,16 +62,17 @@ print(f"HTML converted successfully!")
 # 6. Detect the structure of the document
 
 
-# 7. Convert the blocks to pseudo-html with rich text and bboxes
+# 7. Convert the blocks to HTML with rich text and bboxes
+# (reuse the function from step 5 with different parameters, and return paths to JSON blocksdocs for each section)
 
 
-# 8. Have an LLM transform the pseudo-html into a real HTML document matching our spec
+# 8. Have an LLM clean and conform the HTML to our spec
 
 
-# 9. Transform the HTML document into a graph
+# 9. Transform the cleaned HTML document into a graph matching our schema and ingest it into our database
 
 
-# 10. Create the relations from anchor tags
+# 10. Enrich the database records by generating relations from anchor tags
 
 print(f"Pipeline completed! All outputs in: {temp_dir}")
 
