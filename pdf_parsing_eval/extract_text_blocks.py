@@ -1,13 +1,13 @@
 # TODO: Ignore text blocks that aren't visible (e.g., transparent, behind a vector image)
 
 import pymupdf
-import json
 import os
 import tempfile
 import re
 import html
 from typing import Any, Dict, List, Tuple, Union, cast, Literal, overload
 from pathlib import Path
+from models import TextBlock, BlocksDocument, Block
 
 
 """Type stub for PyMuPDF dynamically added method"""
@@ -148,7 +148,7 @@ def extract_text_blocks_with_styling(pdf_path: str, output_filename: str, temp_d
         doc: pymupdf.Document = pymupdf.open(pdf_path)
         
         # Container for all text blocks from all pages
-        all_text_blocks: List[Dict[str, Any]] = []
+        all_text_blocks: List[TextBlock] = []
         
         # Store total pages before processing
         total_pages = len(doc)
@@ -177,31 +177,30 @@ def extract_text_blocks_with_styling(pdf_path: str, output_filename: str, temp_d
                 # Try to match this block's text to spans and reconstruct styled HTML
                 styled_html = _match_block_to_spans(block_text.strip(), spans)
                 
-                # Create text block data structure with 5 keys
-                text_block = {
-                    "block_type": "text",
-                    "page_number": page_num + 1,
-                    "text": styled_html,  # Reconstructed HTML with semantic grouping
-                    "plain_text": block_text.strip(),  # Clean plain text from block
-                    "bbox": [x0, y0, x1, y1]
-                }
+                # Create text block using Pydantic model
+                text_block = TextBlock(
+                    page_number=page_num + 1,
+                    text=styled_html,  # Reconstructed HTML with semantic grouping
+                    plain_text=block_text.strip(),  # Clean plain text from block
+                    bbox=[x0, y0, x1, y1]
+                )
                 
                 all_text_blocks.append(text_block)
         
         # Close the document
         doc.close()
         
-        # Create output data structure
-        output_data = {
-            "pdf_path": pdf_path,
-            "total_pages": total_pages,
-            "total_text_blocks": len(all_text_blocks),
-            "text_blocks": all_text_blocks
-        }
+        # Create output data structure using Pydantic model
+        output_data = BlocksDocument(
+            pdf_path=pdf_path,
+            total_pages=total_pages,
+            total_blocks=len(all_text_blocks),
+            blocks=cast(List[Block], all_text_blocks)
+        )
         
         # Write to JSON file
         with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(output_data, f, indent=2, ensure_ascii=False)
+            f.write(output_data.model_dump_json(indent=2, exclude_none=True))
         
         print(f"Extracted {len(all_text_blocks)} text blocks from {total_pages} pages")
         print(f"Output saved to: {output_path}")
@@ -231,11 +230,16 @@ def main():
     pdf_path = sys.argv[1]
     output_filename = sys.argv[2] if len(sys.argv) > 2 else "text_blocks.json"
     
+    # Create a real temporary directory for testing
+    temp_dir = tempfile.mkdtemp(prefix="text_blocks_test_")
+    output_path = os.path.join(temp_dir, output_filename)
+    
     try:
-        output_path = extract_text_blocks_with_styling(pdf_path, output_filename)
+        result_path = extract_text_blocks_with_styling(pdf_path, output_path, temp_dir)
         print(f"Text blocks extracted successfully!")
-        print(f"Output file: {output_path}")
-        print(f"Temporary directory: {os.path.dirname(output_path)}")
+        print(f"Output file: {result_path}")
+        print(f"Temporary directory: {temp_dir}")
+        print(f"Note: Clean up temporary directory when done: rm -rf {temp_dir}")
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)

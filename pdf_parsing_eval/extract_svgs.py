@@ -7,13 +7,15 @@ import json
 import os
 import re
 import tempfile
-import xml.etree.ElementTree as ET
-from typing import Any, Dict, Type
+import asyncio
+import time
+from typing import Type, List, cast
 import pymupdf
 from tenacity import retry, stop_after_attempt, wait_exponential
-from litellm import completion, Choices
+from litellm import acompletion, Choices
 from litellm.files.main import ModelResponse
 from pydantic import BaseModel
+from models import SvgBlock, BlocksDocument, Block
 
 dotenv.load_dotenv(override=True)
 
@@ -253,31 +255,92 @@ def parse_llm_json_response(content: str, model_class: Type[BaseModel]) -> BaseM
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-async def describe_svg_with_llm(svg_content: str) -> str:
-    response = completion(
-        model="deepseek/deepseek-chat", 
-        messages=[
-                {"role": "user",
-                "content": """Describe in detail what the SVG represents. Return a JSON object with the following fields: 'label', 'description'.
-                Label should be one of: 'chart', 'graph', 'diagram', 'map', 'logo', 'icon', 'table', or 'text_box'.
-                Description should be a detailed description of what the SVG shows/communicates."""}
-        ],
-        response_format={"type": "json_object"},
-    )
-    if response and isinstance(response, ModelResponse) and isinstance(response.choices[0], Choices) and response.choices[0].message.content:
-        return response.choices[0].message.content
-    else:
-        raise Exception("No valid response from DeepSeek")
+async def describe_svg_with_llm(svg_content: str, semaphore: asyncio.Semaphore) -> str:
+    """Generate description for SVG using LLM with semaphore to limit concurrent calls"""
+    async with semaphore:
+        response = await acompletion(
+            model="deepseek/deepseek-chat", 
+            messages=[
+                    {"role": "user",
+                    "content": """Describe in detail what the SVG represents. Return a JSON object with the following fields: 'label', 'description'.
+                    Label should be one of: 'chart', 'graph', 'diagram', 'map', 'logo', 'icon', 'table', or 'text_box'.
+                    Description should be a detailed description of what the SVG shows/communicates."""}
+            ],
+            response_format={"type": "json_object"},
+        )
+        if response and isinstance(response, ModelResponse) and isinstance(response.choices[0], Choices) and response.choices[0].message.content:
+            return response.choices[0].message.content
+        else:
+            raise Exception("No valid response from DeepSeek")
 
 
-async def extract_svgs_from_pdf(pdf_path: str, output_filename: str, temp_dir: str | None = None) -> str | None:
+async def enrich_svg_block_with_description(svg_block_data: dict, semaphore: asyncio.Semaphore, block_idx: int) -> dict:
+    """Enrich a single SVG block with LLM-generated description"""
+    try:
+        # Read the SVG content from file
+        with open(svg_block_data["storage_url"], "r", encoding="utf-8") as f:
+            svg_content = f.read()
+        
+        start_time = time.time()
+        print(f"  🚀 Starting description generation for SVG block {block_idx + 1}...")
+        description = await describe_svg_with_llm(svg_content, semaphore)
+        end_time = time.time()
+        
+        # Update the block with the description
+        svg_block_data["description"] = description
+        print(f"  ✅ Description completed for SVG block {block_idx + 1} (took {end_time - start_time:.1f}s)")
+        
+    except Exception as e:
+        end_time = time.time()
+        print(f"  ❌ Failed to generate description for SVG block {block_idx + 1} after {end_time - start_time:.1f}s: {e}")
+        svg_block_data["description"] = "Description generation failed"
+    
+    return svg_block_data
+
+
+async def enrich_svg_blocks_concurrently(svg_blocks: List[dict], max_concurrent_calls: int = 5) -> List[dict]:
+    """Enrich all SVG blocks with descriptions using concurrent LLM API calls with semaphore"""
+    semaphore = asyncio.Semaphore(max_concurrent_calls)
+    
+    start_time = time.time()
+    print(f"🚀 Enriching {len(svg_blocks)} SVG blocks with descriptions (max {max_concurrent_calls} concurrent calls)...")
+    
+    # Create tasks for all blocks
+    tasks = [
+        enrich_svg_block_with_description(svg_block, semaphore, idx)
+        for idx, svg_block in enumerate(svg_blocks)
+    ]
+    
+    # Execute all tasks concurrently
+    enriched_blocks = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Handle any exceptions that occurred
+    successful_blocks = []
+    for idx, result in enumerate(enriched_blocks):
+        if isinstance(result, Exception):
+            print(f"  ❌ Error enriching block {idx + 1}: {result}")
+            # Use the original block with a fallback description
+            svg_blocks[idx]["description"] = "Description generation failed due to error"
+            successful_blocks.append(svg_blocks[idx])
+        else:
+            successful_blocks.append(result)
+    
+    end_time = time.time()
+    total_time = end_time - start_time
+    avg_time_per_block = total_time / len(svg_blocks) if svg_blocks else 0
+    print(f"✅ Completed enrichment of {len(successful_blocks)} SVG blocks in {total_time:.1f}s (avg {avg_time_per_block:.1f}s per block)")
+    return successful_blocks
+
+
+async def extract_svgs_from_pdf(pdf_path: str, output_filename: str, temp_dir: str | None = None, max_concurrent_llm_calls: int = 5) -> str | None:
     """
-    Extract SVGs from a PDF and save them as JSON blocks.
+    Extract SVGs from a PDF and save them as JSON blocks with concurrent LLM enrichment.
 
     Args:
         pdf_path: Path to the PDF file to process
         output_filename: Full path to the output JSON file
         temp_dir: Directory to use for temporary files (optional, creates one if not provided)
+        max_concurrent_llm_calls: Maximum number of concurrent LLM API calls for description generation
 
     Returns:
         Path to the output JSON file
@@ -297,7 +360,11 @@ async def extract_svgs_from_pdf(pdf_path: str, output_filename: str, temp_dir: s
         print(f"Processing PDF: {pdf_path}")
         print(f"Number of pages: {len(doc)}")
         
-        for page_num in range(len(doc)):
+        total_pages = len(doc)
+        
+        # Phase 1: Extract all SVGs without descriptions
+        print("\n=== Phase 1: Extracting SVGs ===")
+        for page_num in range(total_pages):
             page = doc[page_num]
             page_name = f"page_{page_num + 1}"
             
@@ -336,29 +403,21 @@ async def extract_svgs_from_pdf(pdf_path: str, output_filename: str, temp_dir: s
                             page_rect = page.rect
                             bbox = [page_rect.x0, page_rect.y0, page_rect.x1, page_rect.y1]
                         
-                        # Generate description using LLM
-                        try:
-                            description = await describe_svg_with_llm(segment_content)
-                        except Exception as e:
-                            print(f"  Warning: Failed to generate description for SVG segment: {e}")
-                            description = "Description generation failed"
-                        
                         # Create storage path for this segment
                         segment_filename = f"{page_name}_graphics_only_segment_{segment_idx + 1}.svg"
-                        
                         segment_path = os.path.join(svg_dir, segment_filename)
                         
                         # Save the segment (always save it to ensure the file exists)
                         with open(segment_path, "w", encoding="utf-8") as f:
                             f.write(segment_content)
                         
-                        # Create the properly formatted block
+                        # Create the block without description (to be enriched later)
                         svg_block = {
                             "block_type": "svg",
                             "page_number": page_num + 1,
                             "bbox": bbox,
                             "storage_url": segment_path,
-                            "description": description
+                            "description": None  # Will be filled in phase 2
                         }
                         
                         svg_blocks.append(svg_block)
@@ -372,11 +431,32 @@ async def extract_svgs_from_pdf(pdf_path: str, output_filename: str, temp_dir: s
         
         doc.close()
         
+        # Phase 2: Enrich SVGs with descriptions concurrently
+        print(f"\n=== Phase 2: Enriching {len(svg_blocks)} SVGs with descriptions ===")
+        if svg_blocks:
+            enriched_svg_blocks = await enrich_svg_blocks_concurrently(svg_blocks, max_concurrent_llm_calls)
+        else:
+            enriched_svg_blocks = []
+        
+        # Convert dict blocks to Pydantic models
+        svg_pydantic_blocks: List[SvgBlock] = []
+        for block_data in enriched_svg_blocks:
+            svg_block = SvgBlock(**block_data)
+            svg_pydantic_blocks.append(svg_block)
+        
+        # Create output document using Pydantic model
+        output_data = BlocksDocument(
+            pdf_path=pdf_path,
+            total_pages=total_pages,
+            total_blocks=len(svg_pydantic_blocks),
+            blocks=cast(List[Block], svg_pydantic_blocks)
+        )
+        
         # Save the SVG blocks to JSON
         with open(output_filename, "w", encoding="utf-8") as f:
-            json.dump(svg_blocks, f, indent=2, ensure_ascii=False)
+            f.write(output_data.model_dump_json(indent=2, exclude_none=True))
         
-        print(f"Extracted {len(svg_blocks)} SVG blocks to {output_filename}")
+        print(f"\n✓ Extracted and enriched {len(enriched_svg_blocks)} SVG blocks to {output_filename}")
         return output_filename
         
     except Exception as e:
@@ -386,9 +466,36 @@ async def extract_svgs_from_pdf(pdf_path: str, output_filename: str, temp_dir: s
 
 if __name__ == "__main__":
     import asyncio
+    import sys
     
-    asyncio.run(extract_svgs_from_pdf(
-        pdf_path="input.pdf",
-        output_filename="svgs.json",
-        temp_dir="temp"
-    ))
+    if len(sys.argv) < 2:
+        print("Usage: python extract_svgs.py <pdf_file> [max_concurrent_calls]")
+        print("Example: python extract_svgs.py document.pdf 5")
+        sys.exit(1)
+    
+    pdf_path = sys.argv[1]
+    max_concurrent_calls = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+    
+    # Create a real temporary directory for testing
+    temp_dir = tempfile.mkdtemp(prefix="svgs_test_")
+    output_filename = os.path.join(temp_dir, "svgs.json")
+    
+    try:
+        output_path = asyncio.run(extract_svgs_from_pdf(
+            pdf_path=pdf_path,
+            output_filename=output_filename,
+            temp_dir=temp_dir,
+            max_concurrent_llm_calls=max_concurrent_calls
+        ))
+        
+        if output_path:
+            print(f"SVGs extracted successfully!")
+            print(f"Output file: {output_path}")
+            print(f"Temporary directory: {temp_dir}")
+            print(f"Note: Clean up temporary directory when done: rm -rf {temp_dir}")
+        else:
+            print("SVG extraction failed")
+            sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}")
+        sys.exit(1)

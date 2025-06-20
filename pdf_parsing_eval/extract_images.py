@@ -5,7 +5,6 @@ import base64
 import io
 import os
 import asyncio
-import json
 from functools import partial
 from litellm import completion, Choices
 from litellm.files.main import ModelResponse
@@ -13,7 +12,8 @@ import pydantic
 from tenacity import retry, stop_after_attempt, wait_exponential
 import pymupdf
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, cast
+from models import ImageBlock, BlocksDocument, Block
 
 # Global semaphore to limit concurrent API calls
 _api_semaphore = asyncio.Semaphore(2)  # Allow up to 2 concurrent API calls
@@ -182,7 +182,7 @@ async def extract_images_from_pdf(
                 # Load the saved image for description
                 image_path = image_info["storage_path"]
                 
-                # Create the block structure
+                # Create the block structure as dict temporarily for processing
                 block = {
                     "block_type": "image",
                     "page_number": page_number,
@@ -234,11 +234,29 @@ async def extract_images_from_pdf(
         total_pages = len(doc)
         doc.close()
         
+        # Convert processed dicts to Pydantic models
+        image_blocks: List[ImageBlock] = []
+        for block_data in all_image_blocks:
+            # Remove temporary field
+            if "image_info" in block_data:
+                del block_data["image_info"]
+            # Create ImageBlock from cleaned data
+            image_block = ImageBlock(**block_data)
+            image_blocks.append(image_block)
+        
+        # Create output document using Pydantic model
+        output_data = BlocksDocument(
+            pdf_path=pdf_path,
+            total_pages=total_pages,
+            total_blocks=len(image_blocks),
+            blocks=cast(List[Block], image_blocks)
+        )
+        
         # Save the results to JSON
         with open(output_filename, 'w', encoding='utf-8') as f:
-            json.dump(all_image_blocks, f, indent=2, ensure_ascii=False)
+            f.write(output_data.model_dump_json(indent=2, exclude_none=True))
         
-        print(f"Extracted {len(all_image_blocks)} images from {total_pages} pages")
+        print(f"Extracted {len(image_blocks)} images from {total_pages} pages")
         print(f"Results saved to: {output_filename}")
         print(f"Images saved to: {images_dir_path}")
         
@@ -251,11 +269,34 @@ async def extract_images_from_pdf(
 
 if __name__ == "__main__":
     import dotenv
+    import tempfile
+    import sys
 
     dotenv.load_dotenv(override=True)
     
-    output_path = asyncio.run(extract_images_from_pdf(
-        pdf_path="input.pdf",
-        output_filename="images.json",
-        api_key=os.getenv("GEMINI_API_KEY")
-    ))
+    if len(sys.argv) < 2:
+        print("Usage: python extract_images.py <pdf_file>")
+        print("Example: python extract_images.py document.pdf")
+        sys.exit(1)
+    
+    pdf_path = sys.argv[1]
+    
+    # Create a real temporary directory for testing
+    temp_dir = tempfile.mkdtemp(prefix="images_test_")
+    output_filename = os.path.join(temp_dir, "images.json")
+    images_dir = os.path.join(temp_dir, "images")
+    
+    try:
+        output_path = asyncio.run(extract_images_from_pdf(
+            pdf_path=pdf_path,
+            output_filename=output_filename,
+            api_key=os.getenv("GEMINI_API_KEY"),
+            images_dir=images_dir
+        ))
+        print(f"Images extracted successfully!")
+        print(f"Output file: {output_path}")
+        print(f"Temporary directory: {temp_dir}")
+        print(f"Note: Clean up temporary directory when done: rm -rf {temp_dir}")
+    except Exception as e:
+        print(f"Error: {e}")
+        sys.exit(1)
