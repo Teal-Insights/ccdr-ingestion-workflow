@@ -3,8 +3,23 @@ import json
 import os
 import sys
 import re
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union, cast, Literal, overload
 from pathlib import Path
+
+
+"""Type stub for PyMuPDF dynamically added method"""
+class Page(pymupdf.Page):
+    @overload
+    def get_text(self, option: Literal["text"] = "text", **kwargs) -> str: ...
+
+    @overload 
+    def get_text(self, option: Literal["blocks"], **kwargs) -> List[Tuple[float, float, float, float, str, int, int]]: ...
+
+    @overload
+    def get_text(self, option: Literal["dict"], **kwargs) -> Dict[str, Any]: ...
+
+    def get_text(self, option: str = "text", **kwargs) -> Union[str, List[Tuple[float, float, float, float, str, int, int]], Dict[str, Any]]: ...
+
 
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj: Any) -> Union[str, Any]:
@@ -28,12 +43,12 @@ def extract_images_from_page(page: pymupdf.Page, page_name: str, output_dir: str
         # Extract image
         xref = img[0]  # xref is the first element
         pix = pymupdf.Pixmap(page.parent, xref)
-        
+
         if pix.n - pix.alpha < 4:  # Can convert to PNG
             image_filename = f"{page_name}_image_{img_index + 1}.png"
             image_path = f"{output_dir}/{image_filename}"
             pix.save(image_path)
-            
+
             # Get image info
             bbox = page.get_image_bbox(img)
             if isinstance(bbox, pymupdf.Rect):
@@ -330,7 +345,7 @@ def dump_page_data(doc: pymupdf.Document, output_dir: str = "page_dumps", extrac
     os.makedirs(f"{output_dir}/svg", exist_ok=True)
     
     for page_num in range(len(doc)):
-        page: pymupdf.Page = doc[page_num]
+        page: Page = cast(Page, doc[page_num])
         page_name: str = f"page_{page_num + 1}"
         
         print(f"Processing page {page_num + 1}...")

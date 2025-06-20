@@ -5,7 +5,12 @@ build/
 dist/
 wheels/
 *.egg-info
+
+# Output files
 page_dumps/
+temp/
+*.json
+*.svg
 
 # Virtual environments
 .venv
@@ -16,3 +21,6 @@ page_dumps/
 
 # Input data
 *.pdf
+
+# Secrets
+.env

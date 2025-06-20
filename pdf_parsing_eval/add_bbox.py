@@ -1,3 +1,6 @@
+# This was a helper script for adding bounding boxes to content nodes that didn't have them
+# It has only been retained for reference, to show how to match text to blocks using edit distance
+
 import pymupdf
 import json
 from Levenshtein import distance
@@ -6,7 +9,7 @@ def find_text_in_blocks(page, search_text, threshold=0.2):
     """Find text in page blocks, handling rotated text and using fuzzy matching"""
     blocks = page.get_text("dict")
     found_rects = []
-    
+
     for block in blocks["blocks"]:
         if "lines" in block:  # text block
             block_text = ""
@@ -16,25 +19,25 @@ def find_text_in_blocks(page, search_text, threshold=0.2):
                 for span in line["spans"]:
                     line_text += span["text"]
                 block_text += line_text + "\n"
-            
+
             # Calculate normalized Levenshtein distance
             block_text = block_text.strip()
             if not block_text:
                 continue
-                
+
             # Calculate similarity ratio (0 to 1, where 1 is identical)
             max_len = max(len(search_text), len(block_text))
             if max_len == 0:
                 continue
-                
+
             similarity = 1 - (distance(search_text.lower(), block_text.lower()) / max_len)
-            
+
             # If similarity is above threshold, consider it a match
             if similarity >= (1 - threshold):
                 bbox = block["bbox"]
                 rect = pymupdf.Rect(bbox)
                 found_rects.append((rect, similarity))
-    
+
     # Sort by similarity score and return the best match
     if found_rects:
         found_rects.sort(key=lambda x: x[1], reverse=True)
@@ -53,7 +56,7 @@ def extract_bounding_boxes(pdf_path, content_nodes_path, similarity_threshold=0.
         # Skip if content is None or empty string
         if not node.get("content") or not node["content"].strip():
             continue
-            
+   
         # Skip if bounding box already exists
         if (node.get("positional_data") and 
             len(node["positional_data"]) > 0 and 
