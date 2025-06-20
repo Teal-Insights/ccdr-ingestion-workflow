@@ -332,7 +332,7 @@ async def enrich_svg_blocks_concurrently(svg_blocks: List[dict], max_concurrent_
     return successful_blocks
 
 
-async def extract_svgs_from_pdf(pdf_path: str, output_filename: str, temp_dir: str | None = None, max_concurrent_llm_calls: int = 5) -> str | None:
+async def extract_svgs_from_pdf(pdf_path: str, output_filename: str, temp_dir: str | None = None, max_concurrent_llm_calls: int = 5) -> str:
     """
     Extract SVGs from a PDF and save them as JSON blocks with concurrent LLM enrichment.
 
@@ -460,8 +460,7 @@ async def extract_svgs_from_pdf(pdf_path: str, output_filename: str, temp_dir: s
         return output_filename
         
     except Exception as e:
-        print(f"Error processing PDF: {e}")
-        return None
+        raise Exception(f"Failed to extract SVGs from PDF: {e}")
 
 
 if __name__ == "__main__":
@@ -488,14 +487,10 @@ if __name__ == "__main__":
             max_concurrent_llm_calls=max_concurrent_calls
         ))
         
-        if output_path:
-            print(f"SVGs extracted successfully!")
-            print(f"Output file: {output_path}")
-            print(f"Temporary directory: {temp_dir}")
-            print(f"Note: Clean up temporary directory when done: rm -rf {temp_dir}")
-        else:
-            print("SVG extraction failed")
-            sys.exit(1)
+        print(f"SVGs extracted successfully!")
+        print(f"Output file: {output_path}")
+        print(f"Temporary directory: {temp_dir}")
+        print(f"Note: Clean up temporary directory when done: rm -rf {temp_dir}")
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
