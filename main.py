@@ -6,7 +6,7 @@ from pdf_parsing_eval.extract_text_blocks import extract_text_blocks_with_stylin
 from pdf_parsing_eval.extract_images import extract_images_from_pdf
 from pdf_parsing_eval.extract_svgs import extract_svgs_from_pdf
 from pdf_parsing_eval.combine_blocks import combine_blocks
-from pdf_parsing_eval.convert_to_pseudo_html import convert_blocks_to_pseudo_html
+from pdf_parsing_eval.convert_to_html import convert_blocks_to_html
 
 dotenv.load_dotenv(override=True)
 
@@ -54,10 +54,10 @@ combined_blocks_output_file_path = os.path.join(temp_dir, "combined_blocks.json"
 combined_blocks_path = combine_blocks([extracted_text_blocks_path, extracted_image_blocks_path, extracted_svg_blocks_path], combined_blocks_output_file_path)
 print(f"Blocks combined successfully!")
 
-# 5. Convert the blocks to pseudo-html with plaintext and no bboxes
-pseudo_html_output_file_path = os.path.join(temp_dir, "pseudo_html.html")
-pseudo_html_path = convert_blocks_to_pseudo_html(combined_blocks_path, pseudo_html_output_file_path, rich_text=False, bboxes=False, include_ids=False)
-print(f"Pseudo-html converted successfully!")
+# 5. Convert the blocks to HTML with plaintext and no bboxes
+html_output_file_path = os.path.join(temp_dir, "html.html")
+html_path = convert_blocks_to_html(combined_blocks_path, html_output_file_path, rich_text=False, bboxes=False, include_ids=True)
+print(f"HTML converted successfully!")
 
 # 6. Detect the structure of the document
 
