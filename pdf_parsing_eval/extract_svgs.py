@@ -255,7 +255,7 @@ def parse_llm_json_response(content: str, model_class: Type[BaseModel]) -> BaseM
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-async def describe_svg_with_llm(svg_content: str, semaphore: asyncio.Semaphore) -> str:
+async def describe_svg_with_llm(svg_content: str, api_key: str, semaphore: asyncio.Semaphore) -> str:
     """Generate description for SVG using LLM with semaphore to limit concurrent calls"""
     async with semaphore:
         response = await acompletion(
@@ -267,6 +267,7 @@ async def describe_svg_with_llm(svg_content: str, semaphore: asyncio.Semaphore) 
                     Description should be a detailed description of what the SVG shows/communicates."""}
             ],
             response_format={"type": "json_object"},
+            api_key=api_key,
         )
         if response and isinstance(response, ModelResponse) and isinstance(response.choices[0], Choices) and response.choices[0].message.content:
             return response.choices[0].message.content
@@ -274,7 +275,7 @@ async def describe_svg_with_llm(svg_content: str, semaphore: asyncio.Semaphore) 
             raise Exception("No valid response from DeepSeek")
 
 
-async def enrich_svg_block_with_description(svg_block_data: dict, semaphore: asyncio.Semaphore, block_idx: int) -> dict:
+async def enrich_svg_block_with_description(svg_block_data: dict, api_key: str, semaphore: asyncio.Semaphore, block_idx: int) -> dict:
     """Enrich a single SVG block with LLM-generated description"""
     try:
         # Read the SVG content from file
@@ -283,7 +284,7 @@ async def enrich_svg_block_with_description(svg_block_data: dict, semaphore: asy
         
         start_time = time.time()
         print(f"  🚀 Starting description generation for SVG block {block_idx + 1}...")
-        description = await describe_svg_with_llm(svg_content, semaphore)
+        description = await describe_svg_with_llm(svg_content, api_key, semaphore)
         end_time = time.time()
         
         # Update the block with the description
@@ -298,7 +299,7 @@ async def enrich_svg_block_with_description(svg_block_data: dict, semaphore: asy
     return svg_block_data
 
 
-async def enrich_svg_blocks_concurrently(svg_blocks: List[dict], max_concurrent_calls: int = 5) -> List[dict]:
+async def enrich_svg_blocks_concurrently(svg_blocks: List[dict], api_key: str, max_concurrent_calls: int = 5) -> List[dict]:
     """Enrich all SVG blocks with descriptions using concurrent LLM API calls with semaphore"""
     semaphore = asyncio.Semaphore(max_concurrent_calls)
     
@@ -307,7 +308,7 @@ async def enrich_svg_blocks_concurrently(svg_blocks: List[dict], max_concurrent_
     
     # Create tasks for all blocks
     tasks = [
-        enrich_svg_block_with_description(svg_block, semaphore, idx)
+        enrich_svg_block_with_description(svg_block, api_key, semaphore, idx)
         for idx, svg_block in enumerate(svg_blocks)
     ]
     
@@ -332,25 +333,26 @@ async def enrich_svg_blocks_concurrently(svg_blocks: List[dict], max_concurrent_
     return successful_blocks
 
 
-async def extract_svgs_from_pdf(pdf_path: str, output_filename: str, temp_dir: str | None = None, max_concurrent_llm_calls: int = 5) -> str:
+async def extract_svgs_from_pdf(pdf_path: str, output_filename: str, api_key: str, svgs_dir: str | None = None, max_concurrent_llm_calls: int = 5) -> str:
     """
     Extract SVGs from a PDF and save them as JSON blocks with concurrent LLM enrichment.
 
     Args:
         pdf_path: Path to the PDF file to process
         output_filename: Full path to the output JSON file
-        temp_dir: Directory to use for temporary files (optional, creates one if not provided)
+        api_key: API key for LLM service (DeepSeek) used for SVG description generation
+        svgs_dir: Directory to which to save the SVGs
         max_concurrent_llm_calls: Maximum number of concurrent LLM API calls for description generation
 
     Returns:
         Path to the output JSON file
     """
     # Create temporary directory if not provided
-    if temp_dir is None:
-        temp_dir = tempfile.mkdtemp()
+    if svgs_dir is None:
+        svgs_dir = tempfile.mkdtemp()
     
-    os.makedirs(temp_dir, exist_ok=True)
-    svg_dir = os.path.join(temp_dir, "svg")
+    os.makedirs(svgs_dir, exist_ok=True)
+    svg_dir = os.path.join(svgs_dir, "svg")
     os.makedirs(svg_dir, exist_ok=True)
     
     svg_blocks = []
@@ -434,7 +436,7 @@ async def extract_svgs_from_pdf(pdf_path: str, output_filename: str, temp_dir: s
         # Phase 2: Enrich SVGs with descriptions concurrently
         print(f"\n=== Phase 2: Enriching {len(svg_blocks)} SVGs with descriptions ===")
         if svg_blocks:
-            enriched_svg_blocks = await enrich_svg_blocks_concurrently(svg_blocks, max_concurrent_llm_calls)
+            enriched_svg_blocks = await enrich_svg_blocks_concurrently(svg_blocks, api_key, max_concurrent_llm_calls)
         else:
             enriched_svg_blocks = []
         
@@ -468,8 +470,8 @@ if __name__ == "__main__":
     import sys
     
     if len(sys.argv) < 2:
-        print("Usage: python extract_svgs.py <pdf_file> [max_concurrent_calls]")
-        print("Example: python extract_svgs.py document.pdf 5")
+        print("Usage: uv run extract_svgs.py <pdf_file> [max_concurrent_calls]")
+        print("Example: uv run extract_svgs.py document.pdf 5")
         sys.exit(1)
     
     pdf_path = sys.argv[1]
@@ -480,10 +482,13 @@ if __name__ == "__main__":
     output_filename = os.path.join(temp_dir, "svgs.json")
     
     try:
+        assert (api_key := os.getenv("DEEPSEEK_API_KEY")), "DEEPSEEK_API_KEY is not set"
+        
         output_path = asyncio.run(extract_svgs_from_pdf(
             pdf_path=pdf_path,
             output_filename=output_filename,
-            temp_dir=temp_dir,
+            api_key=api_key,
+            svgs_dir=temp_dir,
             max_concurrent_llm_calls=max_concurrent_calls
         ))
         

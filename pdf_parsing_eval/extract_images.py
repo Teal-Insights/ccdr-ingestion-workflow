@@ -275,8 +275,8 @@ if __name__ == "__main__":
     dotenv.load_dotenv(override=True)
     
     if len(sys.argv) < 2:
-        print("Usage: python extract_images.py <pdf_file>")
-        print("Example: python extract_images.py document.pdf")
+        print("Usage: uv run extract_images.py <pdf_file>")
+        print("Example: uv run extract_images.py document.pdf")
         sys.exit(1)
     
     pdf_path = sys.argv[1]

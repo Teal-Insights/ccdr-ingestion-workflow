@@ -10,6 +10,11 @@ from pdf_parsing_eval.convert_to_pseudo_html import convert_blocks_to_pseudo_htm
 
 dotenv.load_dotenv(override=True)
 
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+assert gemini_api_key, "GEMINI_API_KEY is not set"
+deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
+assert deepseek_api_key, "DEEPSEEK_API_KEY is not set"
+
 # Create a temporary directory for the entire pipeline
 temp_dir = tempfile.mkdtemp(prefix="pdf_parsing_pipeline_")
 print(f"Using temporary directory: {temp_dir}")
@@ -18,33 +23,40 @@ pdf_path = "input.pdf"
 print(f"Processing PDF: {pdf_path}")
 
 # 1. Extract the text blocks from the PDF
-blocks_output_filename = os.path.join(temp_dir, "text_blocks.json")
-extracted_text_blocks_path = extract_text_blocks_with_styling(pdf_path, blocks_output_filename, temp_dir)
+blocks_output_file_path = os.path.join(temp_dir, "text_blocks.json")
+extracted_text_blocks_path = extract_text_blocks_with_styling(pdf_path, blocks_output_file_path, temp_dir)
 print(f"Text blocks extracted successfully!")
 
 # 2. Extract the images from the PDF as blocks
-images_output_filename = os.path.join(temp_dir, "images.json")
+images_output_file_path = os.path.join(temp_dir, "images.json")
 images_dir = os.path.join(temp_dir, "images")
 extracted_image_blocks_path = asyncio.run(extract_images_from_pdf(
     pdf_path, 
-    images_output_filename, 
+    images_output_file_path, 
     api_key=os.getenv("GEMINI_API_KEY"),
     images_dir=images_dir
 ))
 print(f"Image blocks extracted successfully!")
 
 # 3. Extract the SVGs from the PDF and add them as blocks
-svg_output_filename = os.path.join(temp_dir, "svgs.json")
-extracted_svg_blocks_path = asyncio.run(extract_svgs_from_pdf(pdf_path, svg_output_filename, temp_dir))
+svg_output_file_path = os.path.join(temp_dir, "svgs.json")
+svgs_dir = os.path.join(temp_dir, "svgs")
+extracted_svg_blocks_path = asyncio.run(extract_svgs_from_pdf(
+    pdf_path, 
+    svg_output_file_path, 
+    api_key=deepseek_api_key,
+    svgs_dir=svgs_dir
+))
 print(f"SVG blocks extracted successfully!")
 
 # 4. Combine the blocks into a single JSON file
-combined_blocks_path = combine_blocks([extracted_text_blocks_path, extracted_image_blocks_path, extracted_svg_blocks_path], temp_dir)
+combined_blocks_output_file_path = os.path.join(temp_dir, "combined_blocks.json")
+combined_blocks_path = combine_blocks([extracted_text_blocks_path, extracted_image_blocks_path, extracted_svg_blocks_path], combined_blocks_output_file_path)
 print(f"Blocks combined successfully!")
 
 # 5. Convert the blocks to pseudo-html with plaintext and no bboxes
-pseudo_html_output_filename = os.path.join(temp_dir, "pseudo_html.html")
-pseudo_html_path = convert_blocks_to_pseudo_html(combined_blocks_path, pseudo_html_output_filename, rich_text=False, bboxes=False, include_ids=False)
+pseudo_html_output_file_path = os.path.join(temp_dir, "pseudo_html.html")
+pseudo_html_path = convert_blocks_to_pseudo_html(combined_blocks_path, pseudo_html_output_file_path, rich_text=False, bboxes=False, include_ids=False)
 print(f"Pseudo-html converted successfully!")
 
 # 6. Detect the structure of the document

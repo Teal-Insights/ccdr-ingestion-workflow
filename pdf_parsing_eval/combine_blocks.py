@@ -21,14 +21,13 @@ def _get_block_sort_key(block: Dict[str, Any]) -> tuple:
     return (page_number, y_top, x_left)
 
 
-def combine_blocks(json_file_paths: List[str], temp_dir: str, output_filename: str = "combined_blocks.json") -> str:
+def combine_blocks(json_file_paths: List[str], output_file_path: str) -> str:
     """
     Combine multiple block JSON files into a single sorted output file.
     
     Args:
         json_file_paths: List of paths to JSON files containing blocks
-        temp_dir: Directory to write the combined output file
-        output_filename: Name of the output file (default: "combined_blocks.json")
+        output_file_path: Full path where the combined output file should be written
     
     Returns:
         Path to the combined JSON file
@@ -37,9 +36,10 @@ def combine_blocks(json_file_paths: List[str], temp_dir: str, output_filename: s
         FileNotFoundError: If any input file doesn't exist
         ValueError: If JSON files have incompatible schemas
     """
-    # Ensure temp directory exists
-    Path(temp_dir).mkdir(parents=True, exist_ok=True)
-    output_path = os.path.join(temp_dir, output_filename)
+    # Ensure output directory exists
+    output_dir = os.path.dirname(output_file_path)
+    if output_dir:
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
     
     combined_blocks = []
     pdf_path = None
@@ -119,13 +119,13 @@ def combine_blocks(json_file_paths: List[str], temp_dir: str, output_filename: s
         print("Proceeding with raw data...")
     
     # Write combined output
-    with open(output_path, 'w', encoding='utf-8') as f:
+    with open(output_file_path, 'w', encoding='utf-8') as f:
         json.dump(output_data, f, indent=2, ensure_ascii=False)
     
     print(f"✓ Combined {len(combined_blocks)} blocks from {len(json_file_paths)} files")
-    print(f"✓ Output saved to: {output_path}")
+    print(f"✓ Output saved to: {output_file_path}")
     
-    return output_path
+    return output_file_path
 
 
 def main():
@@ -133,15 +133,15 @@ def main():
     import sys
     
     if len(sys.argv) < 3:
-        print("Usage: python combine_blocks.py <output_dir> <file1.json> <file2.json> [file3.json] ...")
-        print("Example: python combine_blocks.py /tmp/combined text_blocks.json images.json svgs.json")
+        print("Usage: python combine_blocks.py <output_file_path> <file1.json> <file2.json> [file3.json] ...")
+        print("Example: python combine_blocks.py /tmp/combined_blocks.json text_blocks.json images.json svgs.json")
         sys.exit(1)
     
-    output_dir = sys.argv[1]
+    output_file_path = sys.argv[1]
     input_files = sys.argv[2:]
     
     try:
-        output_path = combine_blocks(input_files, output_dir)
+        output_path = combine_blocks(input_files, output_file_path)
         print(f"\nSuccess! Combined blocks saved to: {output_path}")
     except Exception as e:
         print(f"Error: {e}")
