@@ -1,9 +1,8 @@
 import json
 import os
-import tempfile
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any
 from pathlib import Path
-from models import BlocksDocument, Block, TextBlock, ImageBlock, SvgBlock
+from models import BlocksDocument
 
 
 def _get_block_sort_key(block: Dict[str, Any]) -> tuple:
@@ -100,6 +99,11 @@ def combine_blocks(json_file_paths: List[str], output_file_path: str) -> str:
     # Sort all blocks by page number and position
     print(f"Sorting {len(combined_blocks)} combined blocks...")
     combined_blocks.sort(key=_get_block_sort_key)
+    
+    # Assign sequential IDs to blocks after sorting
+    print(f"Assigning sequential IDs to {len(combined_blocks)} blocks...")
+    for i, block in enumerate(combined_blocks, start=1):
+        block["id"] = i
     
     # Create output document
     output_data = {

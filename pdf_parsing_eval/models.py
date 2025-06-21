@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, model_validator
-from typing import List, Literal, Union, Any
+from typing import List, Literal, Union, Any, Optional
 from abc import ABC
 
 
@@ -7,6 +7,10 @@ class BaseBlock(BaseModel, ABC):
     """
     Abstract base class for all block types extracted from a PDF page.
     """
+    id: Optional[int] = Field(
+        default=None,
+        description="Optional unique identifier for the block"
+    )
     block_type: str = Field(
         description="Type of the block (text, image, svg, etc.)"
     )

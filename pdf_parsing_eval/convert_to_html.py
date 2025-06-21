@@ -123,20 +123,23 @@ def convert_blocks_to_html(input_path: str, output_path: str, rich_text: bool = 
     
     # Generate HTML
     html_parts = []
-    block_counter = 1  # Initialize block counter for IDs
+    block_counter = 1  # Initialize block counter for fallback IDs
     
-    # Process pages in order
-    for page_num in range(1, document.total_pages + 1):
+    # Process only pages that have blocks, in order
+    for page_num in sorted(pages.keys()):
         html_parts.append('<div class="page">')
         
-        # Add blocks for this page if they exist
-        if page_num in pages:
-            for block in pages[page_num]:
-                block_id = block_counter if include_ids else None
-                block_html = create_block_html(block, rich_text, bboxes, block_id)
-                html_parts.append(f"  {block_html}")
-                if include_ids:
-                    block_counter += 1
+        # Add blocks for this page
+        for block in pages[page_num]:
+            if include_ids:
+                # Use the block's id field if available, otherwise use sequential counter
+                block_id = getattr(block, 'id', None) or block_counter
+                block_counter += 1
+            else:
+                block_id = None
+            
+            block_html = create_block_html(block, rich_text, bboxes, block_id)
+            html_parts.append(f"  {block_html}")
         
         html_parts.append('</div>')
     
@@ -154,7 +157,7 @@ if __name__ == "__main__":
     import argparse
     import sys
 
-    parser = argparse.ArgumentParser(description="Convert JSON text blocks to pseudo-HTML format")
+    parser = argparse.ArgumentParser(description="Convert JSON text blocks to HTML format")
     parser.add_argument("input_file", help="Path to input JSON file containing text blocks")
     parser.add_argument("output_file", help="Path to output HTML file")
     parser.add_argument("--rich-text", action="store_true", 
