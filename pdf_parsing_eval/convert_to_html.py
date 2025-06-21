@@ -20,7 +20,7 @@ def create_text_block_html(block: TextBlock, rich_text: bool, bboxes: bool, bloc
     
     # Add id attribute if provided
     if block_id is not None:
-        div_attrs.append(f'id="block-{block_id}"')
+        div_attrs.append(f'id="{block_id}"')
     
     # Add bbox data attribute if requested
     if bboxes:
@@ -40,7 +40,7 @@ def create_image_block_html(block: ImageBlock, bboxes: bool, block_id: int | Non
     
     # Add id attribute if provided
     if block_id is not None:
-        div_attrs.append(f'id="block-{block_id}"')
+        div_attrs.append(f'id="{block_id}"')
     
     # Add bbox data attribute if requested
     if bboxes:
@@ -60,7 +60,7 @@ def create_svg_block_html(block: SvgBlock, bboxes: bool, block_id: int | None = 
     
     # Add id attribute if provided
     if block_id is not None:
-        div_attrs.append(f'id="block-{block_id}"')
+        div_attrs.append(f'id="{block_id}"')
     
     # Add bbox data attribute if requested
     if bboxes:
@@ -85,7 +85,7 @@ def create_block_html(block: Block, rich_text: bool, bboxes: bool, block_id: int
         # Fallback for unknown block types
         div_attrs = ['class="unknown-block"']
         if block_id is not None:
-            div_attrs.append(f'id="block-{block_id}"')
+            div_attrs.append(f'id="{block_id}"')
         if bboxes:
             bbox_str = format_bbox(block.bbox)
             div_attrs.append(f'data-bbox="{bbox_str}"')
