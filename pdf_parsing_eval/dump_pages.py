@@ -18,6 +18,9 @@ class Page(pymupdf.Page):
     @overload
     def get_text(self, option: Literal["dict"], **kwargs) -> Dict[str, Any]: ...
 
+    @overload
+    def get_text(self, option: Literal["html"], **kwargs) -> str: ...
+
     def get_text(self, option: str = "text", **kwargs) -> Union[str, List[Tuple[float, float, float, float, str, int, int]], Dict[str, Any]]: ...
 
 
@@ -354,6 +357,10 @@ def dump_page_data(doc: pymupdf.Document, output_dir: str = "page_dumps", extrac
         with open(f"{output_dir}/{page_name}_text.txt", "w", encoding="utf-8") as f:
             f.write(page.get_text())
         
+        # Dump HTML representation
+        with open(f"{output_dir}/{page_name}.html", "w", encoding="utf-8") as f:
+            f.write(page.get_text("html"))
+        
         # Dump text blocks with bounding boxes, font and size info
         with open(f"{output_dir}/{page_name}_blocks.json", "w", encoding="utf-8") as f:
             # Get detailed text structure to extract font information
@@ -482,7 +489,7 @@ def process_pdf(pdf_path: str, output_dir: str = "page_dumps", extract_svg_image
         print(f"Number of pages: {len(doc)}")
         extraction_note = " (excluding SVG backgrounds)" if not extract_svg_images else " (including SVG backgrounds)"
         svg_note = f" (SVG: {svg_mode})" if svg_mode != "none" else " (no SVG files)"
-        print(f"Extracting: text, blocks, images{extraction_note}, drawings{svg_note}")
+        print(f"Extracting: text, HTML, blocks, images{extraction_note}, drawings{svg_note}")
         print("-" * 60)
         
         dump_page_data(doc, output_dir, extract_svg_images, svg_mode)
@@ -492,6 +499,7 @@ def process_pdf(pdf_path: str, output_dir: str = "page_dumps", extract_svg_image
         print(f"Processing complete! Data dumped to '{output_dir}/' directory")
         print(f"Content organized in:")
         print(f"  • Text files: {output_dir}/page_N_text.txt")
+        print(f"  • HTML files: {output_dir}/page_N.html")
         print(f"  • Block data: {output_dir}/page_N_blocks.json")
         print(f"  • Structure: {output_dir}/page_N_structure.json")
         print(f"  • Images: {output_dir}/images/")
@@ -510,12 +518,13 @@ def process_pdf(pdf_path: str, output_dir: str = "page_dumps", extract_svg_image
 def main() -> None:
     """Main function with command-line interface"""
     if len(sys.argv) < 2:
-        print("Usage: python dump_pages.py <pdf_file> [output_directory] [options]")
-        print("Example: python dump_pages.py document.pdf page_dumps")
-        print("Example: python dump_pages.py document.pdf --svg-mode filtered")
-        print("Example: python dump_pages.py document.pdf page_dumps --extract-svg-images --svg-mode full")
+        print("Usage: uv run pdf_parsing_eval/dump_pages.py <pdf_file> [output_directory] [options]")
+        print("Example: uv run pdf_parsing_eval/dump_pages.py document.pdf page_dumps")
+        print("Example: uv run pdf_parsing_eval/dump_pages.py document.pdf --svg-mode filtered")
+        print("Example: uv run pdf_parsing_eval/dump_pages.py document.pdf page_dumps --extract-svg-images --svg-mode full")
         print("\nThis script extracts:")
         print("  • Text content and positioning data")
+        print("  • HTML representation of pages")
         print("  • Images (saved as PNG files)")
         print("  • Vector drawings and graphics metadata")
         print("  • SVG representations (configurable)")
