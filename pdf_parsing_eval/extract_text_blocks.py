@@ -27,96 +27,143 @@ class Page(pymupdf.Page):
     def get_text(self, option: str = "text", **kwargs) -> Union[str, List[Tuple[float, float, float, float, str, int, int]], Dict[str, Any]]: ...
 
 
-def _extract_spans_from_html(html_content: str) -> List[Dict[str, str]]:
-    """Extract all span elements from HTML with their text and styling"""
-    spans = []
-    # Find all span tags with their content and style attributes
-    span_pattern = r'<span([^>]*)>(.*?)</span>'
-    matches = re.findall(span_pattern, html_content, re.DOTALL)
+def _parse_html_elements(html_content: str) -> List[Dict[str, Any]]:
+    """
+    Parse HTML content to extract all elements with their positions and styling.
+    Returns a list of elements with their text, styling, and bounding box info.
+    """
+    elements = []
     
-    for attrs, text_content in matches:
-        # Extract style attribute
-        style_match = re.search(r'style="([^"]*)"', attrs)
-        style = style_match.group(1) if style_match else ""
-        
-        # Decode HTML entities in text
-        clean_text = html.unescape(text_content.strip())
-        
-        if clean_text:  # Skip empty spans
-            spans.append({
-                "text": clean_text,
-                "style": style,
-                "raw_html": f'<span{attrs}>{text_content}</span>'
-            })
+    # Find all p tags with their content and style attributes
+    p_pattern = r'<p\s+style="([^"]*)"[^>]*>(.*?)</p>'
+    p_matches = re.findall(p_pattern, html_content, re.DOTALL)
     
-    return spans
+    for style, content in p_matches:
+        # Extract position from style
+        position = _extract_position_from_style(style)
+        if position:
+            # Parse the content to preserve inner HTML structure
+            cleaned_content = _clean_inner_html(content)
+            if cleaned_content.strip():
+                elements.append({
+                    'type': 'p',
+                    'content': cleaned_content,
+                    'style': style,
+                    'position': position,
+                    'raw_html': f'<p style="{style}">{content}</p>'
+                })
+    
+    return elements
+
+
+def _extract_position_from_style(style: str) -> Dict[str, float] | None:
+    """Extract top and left positions from CSS style string"""
+    try:
+        position = {}
+        
+        # Extract top position
+        top_match = re.search(r'top:\s*([0-9.]+)pt', style)
+        if top_match:
+            position['top'] = float(top_match.group(1))
+        
+        # Extract left position  
+        left_match = re.search(r'left:\s*([0-9.]+)pt', style)
+        if left_match:
+            position['left'] = float(left_match.group(1))
+            
+        # Extract line-height for height estimation
+        height_match = re.search(r'line-height:\s*([0-9.]+)pt', style)
+        if height_match:
+            position['height'] = float(height_match.group(1))
+        
+        return position if 'top' in position and 'left' in position else None
+    except:
+        return None
+
+
+def _clean_inner_html(content: str) -> str:
+    """Clean inner HTML content while preserving structure"""
+    # Remove excessive whitespace but preserve HTML tags
+    content = re.sub(r'\s+', ' ', content)
+    content = content.strip()
+    return content
 
 
 def _normalize_text_for_matching(text: str) -> str:
     """Normalize text for fuzzy matching"""
+    # Remove HTML tags for comparison
+    text_only = re.sub(r'<[^>]+>', '', text)
     # Replace multiple whitespace with single space, strip, lowercase
-    normalized = re.sub(r'\s+', ' ', text.strip().lower())
-    # Remove common problematic characters
-    normalized = re.sub(r'[\n\r\t\b]', ' ', normalized)
-    return re.sub(r'\s+', ' ', normalized).strip()
+    normalized = re.sub(r'\s+', ' ', text_only.strip().lower())
+    return normalized
 
 
-def _match_block_to_spans(block_text: str, spans: List[Dict[str, str]]) -> str:
-    """Match a text block to HTML spans and reconstruct styled HTML"""
-    if not spans:
-        return html.escape(block_text)
+def _find_matching_html_elements(block_text: str, block_bbox: List[float], html_elements: List[Dict[str, Any]]) -> str:
+    """
+    Find HTML elements that match the given text block based on content and position.
+    Returns the combined HTML content for the matching elements.
+    """
+    x0, y0, x1, y1 = block_bbox
+    normalized_block_text = _normalize_text_for_matching(block_text)
     
-    # Normalize the block text for matching
-    normalized_block = _normalize_text_for_matching(block_text)
+    matching_elements = []
     
-    # Build a list of all span texts concatenated to see if it matches
-    all_spans_text = ' '.join(span["text"] for span in spans)
-    normalized_spans = _normalize_text_for_matching(all_spans_text)
-    
-    # If the normalized texts are very similar, use the spans
-    if normalized_block in normalized_spans or normalized_spans in normalized_block:
-        # Try to match spans in order
-        result_html = ""
-        remaining_text = block_text
+    for element in html_elements:
+        # Check if element position overlaps with block bbox
+        pos = element['position']
+        elem_top = pos['top']
+        elem_left = pos['left']
+        elem_height = pos.get('height', 12)  # Default height if not specified
         
-        for span in spans:
-            span_text = span["text"]
-            normalized_span = _normalize_text_for_matching(span_text)
-            normalized_remaining = _normalize_text_for_matching(remaining_text)
+        # Simple overlap check - element should be within or near the block bounds
+        if (elem_left >= x0 - 5 and elem_left <= x1 + 5 and  # Allow small margin
+            elem_top >= y0 - 5 and elem_top <= y1 + elem_height + 5):
             
-            # Check if this span's text appears at the start of remaining text
-            if normalized_remaining.startswith(normalized_span):
-                # Add this span to result
-                result_html += f'<span style="{span["style"]}">{html.escape(span_text)}</span>'
-                
-                # Remove the matched text from remaining (roughly)
-                # This is approximate - we find where this text appears and remove it
-                span_len = len(span_text)
-                # Find the actual position in the original text (accounting for normalization differences)
-                pos = 0
-                for i in range(min(len(remaining_text), span_len * 2)):
-                    if _normalize_text_for_matching(remaining_text[i:i+span_len]) == normalized_span:
-                        pos = i + span_len
-                        break
-                if pos > 0:
-                    remaining_text = remaining_text[pos:]
-                else:
-                    # Fallback: remove approximately the same amount
-                    remaining_text = remaining_text[span_len:]
+            # Also check if text content matches
+            elem_text = _normalize_text_for_matching(element['content'])
+            
+            # If texts match or one contains the other, it's likely a match
+            if (elem_text in normalized_block_text or 
+                normalized_block_text in elem_text or
+                _text_similarity(elem_text, normalized_block_text) > 0.8):
+                matching_elements.append(element)
+    
+    if matching_elements:
+        # Sort by position (top, then left) to maintain reading order
+        matching_elements.sort(key=lambda e: (e['position']['top'], e['position']['left']))
         
-        # If we have leftover text, add it without styling
-        if remaining_text.strip():
-            result_html += html.escape(remaining_text.strip())
-        
-        return result_html if result_html else html.escape(block_text)
-    else:
-        # No good match found, return plain escaped text
-        return html.escape(block_text)
+        # Combine the HTML content
+        combined_html = ''.join(elem['raw_html'] for elem in matching_elements)
+        return combined_html
+    
+    # No matches found, return escaped plain text
+    return html.escape(block_text)
+
+
+def _text_similarity(text1: str, text2: str) -> float:
+    """Calculate simple text similarity between two strings"""
+    if not text1 or not text2:
+        return 0.0
+    
+    # Simple similarity based on common words
+    words1 = set(text1.split())
+    words2 = set(text2.split())
+    
+    if not words1 or not words2:
+        return 0.0
+    
+    intersection = words1.intersection(words2)
+    union = words1.union(words2)
+    
+    return len(intersection) / len(union) if union else 0.0
 
 
 def extract_text_blocks_with_styling(pdf_path: str, output_filename: str, temp_dir: str | None = None) -> str:
     """
-    Extract text blocks with bounding boxes and font styling information from a PDF.
+    Extract text blocks with bounding boxes and complete HTML styling information from a PDF.
+    
+    This version parses the full page HTML and matches elements to text blocks based on 
+    position and content, since the clip parameter doesn't work with HTML extraction.
     
     Args:
         pdf_path: Path to the PDF file to process
@@ -157,16 +204,16 @@ def extract_text_blocks_with_styling(pdf_path: str, output_filename: str, temp_d
         for page_num in range(total_pages):
             page: Page = cast(Page, doc[page_num])
             
-            # Get HTML representation of the page
-            html_content = page.get_text("html")
+            # Get full page HTML once
+            page_html = page.get_text("html")
             
-            # Extract all spans from HTML with their styling
-            spans = _extract_spans_from_html(html_content)
+            # Parse HTML to extract all elements with positions
+            html_elements = _parse_html_elements(page_html)
             
             # Get text blocks for semantic grouping
             blocks: List[Tuple[float, float, float, float, str, int, int]] = page.get_text("blocks", sort=True)
             
-            # Process each text block and match it to HTML spans
+            # Process each text block and find matching HTML elements
             for blk in blocks:
                 x0, y0, x1, y1, block_text, block_no, block_type = blk
                 
@@ -174,13 +221,17 @@ def extract_text_blocks_with_styling(pdf_path: str, output_filename: str, temp_d
                 if not block_text.strip() or block_type != 0:
                     continue
                 
-                # Try to match this block's text to spans and reconstruct styled HTML
-                styled_html = _match_block_to_spans(block_text.strip(), spans)
+                # Find HTML elements that match this text block
+                styled_html = _find_matching_html_elements(
+                    block_text.strip(), 
+                    [x0, y0, x1, y1], 
+                    html_elements
+                )
                 
                 # Create text block using Pydantic model
                 text_block = TextBlock(
                     page_number=page_num + 1,
-                    text=styled_html,  # Reconstructed HTML with semantic grouping
+                    text=styled_html,  # Matched HTML with complete styling
                     plain_text=block_text.strip(),  # Clean plain text from block
                     bbox=[x0, y0, x1, y1]
                 )
