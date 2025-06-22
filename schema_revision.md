@@ -6,7 +6,7 @@ As in the DOM, we will have an enum to represent whether the node is an element 
 
 We'll exclude page headers and footers in our HTML. Each HTML element will have `data-start-page` and (optionally, if the element spans multiple pages) `data-end-page` attributes, which will use PDF page numbers. We'll have an LLM map PDF page numbers to logical page numbers and use that to enrich the positional data. We'll also likely use cosine similarity to map elements to PDF text blocks to extract the bounding box for enriching our database records with positional data.
 
-We must limit the tags available to the LLM to those we want to support, e.g., `header`, `main`, `footer`, `figure`, `figcaption`, `table`, `th`, `tr`, `td`, `caption`, `title`, `section`, `nav`, `aside`, `p`, `ul`, `ol`, `li`, `h1`, `h2`, `h3`, `h4`, `h5`, `h6`, `i`, `b`, `u`, `s`, `sup`, `sub`, `a`, `img`, `svg`, `math`, `code`, `cite`, `blockquote`.
+We must limit the tags available to the LLM to those we want to support, e.g., `header`, `main`, `footer`, `figure`, `figcaption`, `table`, `th`, `tr`, `td`, `caption`, `title`, `section`, `nav`, `aside`, `p`, `ul`, `ol`, `li`, `h1`, `h2`, `h3`, `h4`, `h5`, `h6`, `i`, `b`, `u`, `s`, `sup`, `sub`, `a`, `img`, `math`, `code`, `cite`, `blockquote`.
 
 For `TEXT_NODE`s and `img`-typed `ELEMENT_NODE`s, we will have a corresponding record in a content data table that will contain the text content or the image URL, respectively.
 
@@ -46,7 +46,6 @@ erDiagram
         string H6
         string A
         string IMG
-        string SVG
         string MATH
         string CODE
         string CITE
