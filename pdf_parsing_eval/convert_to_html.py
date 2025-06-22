@@ -2,7 +2,7 @@ import json
 import os
 from typing import List, Dict
 
-from models import BlocksDocument, Block, TextBlock, ImageBlock, SvgBlock
+from .models import BlocksDocument, Block, TextBlock, ImageBlock, SvgBlock
 
 
 def format_bbox(bbox: List[float]) -> str:

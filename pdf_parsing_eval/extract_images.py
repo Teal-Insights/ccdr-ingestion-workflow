@@ -13,7 +13,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 import pymupdf
 from pathlib import Path
 from typing import List, Dict, Any, Optional, cast
-from models import ImageBlock, BlocksDocument, Block
+from .models import ImageBlock, BlocksDocument, Block
 
 # Global semaphore to limit concurrent API calls
 _api_semaphore = asyncio.Semaphore(2)  # Allow up to 2 concurrent API calls

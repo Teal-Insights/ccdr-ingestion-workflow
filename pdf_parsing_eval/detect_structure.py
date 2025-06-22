@@ -1,23 +1,7 @@
-# We want a detect_structure function that takes the path to an HTML file with numbered divs (corresponding to PDF blocks)
-# Take a look at extract_images.py to see how to call Gemini with LiteLLM to submit the HTML text and generate the structured output (we won't need concurrency this time)
-# LLM should return JSON object with inclusive block number ranges for header, main, footer, corresponding to front matter, body matter, and back matter of the document
-# Example:
-# {
-#   "header": "1-3,5,7-9",
-#   "main": "4,6,10-12",
-#   "footer": "13-15"
-# }
-# Support comma-separated ranges and hyphenated ranges
-# Convert number ranges to lists or some other iterable containing all the block numbers (ints) for each section
-# Allow any of the sections to be empty (no pages corresponding to that section)
-# Enforce that all blocks are included in one of the sections
-# Generate a JSON BlocksDocument file (see models.py) for each section and return a list of section_name, file_path pairs
-# Planned for future: check token length of HTML corresponding to each section to see if it exceeds LLM output limit, in which case we need to get next level of section structure
-
 import os
 import json
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Set
+from typing import List, Tuple, Optional, Literal
 from functools import partial
 import asyncio
 import pydantic
@@ -26,7 +10,7 @@ from litellm import completion
 from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
 
-from models import BlocksDocument, Block
+from .models import BlocksDocument, Block
 
 
 class DocumentStructure(pydantic.BaseModel):
@@ -217,7 +201,7 @@ async def detect_structure(
     blocks_json_path: str,
     output_dir: str,
     api_key: Optional[str] = None
-) -> List[Tuple[str, str]]:
+) -> List[Tuple[Literal["header", "main", "footer"], str]]:
     """
     Detect document structure from HTML file and generate separate BlocksDocument files for each section.
     

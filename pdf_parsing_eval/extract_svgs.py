@@ -15,7 +15,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from litellm import acompletion, Choices
 from litellm.files.main import ModelResponse
 from pydantic import BaseModel
-from models import SvgBlock, BlocksDocument, Block
+from .models import SvgBlock, BlocksDocument, Block
 
 dotenv.load_dotenv(override=True)
 

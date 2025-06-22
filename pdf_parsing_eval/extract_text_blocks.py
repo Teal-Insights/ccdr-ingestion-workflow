@@ -7,7 +7,7 @@ import re
 import html
 from typing import Any, Dict, List, Tuple, Union, cast, Literal, overload
 from pathlib import Path
-from models import TextBlock, BlocksDocument, Block
+from .models import TextBlock, BlocksDocument, Block
 
 
 """Type stub for PyMuPDF dynamically added method"""

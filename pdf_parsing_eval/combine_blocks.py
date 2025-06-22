@@ -2,7 +2,7 @@ import json
 import os
 from typing import List, Dict, Any
 from pathlib import Path
-from models import BlocksDocument
+from .models import BlocksDocument
 
 
 def _get_block_sort_key(block: Dict[str, Any]) -> tuple:
