@@ -1,7 +1,7 @@
 [project]
-name = "pdf-parsing-eval"
-version = "0.1.0"
-description = "Add your description here"
+name = "ccdr-ingestion-workflow"
+version = "0.0.1"
+description = "Complete workflow to transform the World Bank Country and Climate Development Reports (CCDRs) to a RAG-friendly schema and upload them to PostgreSQL"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -9,6 +9,5 @@ dependencies = [
     "pillow>=11.2.1",
     "pydantic>=2.11.5",
     "pymupdf>=1.26.0",
-    "python-levenshtein>=0.27.1",
     "tenacity>=9.1.2",
 ]

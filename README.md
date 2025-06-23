@@ -1,39 +1,217 @@
-I would like to create some evals to measure workflow performance both on the individual subtasks and on the end-to-end workflow. We should create the most naive possible version of the end-to-end workflow and start with that. Then I'll see if I can improve on that. To measure performance, I can probably just use cosine similarity to a human-produced result.
+# CCDR Ingestion Workflow
 
-The steps, as I see them, roughly in order of priority/practicality:
+A complete workflow to transform World Bank Country and Climate Development Reports (CCDRs) from PDF format into a RAG-friendly schema and upload them to PostgreSQL for semantic search and retrieval.
 
-1. Create, for a few PDF pages, my own ideal human-produced example and a simple eval scoring script.
-2. Try giving Google Gemini a few PDF pages with a prompt to see what it can do out of the box. Try with both the actual PDF pages extracted from file and then with images of the pages.
-3. Run a PDF through a few commercial and open-source tools to see what outputs we get.
-4. Try using an LLM to draw bounding boxes around both text and images with an array to indicate reading order, and then mechanically extract. (Section hierarchy a challenge here; can we enrich with hierarchical heading extraction?)
-5. Try mechanical text extraction with markdown and see if maybe we can de mechanical image extraction as well, even though the images are SVGs and their boundaries are therefore hard to detect. (Reading order and section hierarchy a challenge here; can we guess them mechanically?)
-6. Try mechanical text extraction plus VLM image extraction. (Reading order and section hierarchy a challenge here; can we guide with an LLM?)
+## Overview
 
-There's a bunch of non-visible text here that we need to strip out. Here is Gemini's analysis of that:
+This project processes PDF documents through a multi-stage pipeline that extracts text, images, and vector graphics, then uses Large Language Models (LLMs) to clean and structure the content into semantic HTML before converting it to a graph database schema optimized for Retrieval-Augmented Generation (RAG) applications.
 
-```markdown
-Yes, your observation is correct. The text is invisible because it is positioned behind a full-page image.
+## Architecture
 
-Here is a breakdown of why:
+The pipeline consists of 10 main stages:
 
-1.  **Text Block:** The text "West Bank and Gaza Country Climate and Development Report" is located in `blocks[0]`. Its bounding box is `[253.75, 738.42, 512.63, 751.29]`.
+1. **Text Block Extraction** - Extract text blocks with styling and positioning from PDF
+2. **Image Extraction** - Extract and describe images using vision-language models
+3. **SVG Extraction** - Extract vector graphics and generate descriptions
+4. **Block Combination** - Merge all extracted blocks into a unified document
+5. **HTML Conversion** - Convert blocks to structured HTML with semantic IDs
+6. **Structure Detection** - Use LLM to identify document sections (header/main/footer)
+7. **Rich HTML Generation** - Create styled HTML with positioning data
+8. **HTML Cleaning** - LLM-based cleaning to conform to semantic specification
+9. **Graph Conversion** - Transform HTML DOM to database graph schema
+10. **Relation Enrichment** - Generate relationships from anchor tags and references
 
-2.  **Image Block:** There is a full-page background image defined in `blocks[2]`. Its bounding box is `[0.0, 0.0, 612.0, 792.0]`, which covers the entire page and therefore completely overlaps the area where the text is located.
+## Schema Evolution
 
-3.  **Stacking Order:** In this JSON structure, blocks are typically rendered in the order they appear. Since the text block `blocks[0]` comes before the full-page image `blocks[2]`, the image is drawn on top of the text, obscuring it from view.
+The project has evolved from a complex multi-stage schema (see `schema_legacy.md`) to a simplified DOM-based approach (see `schema_revision.md`). The current schema closely follows HTML DOM structure while adding semantic enrichments through data attributes and relationships.
 
-Additionally, the text color is `2301728` (a very dark gray, almost black). The footer area of the document is also dark, so even if the text were visible, it would have extremely low contrast against the background.
+### Current Schema Features
+
+- **DOM-based Structure**: Mirrors HTML element hierarchy for easy reconstruction
+- **Semantic Enrichment**: Uses `data-section-type` attributes for rich semantic labeling
+- **Positional Data**: Maintains PDF page numbers and bounding boxes
+- **Content Relationships**: Captures citations, footnotes, and cross-references
+- **Multi-modal Support**: Handles text, images, and vector graphics uniformly
+
+## Installation
+
+This project uses `uv` for dependency management:
+
+```bash
+# Install dependencies
+uv sync
+
+# Or add new dependencies
+uv add package_name
 ```
 
-We also should handle cases where the alpha channel is 0 and where the text is positioned outside the page area.
+## Configuration
 
-For some reason, the `extract_text.py` script does not appear to extract page numbers in the footer. Possibly the information is stored separately from the page object.
+Set up your environment variables:
 
-Things I want to prompt for and test:
-1. Logical page numbers are correctly mapped to PDF page numbers.
-2. We have FRONT_MATTER and BODY_MATTER at the top level, correctly sequenced and paginated (though assignment of page 12 to either or neither section is permissible).
-3. Invisible text is correctly identified and removed.
-4. No visible text is removed (unless it's redundant, part of a header/footer, or trailing whitespace, in which case including it is optional).
-5. All array items match the schema.
+```bash
+# Required API keys
+export GEMINI_API_KEY="your_gemini_api_key"
+export DEEPSEEK_API_KEY="your_deepseek_api_key"
+```
 
-I'm a bit torn on how to handle markdown formatting, particularly bold, italic, and header text. I *think* it might be optimal to leave headings unformatted, and then use the hierarchy of document components at runtime to add the appropriate formatting. That way we don't make mistakes in adding such formatting during ingestion, and if we edit the document component graph, we don't also have to edit the markdown. We could perhaps use a Postgres function to add the appropriate formatting to markdown headings based on the component hierarchy. We can then hardcode the markdown formatting for any other bold or italic text in the markdown that isn't just part of a heading style. This gets a bit dicey in that it adds a lot of complexity to the ingestion process and the component hierarchy, but it makes things easier at query time.
+Or create a `.env` file:
+
+```
+GEMINI_API_KEY=your_gemini_api_key
+DEEPSEEK_API_KEY=your_deepseek_api_key
+```
+
+## Usage
+
+### Full Pipeline
+
+Run the complete pipeline on a PDF:
+
+```bash
+# Place your PDF as 'input.pdf' in the project root
+uv run main.py
+```
+
+This will process the PDF through all stages and output the results to a temporary directory.
+
+### Individual Stages
+
+You can also run individual components:
+
+#### Extract Text Blocks
+```bash
+uv run -m transform.extract_text_blocks document.pdf
+```
+
+#### Extract Images
+```bash
+uv run -m transform.extract_images document.pdf
+```
+
+#### Extract SVGs
+```bash
+uv run -m transform.extract_svgs document.pdf
+```
+
+#### Combine Blocks
+```bash
+uv run -m transform.combine_blocks output.json text_blocks.json images.json svgs.json
+```
+
+#### Convert to HTML
+```bash
+uv run -m transform.convert_to_html combined_blocks.json output.html --rich-text --bboxes --include-ids
+```
+
+#### Detect Structure
+```bash
+uv run -m transform.detect_structure document.html blocks.json output_dir/
+```
+
+#### Clean HTML
+```bash
+uv run -m transform.clean_html -i main:content.html -o cleaned.html -k YOUR_API_KEY
+```
+
+## Project Structure
+
+```
+ccdr-ingestion-workflow/
+├── main.py                    # Main pipeline orchestrator
+├── transform/                 # Core transformation modules
+│   ├── extract_text_blocks.py # Text extraction with styling
+│   ├── extract_images.py      # Image extraction and description
+│   ├── extract_svgs.py        # SVG extraction and description
+│   ├── combine_blocks.py      # Block combination utilities
+│   ├── convert_to_html.py     # Block-to-HTML conversion
+│   ├── detect_structure.py    # Document structure detection
+│   ├── clean_html.py          # LLM-based HTML cleaning
+│   ├── html_to_graph.py       # HTML-to-graph conversion (WIP)
+│   ├── create_relations.py    # Relationship extraction (WIP)
+│   └── models.py              # Pydantic data models
+├── sample_data/               # Sample data for different pipeline stages
+├── schema_legacy.md           # Previous schema design
+├── schema_revision.md         # Current schema design
+└── pyproject.toml            # Project dependencies
+```
+
+## Key Features
+
+### Multi-modal Content Extraction
+- **Text**: Preserves styling and semantic structure from PDF
+- **Images**: Automatic extraction with AI-generated descriptions
+- **Vector Graphics**: SVG extraction with content analysis
+
+### Intelligent Structure Detection
+- Uses Gemini LLM to identify document sections
+- Separates front matter, body, and back matter
+- Maintains reading order and hierarchical relationships
+
+### Semantic HTML Generation
+- Limited tag vocabulary for consistent structure
+- Rich data attributes for metadata preservation
+- Support for academic document features (citations, footnotes, etc.)
+
+### Concurrent Processing
+- Parallel LLM API calls for image/SVG description
+- Configurable concurrency limits to respect API rate limits
+- Async/await patterns for efficient processing
+
+### Flexible Output Formats
+- JSON blocks for programmatic processing
+- Structured HTML for human review
+- Graph schema for database ingestion
+
+## Dependencies
+
+- **PyMuPDF**: PDF parsing and content extraction
+- **Pillow**: Image processing
+- **LiteLLM**: Unified LLM API interface
+- **Pydantic**: Data validation and serialization
+- **Tenacity**: Retry logic for API calls
+
+## API Usage
+
+The project uses two LLM providers:
+- **Gemini**: Structure detection and image description
+- **DeepSeek**: HTML cleaning and SVG description
+
+Both APIs support concurrent requests with configurable rate limiting.
+
+## Development Status
+
+### Completed
+- ✅ Text, image, and SVG extraction
+- ✅ Block combination and HTML conversion
+- ✅ Structure detection with LLM
+- ✅ HTML cleaning and semantic conformance
+- ✅ Concurrent processing with rate limiting
+
+### In Progress
+- 🚧 HTML-to-graph conversion (`html_to_graph.py`)
+- 🚧 Relationship extraction from anchor tags (`create_relations.py`)
+- 🚧 Database ingestion and storage
+
+### Planned
+- 📋 Evals for model selection (for SVG description and HTML cleaning)
+- 📋 Logical page number mapping
+- 📋 Cosine similarity for block-to-PDF mapping
+- 📋 Vector embedding generation
+- 📋 Full database schema implementation
+
+## Contributing
+
+This project uses modern Python practices:
+- Type hints throughout
+- Pydantic models for data validation
+- Async/await for concurrent operations
+- Comprehensive error handling and retry logic
+
+## License
+
+MIT
+
+## Acknowledgments
+
+This project processes World Bank Country and Climate Development Reports (CCDRs) to make them more accessible for research and analysis through semantic search and retrieval systems.

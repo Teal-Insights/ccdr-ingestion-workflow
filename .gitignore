@@ -12,6 +12,9 @@ temp/
 *.json
 *.svg
 
+# Working files
+artifacts/
+
 # Virtual environments
 .venv
 

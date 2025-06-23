@@ -206,10 +206,10 @@ async def main():
         epilog="""
 Examples:
   # Single file
-  python -m pdf_parsing_eval.clean_html -i main:input.html -o output.html -k YOUR_API_KEY
+  python -m transform.clean_html -i main:input.html -o output.html -k YOUR_API_KEY
   
   # Multiple files
-  python -m pdf_parsing_eval.clean_html \\
+  python -m transform.clean_html \\
     -i header:header.html \\
     -i main:content1.html \\
     -i main:content2.html \\

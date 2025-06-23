@@ -3,13 +3,13 @@ import asyncio
 import tempfile
 import os
 from typing import Literal
-from pdf_parsing_eval.extract_text_blocks import extract_text_blocks_with_styling
-from pdf_parsing_eval.extract_images import extract_images_from_pdf
-from pdf_parsing_eval.extract_svgs import extract_svgs_from_pdf
-from pdf_parsing_eval.combine_blocks import combine_blocks
-from pdf_parsing_eval.convert_to_html import convert_blocks_to_html
-from pdf_parsing_eval.detect_structure import detect_structure
-from pdf_parsing_eval.clean_html import process_html_inputs_concurrently
+from transform.extract_text_blocks import extract_text_blocks_with_styling
+from transform.extract_images import extract_images_from_pdf
+from transform.extract_svgs import extract_svgs_from_pdf
+from transform.combine_blocks import combine_blocks
+from transform.convert_to_html import convert_blocks_to_html
+from transform.detect_structure import detect_structure
+from transform.clean_html import process_html_inputs_concurrently
 
 dotenv.load_dotenv(override=True)
 
