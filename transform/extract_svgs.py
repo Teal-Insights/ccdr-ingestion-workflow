@@ -332,7 +332,7 @@ async def enrich_svg_block_with_description(
                 description_data = json.loads(json_str)
                 formatted_description = f"{description_data.get('label', 'unknown')}: {description_data.get('description', 'No description available')}"
                 svg_block_data["description"] = formatted_description
-            except:
+            except Exception:
                 # Final fallback: use raw response
                 svg_block_data["description"] = description_json
 
@@ -586,7 +586,7 @@ if __name__ == "__main__":
             )
         )
 
-        print(f"SVGs extracted successfully!")
+        print("SVGs extracted successfully!")
         print(f"Output file: {output_path}")
         print(f"Temporary directory: {temp_dir}")
         print(f"Note: Clean up temporary directory when done: rm -rf {temp_dir}")

@@ -209,7 +209,7 @@ if __name__ == "__main__":
             bboxes=args.bboxes,
             include_ids=args.include_ids,
         )
-        print(f"Successfully converted text blocks to HTML!")
+        print("Successfully converted text blocks to HTML!")
         print(f"Output file: {output_path}")
     except Exception as e:
         print(f"Error: {e}")

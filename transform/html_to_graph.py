@@ -1,7 +1,6 @@
 # Convert HTML to graph, but leave text formatting and anchor tags as plain text
 # Example implementation:
-from lxml import html, etree
-import json
+from lxml import html
 
 
 class LXMLConverter:

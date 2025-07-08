@@ -87,7 +87,8 @@ def _extract_position_from_style(style: str) -> Dict[str, float] | None:
             position["height"] = float(height_match.group(1))
 
         return position if "top" in position and "left" in position else None
-    except:
+    except Exception as e:
+        print(f"Error extracting position from style: {e}")
         return None
 
 
@@ -294,9 +295,9 @@ def main():
     import sys
 
     if len(sys.argv) < 2:
-        print("Usage: uv run extract_text_blocks.py <pdf_file> [output_filename]")
-        print("Example: uv run extract_text_blocks.py document.pdf")
-        print("Example: uv run extract_text_blocks.py document.pdf my_blocks.json")
+        print("Usage: uv run -m transform.extract_text_blocks <pdf_file> [output_filename]")
+        print("Example: uv run -m transform.extract_text_blocks document.pdf")
+        print("Example: uv run -m transform.extract_text_blocks document.pdf my_blocks.json")
         sys.exit(1)
 
     pdf_path = sys.argv[1]
@@ -308,7 +309,7 @@ def main():
 
     try:
         result_path = extract_text_blocks_with_styling(pdf_path, output_path, temp_dir)
-        print(f"Text blocks extracted successfully!")
+        print("Text blocks extracted successfully!")
         print(f"Output file: {result_path}")
         print(f"Temporary directory: {temp_dir}")
         print(f"Note: Clean up temporary directory when done: rm -rf {temp_dir}")

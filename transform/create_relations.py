@@ -1,3 +1,6 @@
+from sqlalchemy import Column, Integer, String, Text, Boolean, JSON
+from sqlalchemy.ext.declarative import declarative_base
+
 # Create relations from anchor tags
 # Post-process anchor tags in content nodes to remove href attributes and add data-relation-id attributes
 
@@ -54,9 +57,6 @@ class DocumentGraph:
 
 
 # Example SQLAlchemy integration:
-from sqlalchemy import create_engine, Column, Integer, String, Text, Boolean, JSON
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
 
 Base = declarative_base()
 

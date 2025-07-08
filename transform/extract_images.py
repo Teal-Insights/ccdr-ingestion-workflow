@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, cast
 from .models import ImageBlock, BlocksDocument, Block
 
-# Global semaphore to limit concurrent API calls
-_api_semaphore = asyncio.Semaphore(2)  # Allow up to 2 concurrent API calls
+# Global semaphore to limit concurrent API calls to 2
+_api_semaphore = asyncio.Semaphore(2)
 
 
 class ImageDescription(pydantic.BaseModel):
@@ -64,7 +64,7 @@ async def describe_image_with_vlm(
             None,
             partial(
                 completion,
-                model="gemini/gemini-2.5-flash-preview-05-20",
+                model="gemini/gemini-2.5-flash",
                 messages=messages,
                 temperature=0.0,
                 response_format={
@@ -299,8 +299,8 @@ if __name__ == "__main__":
     dotenv.load_dotenv(override=True)
 
     if len(sys.argv) < 2:
-        print("Usage: uv run extract_images.py <pdf_file>")
-        print("Example: uv run extract_images.py document.pdf")
+        print("Usage: uv run -m transform.extract_images <pdf_file>")
+        print("Example: uv run -m transform.extract_images document.pdf")
         sys.exit(1)
 
     pdf_path = sys.argv[1]
@@ -319,7 +319,7 @@ if __name__ == "__main__":
                 images_dir=images_dir,
             )
         )
-        print(f"Images extracted successfully!")
+        print("Images extracted successfully!")
         print(f"Output file: {output_path}")
         print(f"Temporary directory: {temp_dir}")
         print(f"Note: Clean up temporary directory when done: rm -rf {temp_dir}")
