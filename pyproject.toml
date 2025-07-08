@@ -11,3 +11,8 @@ dependencies = [
     "pymupdf>=1.26.0",
     "tenacity>=9.1.2",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12.2",
+]

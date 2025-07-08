@@ -62,138 +62,161 @@ Input HTML:
 
 def extract_html_from_markdown(content: str) -> str:
     """Extract HTML content from markdown code fence if present."""
-    if '```html' in content:
+    if "```html" in content:
         # Take whatever is between ```html ... ```
-        return content.split('```html')[1].split('```')[0].strip()
+        return content.split("```html")[1].split("```")[0].strip()
     return content.strip()
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-async def clean_html_with_llm(input_html: str, api_key: str, semaphore: asyncio.Semaphore) -> str:
+async def clean_html_with_llm(
+    input_html: str, api_key: str, semaphore: asyncio.Semaphore
+) -> str:
     """Clean HTML using LLM with semaphore to limit concurrent calls"""
     async with semaphore:
         response = await acompletion(
-            model="deepseek/deepseek-chat", 
+            model="deepseek/deepseek-chat",
             messages=[
                 {"role": "user", "content": PROMPT.format(input_html=input_html)}
             ],
             api_key=api_key,
         )
-        if response and isinstance(response, ModelResponse) and isinstance(response.choices[0], Choices) and response.choices[0].message.content:
+        if (
+            response
+            and isinstance(response, ModelResponse)
+            and isinstance(response.choices[0], Choices)
+            and response.choices[0].message.content
+        ):
             return extract_html_from_markdown(response.choices[0].message.content)
         else:
             raise Exception("No valid response from LLM")
 
 
-async def process_html_file(file_path: str, api_key: str, semaphore: asyncio.Semaphore) -> str:
+async def process_html_file(
+    file_path: str, api_key: str, semaphore: asyncio.Semaphore
+) -> str:
     """Process a single HTML file and return cleaned HTML"""
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         input_html = f.read()
     return await clean_html_with_llm(input_html, api_key, semaphore)
 
 
 async def process_html_inputs_concurrently(
-    html_input_paths: list[tuple[Literal["header", "main", "footer"], str]], 
-    output_path: str, 
+    html_input_paths: list[tuple[Literal["header", "main", "footer"], str]],
+    output_path: str,
     api_key: str,
-    max_concurrent_calls: int = 5
+    max_concurrent_calls: int = 5,
 ) -> str:
     """
     Process multiple HTML input files concurrently and assemble into a single clean HTML document.
-    
+
     Args:
         html_input_paths: List of tuples where each tuple contains (section_type, file_path)
         output_path: Path where the assembled HTML file will be written
         api_key: API key for the LLM service
         max_concurrent_calls: Maximum number of concurrent LLM API calls
-        
+
     Returns:
         Path to the output HTML file
     """
     semaphore = asyncio.Semaphore(max_concurrent_calls)
-    
-    print(f"🚀 Processing {len(html_input_paths)} HTML files with max {max_concurrent_calls} concurrent calls...")
-    
+
+    print(
+        f"🚀 Processing {len(html_input_paths)} HTML files with max {max_concurrent_calls} concurrent calls..."
+    )
+
     # Create tasks for all input files
     tasks = []
     for section_type, file_path in html_input_paths:
         task = process_html_file(file_path, api_key, semaphore)
         tasks.append((section_type, file_path, task))
-    
+
     # Execute all tasks concurrently
     results = []
     for section_type, file_path, task in tasks:
         try:
             cleaned_html = await task
             results.append((section_type, cleaned_html))
-            print(f"  ✅ Processed {section_type} section from {os.path.basename(file_path)}")
+            print(
+                f"  ✅ Processed {section_type} section from {os.path.basename(file_path)}"
+            )
         except Exception as e:
-            print(f"  ❌ Failed to process {section_type} section from {os.path.basename(file_path)}: {e}")
-            results.append((section_type, f"<!-- Error processing {section_type}: {e} -->"))
-    
+            print(
+                f"  ❌ Failed to process {section_type} section from {os.path.basename(file_path)}: {e}"
+            )
+            results.append(
+                (section_type, f"<!-- Error processing {section_type}: {e} -->")
+            )
+
     # Assemble the final HTML document
     html_sections = {"header": [], "main": [], "footer": []}
-    
+
     for section_type, content in results:
         html_sections[section_type].append(content)
-    
+
     # Build the final HTML structure
     html_parts = ["<html>", "<body>"]
-    
+
     # Add header sections
     if html_sections["header"]:
         html_parts.append("<header>")
         html_parts.extend(html_sections["header"])
         html_parts.append("</header>")
-    
+
     # Add main sections
     if html_sections["main"]:
         html_parts.append("<main>")
         html_parts.extend(html_sections["main"])
         html_parts.append("</main>")
-    
+
     # Add footer sections
     if html_sections["footer"]:
         html_parts.append("<footer>")
         html_parts.extend(html_sections["footer"])
         html_parts.append("</footer>")
-    
+
     html_parts.extend(["</body>", "</html>"])
-    
+
     # Write the assembled HTML to file
     final_html = "\n".join(html_parts)
-    
+
     # Ensure output directory exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    
-    with open(output_path, 'w', encoding='utf-8') as f:
+
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(final_html)
-    
+
     print(f"✅ Assembled HTML document written to: {output_path}")
     return output_path
 
 
-def parse_input_spec(input_spec: str) -> tuple[Literal["header", "main", "footer"], str]:
+def parse_input_spec(
+    input_spec: str,
+) -> tuple[Literal["header", "main", "footer"], str]:
     """
     Parse input specification in format 'section_type:file_path'
-    
+
     Args:
         input_spec: String in format 'header:path/to/file.html' or 'main:path/to/file.html' or 'footer:path/to/file.html'
-        
+
     Returns:
         Tuple of (section_type, file_path)
     """
-    if ':' not in input_spec:
-        raise ValueError(f"Invalid input spec '{input_spec}'. Expected format: 'section_type:file_path'")
-    
-    section_type, file_path = input_spec.split(':', 1)
-    
+    if ":" not in input_spec:
+        raise ValueError(
+            f"Invalid input spec '{input_spec}'. Expected format: 'section_type:file_path'"
+        )
+
+    section_type, file_path = input_spec.split(":", 1)
+
     if section_type not in ["header", "main", "footer"]:
-        raise ValueError(f"Invalid section type '{section_type}'. Must be one of: header, main, footer")
-    
+        raise ValueError(
+            f"Invalid section type '{section_type}'. Must be one of: header, main, footer"
+        )
+
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Input file not found: {file_path}")
-    
+
     # Type cast to satisfy the type checker since we've validated the value
     return section_type, file_path  # type: ignore
 
@@ -216,53 +239,58 @@ Examples:
     -i footer:footer.html \\
     -o assembled_document.html \\
     -k YOUR_API_KEY
-        """
+        """,
     )
-    
+
     parser.add_argument(
-        "-i", "--input",
+        "-i",
+        "--input",
         action="append",
         required=True,
-        help="Input HTML files in format 'section_type:file_path' where section_type is header|main|footer. Can be specified multiple times."
+        help="Input HTML files in format 'section_type:file_path' where section_type is header|main|footer. Can be specified multiple times.",
     )
-    
+
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         required=True,
-        help="Output path for the assembled HTML document"
+        help="Output path for the assembled HTML document",
     )
-    
+
     parser.add_argument(
-        "-k", "--api-key",
-        help="API key for DeepSeek LLM service (if not provided, will try to load DEEPSEEK_API_KEY from environment)"
+        "-k",
+        "--api-key",
+        help="API key for DeepSeek LLM service (if not provided, will try to load DEEPSEEK_API_KEY from environment)",
     )
-    
+
     parser.add_argument(
-        "-c", "--max-concurrent",
+        "-c",
+        "--max-concurrent",
         type=int,
         default=3,
-        help="Maximum number of concurrent LLM API calls (default: 3)"
+        help="Maximum number of concurrent LLM API calls (default: 3)",
     )
-    
+
     parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Enable verbose output"
+        "-v", "--verbose", action="store_true", help="Enable verbose output"
     )
-    
+
     args = parser.parse_args()
-    
+
     # Handle API key - try command line first, then environment
     api_key = args.api_key
     if not api_key:
         dotenv.load_dotenv(override=True)
         api_key = os.getenv("DEEPSEEK_API_KEY")
         if not api_key:
-            print("Error: No API key provided. Either use --api-key or set DEEPSEEK_API_KEY environment variable.", file=sys.stderr)
+            print(
+                "Error: No API key provided. Either use --api-key or set DEEPSEEK_API_KEY environment variable.",
+                file=sys.stderr,
+            )
             sys.exit(1)
         elif args.verbose:
             print("Using DEEPSEEK_API_KEY from environment")
-    
+
     # Parse input specifications
     try:
         html_input_paths = []
@@ -274,18 +302,15 @@ Examples:
     except (ValueError, FileNotFoundError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-    
+
     # Process the HTML files
     try:
         result_path = await process_html_inputs_concurrently(
-            html_input_paths,
-            args.output,
-            api_key,
-            args.max_concurrent
+            html_input_paths, args.output, api_key, args.max_concurrent
         )
-        
+
         print(f"\n🎉 Success! Cleaned HTML document saved to: {result_path}")
-        
+
     except Exception as e:
         print(f"Error processing HTML files: {e}", file=sys.stderr)
         sys.exit(1)

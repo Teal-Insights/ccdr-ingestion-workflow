@@ -4,7 +4,7 @@ A complete workflow to transform World Bank Country and Climate Development Repo
 
 ## Overview
 
-This project processes PDF documents through a multi-stage pipeline that extracts text, images, and vector graphics, then uses Large Language Models (LLMs) to clean and structure the content into semantic HTML before converting it to a graph database schema optimized for Retrieval-Augmented Generation (RAG) applications.
+This project processes PDF documents through a multi-stage pipeline that extracts text, images, and vector graphics, then uses Large Language Models (LLMs) to clean and structure the content into semantic HTML before converting it to a graph database schema optimized for Retrieval-Augmented Generation (RAG) applications. [See here](https://github.com/Teal-Insights/ccdr-explorer-api/blob/main/schema.md) for the database schema and discussion of schema design.
 
 ## Architecture
 
