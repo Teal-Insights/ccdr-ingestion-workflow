@@ -1,3 +1,20 @@
+"""
+OPTIMAL SOLUTION:
+Columns: ['page.get_svg_image', 'page.get_text("html")', 'page.get_text("blocks")', 'page.get_images']
+
+Coverage details:
+  Full image bounding box: page.get_images = Y
+  Usable PNG/JPG images: page.get_images = Y
+  Usable SVG images: page.get_svg_image = Y
+  Path invisibility detection: page.get_svg_image + element.is_visible (playwright) = Y
+  Readable text: page.get_text("html") = Y
+  Semantic grouping: page.get_text("html") = Y
+  Granular CSS styles: page.get_text("html") = Y
+  Full text bounding box: page.get_text("blocks") = Y
+  Text invisibility detection: page.get_text("html") + element.is_visible (playwright) = Y
+"""
+
+
 import dotenv
 import asyncio
 import tempfile
@@ -28,36 +45,24 @@ print(f"Using temporary directory: {temp_dir}")
 pdf_path: str = "input.pdf"
 print(f"Processing PDF: {pdf_path}")
 
-# 1. Extract the text blocks from the PDF
-# Writes transform.models.BlocksDocument object to <temp_dir> / text_blocks.json
-# TODO: Blocks' text field contains HTML with in-line styles that still need cleaning
-# Extract unique styles and have an LLM write a transformation rule for each one
-blocks_output_file_path: str = os.path.join(temp_dir, "text_blocks.json")
-extracted_text_blocks_path: str = extract_text_blocks_with_styling(
-    pdf_path, blocks_output_file_path, temp_dir
-)
-print(f"Text blocks extracted successfully to {extracted_text_blocks_path}!")
-
-# 2. Extract the images from the PDF as blocks
-# Writes transform.models.BlocksDocument object to <temp_dir> / images.json
-# Description will have format "label: description"
-# TODO: Pass text context with image to Gemini to improve description
-images_output_file_path: str = os.path.join(temp_dir, "images.json")
-images_dir: str = os.path.join(temp_dir, "images")
-extracted_image_blocks_path: str = extract_images_from_pdf(
-    pdf_path,
-    images_output_file_path,
-    images_dir=images_dir
+# 1. Extract ImageBlocks and write BlocksDocument to <temp_dir>/images.json
+extracted_image_blocks_path, images_dir = extract_images_from_pdf(
+    pdf_path, os.path.join(temp_dir, "images.json"), images_dir=os.path.join(temp_dir, "images")
 )
 print("Image blocks extracted successfully!")
 
-# 3. Extract the SVGs from the PDF and add them as blocks
-svg_output_file_path: str = os.path.join(temp_dir, "svgs.json")
+# 2. Extract the SvgBlocks from the PDF and write BlocksDocument to <temp_dir>/svgs.json
 svgs_dir: str = os.path.join(temp_dir, "svgs")
 extracted_svg_blocks_path: str = extract_svgs_from_pdf(
-    pdf_path, svg_output_file_path, svgs_dir=svgs_dir
+    pdf_path, os.path.join(temp_dir, "svgs.json"), svgs_dir=svgs_dir
 )
 print("SVG blocks extracted successfully!")
+
+# 3. Extract TextBlocks from the PDF and write BlocksDocument to <temp_dir>/text_blocks.json
+extracted_text_blocks_path: str = extract_text_blocks_with_styling(
+    pdf_path, os.path.join(temp_dir, "text_blocks.json"), temp_dir
+)
+print(f"Text blocks extracted successfully to {extracted_text_blocks_path}!")
 
 # 4. Combine the blocks into a single JSON file
 combined_blocks_output_file_path: str = os.path.join(temp_dir, "combined_blocks.json")
@@ -72,6 +77,7 @@ combined_blocks_path: str = combine_blocks(
 print("Blocks combined successfully!")
 
 # 5. Describe the images and SVGs with a VLM
+# TODO: Pass text context with image to Gemini to improve description
 # TODO: Validate that all ImageBlocks and SvgBlocks have a description after this step
 descriptions_output_file_path: str = os.path.join(temp_dir, "described_blocks.json")
 described_blocks_path: str = asyncio.run(describe_images_in_json(
@@ -83,7 +89,11 @@ described_blocks_path: str = asyncio.run(describe_images_in_json(
 ))
 print("Images and SVGs described successfully!")
 
-# 6. Convert the blocks to HTML with plaintext and no bboxes
+# TODO: Blocks' text field contains HTML with in-line styles that still need cleaning
+# Extract unique styles and have an LLM write a transformation rule for each one
+
+# 6. Convert the blocks to HTML with ids, plaintext, and no bboxes
+# (This is purely about context length management and id tagging for the next step)
 html_output_file_path: str = os.path.join(temp_dir, "html.html")
 html_path: str = convert_blocks_to_html(
     combined_blocks_path,
@@ -94,7 +104,8 @@ html_path: str = convert_blocks_to_html(
 )
 print("HTML created successfully!")
 
-# 6. Detect the structure of the document and return paths to JSON blocksdocs for each section
+# 7. Detect the structure of the document and return paths to JSON blocksdocs for each section
+# (This is purely about content length management for the next step, since outputs can be max 8k tokens)
 structure_output_dir: str = os.path.join(temp_dir, "structure")
 structure_paths: list[tuple[Literal["header", "main", "footer"], str]] = asyncio.run(
     detect_structure(
@@ -103,7 +114,7 @@ structure_paths: list[tuple[Literal["header", "main", "footer"], str]] = asyncio
 )
 print("Structure detected successfully!")
 
-# 7. Convert the blocks to HTML with rich text and bboxes
+# 8. Convert the blocks to HTML with rich text and bboxes
 # (reuse the function from step 5 with different parameters)
 rich_html_output_paths: list[tuple[Literal["header", "main", "footer"], str]] = []
 for section_name, section_path in structure_paths:
@@ -122,7 +133,7 @@ for section_name, section_path in structure_paths:
     )
     print(f"Rich HTML created successfully for {section_name}!")
 
-# 8. Have an LLM clean and conform the HTML to our spec
+# 9. Have an LLM clean and conform the HTML to our spec
 cleaned_html_path: str = asyncio.run(
     process_html_inputs_concurrently(
         rich_html_output_paths,
@@ -133,9 +144,9 @@ cleaned_html_path: str = asyncio.run(
 )
 print("HTML cleaned and assembled successfully!")
 
-# 9. Transform the cleaned HTML document into a graph matching our schema and ingest it into our database
+# 10. Transform the cleaned HTML document into a graph matching our schema and ingest it into our database
 
 
-# 10. Enrich the database records by generating relations from anchor tags
+# 11. Enrich the database records by generating relations from anchor tags
 
 print(f"Pipeline completed! All outputs in: {temp_dir}")

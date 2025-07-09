@@ -3,7 +3,7 @@
 import os
 import pymupdf
 from pathlib import Path
-from typing import List, Dict, Any, Optional, cast
+from typing import List, Dict, Any, Optional, cast, Tuple
 from .models import ImageBlock, BlocksDocument, Block
 
 
@@ -61,7 +61,7 @@ def extract_images_from_pdf(
     pdf_path: str,
     output_filename: str,
     images_dir: Optional[str] = None,
-) -> str:
+) -> Tuple[str, str]:
     """
     Extract images from PDF and save as JSON blocks.
 
@@ -144,7 +144,7 @@ def extract_images_from_pdf(
         print(f"Results saved to: {output_filename}")
         print(f"Images saved to: {images_dir_path}")
 
-        return str(output_path.absolute())
+        return str(output_path.absolute()), str(images_dir_path.absolute())
 
     except Exception as e:
         print(f"Error processing PDF: {e}")
@@ -168,7 +168,7 @@ if __name__ == "__main__":
     images_dir = os.path.join(temp_dir, "images")
 
     try:
-        output_path = extract_images_from_pdf(
+        output_path, images_dir = extract_images_from_pdf(
             pdf_path=pdf_path,
             output_filename=output_filename,
             images_dir=images_dir,

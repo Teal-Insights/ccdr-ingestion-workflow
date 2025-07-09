@@ -1,6 +1,7 @@
 # TODO: add a check to ensure that the segmented SVG has a visible drawing
 #   - if we convert to PNG, does it have any contrast?
 #   - If we grab the portion of the page image that corresponds to the bounding box, does it have any contrast?
+#   - Can we use page.get_svg_image + element.is_visible (playwright) on each element and discard if not visible?
 # TODO: Use a clustering algorithm to group SVG elements that are part of the same drawing
 # TODO: Store the file in S3 and capture the actual storage url
 

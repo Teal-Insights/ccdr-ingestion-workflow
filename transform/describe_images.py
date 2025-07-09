@@ -1,4 +1,5 @@
 # TODO: Address case where Google Gemini can't differentiate white from transparent pixels
+# TODO: Make label and description separate fields in ImageBlock so we can enforce a label enum
 
 import asyncio
 import base64
