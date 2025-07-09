@@ -48,7 +48,7 @@ class ImageBlock(BaseBlock):
         description="Type of the block, always 'image' for image blocks",
     )
     storage_url: str = Field(description="Path or URL to the stored image file")
-    description: str = Field(
+    description: Optional[str] = Field(
         description="AI-generated description of the image content"
     )
 
@@ -62,7 +62,9 @@ class SvgBlock(BaseBlock):
         default="svg", description="Type of the block, always 'svg' for SVG blocks"
     )
     storage_url: str = Field(description="Path or URL to the stored SVG file")
-    description: str = Field(description="AI-generated description of the SVG content")
+    description: Optional[str] = Field(
+        description="AI-generated description of the SVG content"
+    )
 
 
 # Union type for all possible block types

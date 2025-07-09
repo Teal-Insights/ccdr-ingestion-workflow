@@ -1,23 +1,270 @@
-# TODO: clip canvas for each segmented SVG to the drawing area
 # TODO: add a check to ensure that the segmented SVG has a visible drawing
-# TODO: Store the file in S3 and catpure the actual storage url
+#   - if we convert to PNG, does it have any contrast?
+#   - If we grab the portion of the page image that corresponds to the bounding box, does it have any contrast?
+# TODO: Use a clustering algorithm to group SVG elements that are part of the same drawing
+# TODO: Store the file in S3 and capture the actual storage url
 
 import dotenv
-import json
 import os
 import re
 import tempfile
-import asyncio
-import time
-from typing import Type, List, cast
+import subprocess
+import numpy as np
+from typing import List, cast
 import pymupdf
-from tenacity import retry, stop_after_attempt, wait_exponential
-from litellm import acompletion, Choices
-from litellm.files.main import ModelResponse
-from pydantic import BaseModel
 from .models import SvgBlock, BlocksDocument, Block
+import svgelements
+from PIL import Image
 
 dotenv.load_dotenv(override=True)
+
+
+def has_visible_content(svg_content: str, min_variance_threshold: float = 100.0) -> bool:
+    """
+    Check if an SVG has visible content by converting it to PNG and analyzing pixel variance.
+    
+    Args:
+        svg_content: The SVG content as a string
+        min_variance_threshold: Minimum pixel variance to consider content "visible"
+        
+    Returns:
+        True if the SVG has visible content (sufficient contrast), False otherwise
+    """
+    try:
+        # Create a temporary SVG file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.svg', delete=False) as temp_svg:
+            temp_svg.write(svg_content)
+            temp_svg_path = temp_svg.name
+        
+        try:
+            # Try to use Inkscape first (most accurate SVG rendering)
+            temp_png_path = temp_svg_path.replace('.svg', '.png')
+            
+            # Try Inkscape first
+            try:
+                result = subprocess.run([
+                    'inkscape', 
+                    '--export-type=png',
+                    '--export-filename=' + temp_png_path,
+                    '--export-width=200',  # Small size for efficiency
+                    '--export-height=200',
+                    temp_svg_path
+                ], capture_output=True, text=True, timeout=10)
+                
+                if result.returncode != 0:
+                    raise subprocess.CalledProcessError(result.returncode, 'inkscape')
+                    
+            except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+                # Fallback to rsvg-convert if Inkscape fails or isn't available
+                try:
+                    result = subprocess.run([
+                        'rsvg-convert', 
+                        '-w', '200', 
+                        '-h', '200', 
+                        '-o', temp_png_path,
+                        temp_svg_path
+                    ], capture_output=True, text=True, timeout=10)
+                    
+                    if result.returncode != 0:
+                        raise subprocess.CalledProcessError(result.returncode, 'rsvg-convert')
+                        
+                except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+                    # Fallback to cairosvg if available
+                    try:
+                        import cairosvg
+                        cairosvg.svg2png(url=temp_svg_path, write_to=temp_png_path, output_width=200, output_height=200)
+                    except ImportError:
+                        print("  Warning: No SVG renderer available (tried inkscape, rsvg-convert, cairosvg)")
+                        return True  # Assume visible if we can't check
+                    except Exception as e:
+                        print(f"  Warning: Failed to render SVG with cairosvg: {e}")
+                        return True  # Assume visible if rendering fails
+            
+            # Check if PNG file was created
+            if not os.path.exists(temp_png_path):
+                print("  Warning: SVG rendering did not produce PNG file")
+                return True  # Assume visible if we can't check
+            
+            # Load the PNG and analyze pixels
+            try:
+                with Image.open(temp_png_path) as img:
+                    # Convert to grayscale for variance analysis
+                    if img.mode in ('RGBA', 'LA'):
+                        # Handle transparency by compositing on white background
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        if img.mode == 'RGBA':
+                            background.paste(img, mask=img.split()[-1])  # Use alpha channel as mask
+                        else:  # LA mode
+                            background.paste(img.convert('RGB'), mask=img.split()[-1])
+                        img = background
+                    
+                    gray_img = img.convert('L')
+                    pixels = np.array(gray_img)
+                    
+                    # Calculate pixel variance
+                    variance = np.var(pixels)
+                    
+                    print(f"  SVG pixel variance: {variance:.1f} (threshold: {min_variance_threshold})")
+                    
+                    # Clean up temporary PNG
+                    try:
+                        os.unlink(temp_png_path)
+                    except OSError:
+                        pass
+                    
+                    return bool(variance >= min_variance_threshold)
+                    
+            except Exception as e:
+                print(f"  Warning: Failed to analyze PNG: {e}")
+                return True  # Assume visible if analysis fails
+                
+        finally:
+            # Clean up temporary SVG
+            try:
+                os.unlink(temp_svg_path)
+            except OSError:
+                pass
+                
+    except Exception as e:
+        print(f"  Warning: Error checking SVG visibility: {e}")
+        return True  # Assume visible if check fails completely
+
+
+def extract_viewbox_values(svg_content: str) -> tuple[float, float, float, float] | None:
+    """
+    Extract viewBox values from SVG content.
+    
+    Returns:
+        Tuple of (x, y, width, height) or None if not found
+    """
+    viewbox_match = re.search(r'viewBox="([^"]+)"', svg_content)
+    if viewbox_match:
+        try:
+            values = [float(x) for x in viewbox_match.group(1).split()]
+            if len(values) == 4:
+                return tuple(values)  # type: ignore
+        except ValueError:
+            pass
+    return None
+
+
+def update_svg_viewbox_and_dimensions(svg_content: str, x: float, y: float, width: float, height: float) -> str:
+    """
+    Update SVG viewBox and dimensions in a single operation to avoid conflicts.
+    
+    Args:
+        svg_content: The SVG content to update
+        x, y, width, height: New viewBox values
+        
+    Returns:
+        Updated SVG content with new viewBox and dimensions
+    """
+    new_viewbox = f'viewBox="{x} {y} {width} {height}"'
+    new_width = f'width="{width:.2f}"'
+    new_height = f'height="{height:.2f}"'
+    
+    # First, remove all existing viewBox, width, and height attributes
+    svg_content = re.sub(r'\s+viewBox="[^"]*"', '', svg_content)
+    svg_content = re.sub(r'\s+width="[^"]*"', '', svg_content)
+    svg_content = re.sub(r'\s+height="[^"]*"', '', svg_content)
+    
+    # Then add the new attributes after the opening <svg tag
+    svg_content = re.sub(
+        r'(<svg[^>]*?)>', 
+        rf'\1 {new_viewbox} {new_width} {new_height}>', 
+        svg_content
+    )
+    
+    return svg_content
+
+
+def clip_svg_to_content_bounds(svg_content: str) -> str:
+    """
+    Clip SVG content to its actual content bounds, removing empty space around the drawing.
+    
+    Args:
+        svg_content: The original SVG content as a string
+        
+    Returns:
+        Clipped SVG content with updated viewBox and dimensions
+    """
+    if svgelements is None:
+        print("  Warning: svgelements not available, returning original SVG")
+        return svg_content
+    
+    try:
+        # Parse the SVG from string content using io.StringIO to simulate a file
+        import io
+        svg_file = io.StringIO(svg_content)
+        svg = svgelements.SVG.parse(svg_file, reify=True)
+        
+        # Calculate the bounding box of all visible elements
+        bbox = None
+        for element in svg.elements():
+            # Skip elements that are hidden or have no geometry
+            try:
+                if hasattr(element, 'values') and element.values.get('visibility') == 'hidden':
+                    continue
+                if hasattr(element, 'values') and element.values.get('display') == 'none':
+                    continue
+            except (KeyError, AttributeError):
+                pass
+            
+            # Get element bbox if it has geometry
+            if hasattr(element, 'bbox') and callable(element.bbox):
+                try:
+                    element_bbox = element.bbox()
+                    # Check if bbox is valid - must be a sequence with 4 numeric values
+                    if element_bbox is not None:
+                        try:
+                            # Try to convert to list and validate
+                            bbox_list = list(element_bbox)  # type: ignore
+                            if len(bbox_list) == 4:
+                                x0, y0, x1, y1 = bbox_list
+                                # Ensure all values are numeric
+                                x0, y0, x1, y1 = float(x0), float(y0), float(x1), float(y1)
+                                
+                                # Skip invalid or zero-size bboxes
+                                if x1 > x0 and y1 > y0:
+                                    if bbox is None:
+                                        bbox = [x0, y0, x1, y1]
+                                    else:
+                                        bbox[0] = min(bbox[0], x0)  # min x
+                                        bbox[1] = min(bbox[1], y0)  # min y
+                                        bbox[2] = max(bbox[2], x1)  # max x
+                                        bbox[3] = max(bbox[3], y1)  # max y
+                        except (TypeError, ValueError, IndexError):
+                            # Skip if bbox can't be converted to 4 numeric values
+                            pass
+                except Exception:
+                    # Skip elements that can't provide bbox
+                    continue
+        
+        if bbox is None:
+            print("  Warning: No valid content bounds found, returning original SVG")
+            return svg_content
+            
+        # Add a small padding around the content
+        padding = 2.0
+        x0, y0, x1, y1 = bbox  # bbox is guaranteed to be not None here
+        x0 -= padding
+        y0 -= padding
+        x1 += padding
+        y1 += padding
+        
+        # Calculate new dimensions
+        width = x1 - x0
+        height = y1 - y0
+        
+        print(f"  Content bounds: ({x0:.1f}, {y0:.1f}, {x1:.1f}, {y1:.1f})")
+        print(f"  New dimensions: {width:.1f} x {height:.1f}")
+        
+        # Update viewBox and dimensions in a single operation
+        return update_svg_viewbox_and_dimensions(svg_content, x0, y0, width, height)
+        
+    except Exception as e:
+        print(f"  Warning: Failed to clip SVG content bounds: {e}")
+        return svg_content
 
 
 def remove_unused_clippaths(svg_content: str) -> str:
@@ -56,10 +303,6 @@ def filter_svg_content(svg_content: str) -> str:
     """
     Filter SVG content to capture only vector drawings that are not text or background colors/gradients.
     """
-    print(
-        f"  DEBUG: Before filtering - SVG contains {len(re.findall(r'<g[^>]*>', svg_content))} <g> opening tags"
-    )
-
     # Remove text-related elements
     # Handle both self-closing and paired font path elements
     svg_content = re.sub(r'<path[^>]*id="font_[^"]*"[^>]*/?>', "", svg_content)
@@ -70,10 +313,6 @@ def filter_svg_content(svg_content: str) -> str:
     svg_content = re.sub(r"<image[^>]*>.*?</image>", "", svg_content, flags=re.DOTALL)
     svg_content = re.sub(r"<image[^>]*/>", "", svg_content)
 
-    print(
-        f"  DEBUG: After text/image removal - SVG contains {len(re.findall(r'<g[^>]*>', svg_content))} <g> opening tags"
-    )
-
     # Remove empty group tags
     # This needs to be done iteratively as removing inner groups may make outer groups empty
     prev_content = ""
@@ -81,24 +320,13 @@ def filter_svg_content(svg_content: str) -> str:
     while prev_content != svg_content:
         prev_content = svg_content
         iteration += 1
-        groups_before = len(re.findall(r"<g[^>]*>", svg_content))
 
         # Remove empty groups (both self-closing and paired)
         svg_content = re.sub(r"<g[^>]*>\s*</g>", "", svg_content)
         svg_content = re.sub(r"<g[^>]*/>", "", svg_content)
 
-        groups_after = len(re.findall(r"<g[^>]*>", svg_content))
-        print(
-            f"  DEBUG: Iteration {iteration} - groups before: {groups_before}, after: {groups_after}"
-        )
-
         if iteration > 10:  # Safety break
-            print("  DEBUG: Breaking after 10 iterations to prevent infinite loop")
-            break
-
-    print(
-        f"  DEBUG: After group removal - SVG contains {len(re.findall(r'<g[^>]*>', svg_content))} <g> opening tags"
-    )
+            raise Exception("Likely infinite loop in filter_svg_content")
 
     # Remove unused clipPath definitions (after text/images/groups are removed)
     svg_content = remove_unused_clippaths(svg_content)
@@ -106,10 +334,6 @@ def filter_svg_content(svg_content: str) -> str:
     # Clean up empty lines and excessive whitespace
     svg_content = re.sub(r"\n\s*\n", "\n", svg_content)
     svg_content = re.sub(r"^\s*$", "", svg_content, flags=re.MULTILINE)
-
-    print(
-        f"  DEBUG: Final filtered SVG contains {len(re.findall(r'<g[^>]*>', svg_content))} <g> opening tags"
-    )
 
     return svg_content
 
@@ -139,6 +363,38 @@ def _clean_namespaces(element):
         _clean_namespaces(child)
 
 
+def extract_svg_header(svg_content: str) -> str:
+    """Extract the SVG header from the SVG content (everything before the first
+    <g>, but excluding any <defs> section).
+    If no <g> is found, use the viewBox to determine the dimensions.
+    If no viewBox is found, something has gone wrong; let's raise an error.
+    """
+    svg_header_match = re.match(r"(.*?)(?=<defs|<g[^>]*>)", svg_content, re.DOTALL)
+    
+    if svg_header_match:
+        svg_header = svg_header_match.group(1)
+    else:
+        print("Warning: No header found in SVG content")
+        # Create template string with formattable values
+        svg_header_template = """<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="{width}px" height="{height}px" viewBox="0 0 {width} {height}">
+"""
+        # Fallback: create a minimal SVG header using extracted viewbox
+        viewbox_values = extract_viewbox_values(svg_content)
+        if viewbox_values and len(viewbox_values) == 4:
+            width = viewbox_values[2]
+            height = viewbox_values[3]
+            svg_header = svg_header_template.format(width=width, height=height)
+        else:
+            raise ValueError("No viewBox found in SVG content")
+
+    # Make sure the header ends with a newline for clean formatting
+    if not svg_header.endswith("\n"):
+        svg_header += "\n"
+
+    return svg_header
+
+
 def segment_svg_groups(svg_content: str) -> list[str]:
     """
     Segment SVG content into separate SVG files based on groups.
@@ -152,22 +408,13 @@ def segment_svg_groups(svg_content: str) -> list[str]:
         print(f"  DEBUG: Found {len(groups)} <g> elements using regex")
 
         if not groups:
-            return [svg_content]
+            # No groups found, clip the entire SVG
+            clipped_svg = clip_svg_to_content_bounds(svg_content)
+            return [clipped_svg]
 
         segments = []
 
-        # Extract the SVG header (everything before the first <g>, but excluding any <defs> section)
-        svg_header_match = re.match(r"(.*?)(?=<defs|<g[^>]*>)", svg_content, re.DOTALL)
-        if svg_header_match:
-            svg_header = svg_header_match.group(1)
-            # Make sure the header ends with a newline for clean formatting
-            if not svg_header.endswith("\n"):
-                svg_header += "\n"
-        else:
-            # Fallback: create a minimal SVG header
-            svg_header = """<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="612" height="792" viewBox="0 0 612 792">
-"""
+        svg_header = extract_svg_header(svg_content)
 
         # Extract the defs section if it exists
         defs_match = re.search(r"<defs[^>]*>.*?</defs>", svg_content, re.DOTALL)
@@ -183,7 +430,7 @@ def segment_svg_groups(svg_content: str) -> list[str]:
             clip_matches = re.findall(r'clip-path="url\(#([^)]+)\)"', group)
             clip_path_ids.extend(clip_matches)
 
-            print(f"    DEBUG: Found clip-path references: {clip_path_ids}")
+            print(f"  DEBUG: Found clip-path references: {clip_path_ids}")
 
             # Create a minimal defs section with only the required clipPaths
             minimal_defs = ""
@@ -197,10 +444,10 @@ def segment_svg_groups(svg_content: str) -> list[str]:
                     clip_match = re.search(clip_pattern, defs_content, re.DOTALL)
                     if clip_match:
                         minimal_defs += clip_match.group(0) + "\n"
-                        print(f"    DEBUG: Added clipPath definition: {clip_id}")
+                        print(f"  DEBUG: Added clipPath definition: {clip_id}")
                     else:
                         print(
-                            f"    DEBUG: WARNING - Could not find clipPath definition for: {clip_id}"
+                            f"  DEBUG: WARNING - Could not find clipPath definition for: {clip_id}"
                         )
                 minimal_defs += "</defs>\n"
 
@@ -210,9 +457,11 @@ def segment_svg_groups(svg_content: str) -> list[str]:
                 segment_content += minimal_defs
             segment_content += group + "\n</svg>"
 
-            segments.append(segment_content)
+            # Clip the segment to its content bounds
+            clipped_segment = clip_svg_to_content_bounds(segment_content)
+            segments.append(clipped_segment)
             print(
-                f"    DEBUG: Segment {i + 1} created with {len(segment_content)} characters"
+                f"  DEBUG: Segment {i + 1} created with {len(clipped_segment)} characters (clipped)"
             )
 
         print(f"  DEBUG: Created {len(segments)} segments from {len(groups)} groups")
@@ -256,159 +505,18 @@ def get_group_bbox(group_element) -> tuple[float, float, float, float] | None:
         return None
 
 
-def extract_json_from_markdown(content: str) -> str:
-    """Extract JSON content from markdown code fence if present."""
-    if "```json" in content:
-        # Take whatever is between ```json ... ```
-        return content.split("```json")[1].split("```")[0].strip()
-    return content.strip().strip("\"'")  # Fallback to raw string if no JSON code fence
-
-
-def parse_llm_json_response(content: str, model_class: Type[BaseModel]) -> BaseModel:
-    """Parse JSON from LLM response, handling both direct JSON and markdown-fenced output."""
-    try:
-        return model_class.model_validate(json.loads(content))
-    except json.JSONDecodeError:
-        # If direct parse fails, try to extract from code fences
-        json_str = extract_json_from_markdown(content)
-        return model_class.model_validate(json.loads(json_str))
-
-
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-async def describe_svg_with_llm(
-    svg_content: str, api_key: str, semaphore: asyncio.Semaphore
-) -> str:
-    """Generate description for SVG using LLM with semaphore to limit concurrent calls"""
-    async with semaphore:
-        response = await acompletion(
-            model="deepseek/deepseek-chat",
-            messages=[
-                {
-                    "role": "user",
-                    "content": """Describe in detail what the SVG represents. Return a JSON object with the following fields: 'label', 'description'.
-                    Label should be one of: 'chart', 'graph', 'diagram', 'map', 'logo', 'icon', 'table', or 'text_box'.
-                    Description should be a detailed description of what the SVG shows/communicates.""",
-                }
-            ],
-            response_format={"type": "json_object"},
-            api_key=api_key,
-        )
-        if (
-            response
-            and isinstance(response, ModelResponse)
-            and isinstance(response.choices[0], Choices)
-            and response.choices[0].message.content
-        ):
-            return response.choices[0].message.content
-        else:
-            raise Exception("No valid response from DeepSeek")
-
-
-async def enrich_svg_block_with_description(
-    svg_block_data: dict, api_key: str, semaphore: asyncio.Semaphore, block_idx: int
-) -> dict:
-    """Enrich a single SVG block with LLM-generated description"""
-    try:
-        # Read the SVG content from file
-        with open(svg_block_data["storage_url"], "r", encoding="utf-8") as f:
-            svg_content = f.read()
-
-        start_time = time.time()
-        print(f"  🚀 Starting description generation for SVG block {block_idx + 1}...")
-        description_json = await describe_svg_with_llm(svg_content, api_key, semaphore)
-
-        # Parse the JSON response and format as "label: description"
-        try:
-            description_data = json.loads(description_json)
-            formatted_description = f"{description_data.get('label', 'unknown')}: {description_data.get('description', 'No description available')}"
-            svg_block_data["description"] = formatted_description
-        except (json.JSONDecodeError, KeyError, TypeError) as parse_error:
-            print(
-                f"    Warning: Failed to parse description JSON for block {block_idx + 1}: {parse_error}"
-            )
-            # Fallback: try to extract from markdown if present, otherwise use raw response
-            try:
-                json_str = extract_json_from_markdown(description_json)
-                description_data = json.loads(json_str)
-                formatted_description = f"{description_data.get('label', 'unknown')}: {description_data.get('description', 'No description available')}"
-                svg_block_data["description"] = formatted_description
-            except Exception:
-                # Final fallback: use raw response
-                svg_block_data["description"] = description_json
-
-        end_time = time.time()
-        print(
-            f"  ✅ Description completed for SVG block {block_idx + 1} (took {end_time - start_time:.1f}s)"
-        )
-
-    except Exception as e:
-        end_time = time.time()
-        print(
-            f"  ❌ Failed to generate description for SVG block {block_idx + 1} after {end_time - start_time:.1f}s: {e}"
-        )
-        svg_block_data["description"] = "Description generation failed"
-
-    return svg_block_data
-
-
-async def enrich_svg_blocks_concurrently(
-    svg_blocks: List[dict], api_key: str, max_concurrent_calls: int = 5
-) -> List[dict]:
-    """Enrich all SVG blocks with descriptions using concurrent LLM API calls with semaphore"""
-    semaphore = asyncio.Semaphore(max_concurrent_calls)
-
-    start_time = time.time()
-    print(
-        f"🚀 Enriching {len(svg_blocks)} SVG blocks with descriptions (max {max_concurrent_calls} concurrent calls)..."
-    )
-
-    # Create tasks for all blocks
-    tasks = [
-        enrich_svg_block_with_description(svg_block, api_key, semaphore, idx)
-        for idx, svg_block in enumerate(svg_blocks)
-    ]
-
-    # Execute all tasks concurrently
-    enriched_blocks = await asyncio.gather(*tasks, return_exceptions=True)
-
-    # Handle any exceptions that occurred
-    successful_blocks = []
-    for idx, result in enumerate(enriched_blocks):
-        if isinstance(result, Exception):
-            print(f"  ❌ Error enriching block {idx + 1}: {result}")
-            # Use the original block with a fallback description
-            svg_blocks[idx]["description"] = (
-                "Description generation failed due to error"
-            )
-            successful_blocks.append(svg_blocks[idx])
-        else:
-            successful_blocks.append(result)
-
-    end_time = time.time()
-    total_time = end_time - start_time
-    avg_time_per_block = total_time / len(svg_blocks) if svg_blocks else 0
-    print(
-        f"✅ Completed enrichment of {len(successful_blocks)} SVG blocks in {total_time:.1f}s (avg {avg_time_per_block:.1f}s per block)"
-    )
-    return successful_blocks
-
-
-async def extract_svgs_from_pdf(
+def extract_svgs_from_pdf(
     pdf_path: str,
     output_filename: str,
-    api_key: str,
     svgs_dir: str | None = None,
-    max_concurrent_llm_calls: int = 5,
 ) -> str:
     """
-    Extract SVGs from a PDF and save them as JSON blocks with concurrent LLM enrichment.
+    Extract SVGs from a PDF and save them as JSON blocks.
 
     Args:
         pdf_path: Path to the PDF file to process
         output_filename: Full path to the output JSON file
-        api_key: API key for LLM service (DeepSeek) used for SVG description generation
         svgs_dir: Directory to which to save the SVGs
-        max_concurrent_llm_calls: Maximum number of concurrent LLM API calls for description generation
 
     Returns:
         Path to the output JSON file
@@ -430,8 +538,8 @@ async def extract_svgs_from_pdf(
 
         total_pages = len(doc)
 
-        # Phase 1: Extract all SVGs without descriptions
-        print("\n=== Phase 1: Extracting SVGs ===")
+        # Extract all SVGs
+        print("\n=== Extracting SVGs ===")
         for page_num in range(total_pages):
             page = doc[page_num]
             page_name = f"page_{page_num + 1}"
@@ -460,22 +568,20 @@ async def extract_svgs_from_pdf(
                     svg_segments = segment_svg_groups(filtered_svg_content)
 
                     for segment_idx, segment_content in enumerate(svg_segments):
+                        # Check if this segment has visible content
+                        if not has_visible_content(segment_content):
+                            print(
+                                f"  Skipped page {page_num + 1}, segment {segment_idx + 1} - no visible content (low contrast)"
+                            )
+                            continue
+                        
                         # Try to get bbox from the segmented SVG
                         bbox = None
                         if len(svg_segments) > 1:
                             # For segmented SVGs, try to extract bbox from viewBox
-                            viewbox_match = re.search(
-                                r'viewBox="([^"]+)"', segment_content
-                            )
-                            if viewbox_match:
-                                try:
-                                    viewbox_values = [
-                                        float(x) for x in viewbox_match.group(1).split()
-                                    ]
-                                    if len(viewbox_values) == 4:
-                                        bbox = viewbox_values
-                                except ValueError:
-                                    pass
+                            viewbox_values = extract_viewbox_values(segment_content)
+                            if viewbox_values:
+                                bbox = list(viewbox_values)
 
                         # Fallback to full page bbox if no specific bbox found
                         if bbox is None:
@@ -497,13 +603,13 @@ async def extract_svgs_from_pdf(
                         with open(segment_path, "w", encoding="utf-8") as f:
                             f.write(segment_content)
 
-                        # Create the block without description (to be enriched later)
+                        # Create the block without description
                         svg_block = {
                             "block_type": "svg",
                             "page_number": page_num + 1,
                             "bbox": bbox,
                             "storage_url": segment_path,
-                            "description": None,  # Will be filled in phase 2
+                            "description": None,
                         }
 
                         svg_blocks.append(svg_block)
@@ -521,18 +627,9 @@ async def extract_svgs_from_pdf(
 
         doc.close()
 
-        # Phase 2: Enrich SVGs with descriptions concurrently
-        print(f"\n=== Phase 2: Enriching {len(svg_blocks)} SVGs with descriptions ===")
-        if svg_blocks:
-            enriched_svg_blocks = await enrich_svg_blocks_concurrently(
-                svg_blocks, api_key, max_concurrent_llm_calls
-            )
-        else:
-            enriched_svg_blocks = []
-
         # Convert dict blocks to Pydantic models
         svg_pydantic_blocks: List[SvgBlock] = []
-        for block_data in enriched_svg_blocks:
+        for block_data in svg_blocks:
             svg_block = SvgBlock(**block_data)
             svg_pydantic_blocks.append(svg_block)
 
@@ -549,7 +646,7 @@ async def extract_svgs_from_pdf(
             f.write(output_data.model_dump_json(indent=2, exclude_none=True))
 
         print(
-            f"\n✓ Extracted and enriched {len(enriched_svg_blocks)} SVG blocks to {output_filename}"
+            f"\n✓ Extracted {len(svg_blocks)} SVG blocks to {output_filename}"
         )
         return output_filename
 
@@ -558,32 +655,24 @@ async def extract_svgs_from_pdf(
 
 
 if __name__ == "__main__":
-    import asyncio
     import sys
 
     if len(sys.argv) < 2:
-        print("Usage: uv run extract_svgs.py <pdf_file> [max_concurrent_calls]")
-        print("Example: uv run extract_svgs.py document.pdf 5")
+        print("Usage: uv run -m transform.extract_svgs <pdf_file>")
+        print("Example: uv run -m transform.extract_svgs document.pdf")
         sys.exit(1)
 
     pdf_path = sys.argv[1]
-    max_concurrent_calls = int(sys.argv[2]) if len(sys.argv) > 2 else 5
 
     # Create a real temporary directory for testing
     temp_dir = tempfile.mkdtemp(prefix="svgs_test_")
     output_filename = os.path.join(temp_dir, "svgs.json")
 
     try:
-        assert (api_key := os.getenv("DEEPSEEK_API_KEY")), "DEEPSEEK_API_KEY is not set"
-
-        output_path = asyncio.run(
-            extract_svgs_from_pdf(
-                pdf_path=pdf_path,
-                output_filename=output_filename,
-                api_key=api_key,
-                svgs_dir=temp_dir,
-                max_concurrent_llm_calls=max_concurrent_calls,
-            )
+        output_path = extract_svgs_from_pdf(
+            pdf_path=pdf_path,
+            output_filename=output_filename,
+            svgs_dir=temp_dir,
         )
 
         print("SVGs extracted successfully!")

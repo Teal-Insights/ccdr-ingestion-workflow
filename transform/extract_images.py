@@ -1,92 +1,10 @@
-# TODO: Store the file in S3 and catpure the actual storage url
+# TODO: Store the file in S3 and capture the actual storage url
 
-from PIL import Image
-import base64
-import io
 import os
-import asyncio
-from functools import partial
-from litellm import completion, Choices
-from litellm.files.main import ModelResponse
-import pydantic
-from tenacity import retry, stop_after_attempt, wait_exponential
 import pymupdf
 from pathlib import Path
 from typing import List, Dict, Any, Optional, cast
 from .models import ImageBlock, BlocksDocument, Block
-
-# Global semaphore to limit concurrent API calls to 2
-_api_semaphore = asyncio.Semaphore(2)
-
-
-class ImageDescription(pydantic.BaseModel):
-    label: str
-    description: str
-
-
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-async def describe_image_with_vlm(
-    image: Image.Image, api_key: str
-) -> ImageDescription | None:
-    """Use Gemini to describe the image with async retry logic."""
-    # Set environment variable for LiteLLM
-    os.environ["GEMINI_API_KEY"] = api_key
-
-    prompt = """Describe the image in detail. Include the following:
-    - A label from: "chart", "graph", "diagram", "map", "photo", "table", or "text_box"
-    - A description of what the image shows/communicates"""
-
-    # Convert PIL Image to base64
-    img_byte_arr = io.BytesIO()
-    image.save(img_byte_arr, format="PNG")
-    img_byte_arr.seek(0)
-    img_base64 = base64.b64encode(img_byte_arr.getvalue()).decode("utf-8")
-
-    # Create message content with text and image
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/png;base64,{img_base64}"},
-                },
-            ],
-        }
-    ]
-
-    # Use semaphore to limit concurrent API calls
-    async with _api_semaphore:
-        # Convert synchronous completion call to async using run_in_executor
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            partial(
-                completion,
-                model="gemini/gemini-2.5-flash",
-                messages=messages,
-                temperature=0.0,
-                response_format={
-                    "type": "json_object",
-                    "response_schema": ImageDescription.model_json_schema(),
-                },
-            ),
-        )
-
-    # Parse JSON response into Pydantic model
-    if (
-        response
-        and isinstance(response, ModelResponse)
-        and isinstance(response.choices[0], Choices)
-        and response.choices[0].message.content
-    ):
-        description = ImageDescription.model_validate_json(
-            response.choices[0].message.content
-        )
-        return description
-    else:
-        raise Exception("No valid response from Gemini")
 
 
 def extract_images_from_page(
@@ -139,19 +57,17 @@ def extract_images_from_page(
     return images_info
 
 
-async def extract_images_from_pdf(
+def extract_images_from_pdf(
     pdf_path: str,
     output_filename: str,
-    api_key: Optional[str] = None,
     images_dir: Optional[str] = None,
 ) -> str:
     """
-    Extract images from PDF, describe them with VLM, and save as JSON blocks.
+    Extract images from PDF and save as JSON blocks.
 
     Args:
         pdf_path: Path to the PDF file
         output_filename: Full path to the output JSON file
-        api_key: Gemini API key for image descriptions (optional)
         images_dir: Directory to save extracted images (optional, defaults to 'images' subdir of output file's parent)
 
     Returns:
@@ -174,7 +90,7 @@ async def extract_images_from_pdf(
         print(f"Processing PDF: {pdf_path}")
         print(f"Number of pages: {len(doc)}")
 
-        # First pass: Extract all images from all pages
+        # Extract all images from all pages
         all_image_blocks = []
 
         print("Extracting images from all pages...")
@@ -191,68 +107,15 @@ async def extract_images_from_pdf(
 
             # Create blocks for all images on this page
             for image_info in page_images:
-                # Load the saved image for description
-                image_path = image_info["storage_path"]
-
-                # Create the block structure as dict temporarily for processing
+                # Create the block structure
                 block = {
                     "block_type": "image",
                     "page_number": page_number,
                     "bbox": image_info["bbox"],
-                    "storage_url": image_path,  # Local file path for now
-                    "description": "Image description not available",  # Default
-                    "image_info": image_info,  # Temporary field for processing
+                    "storage_url": image_info["storage_path"],  # Local file path for now
+                    "description": None,  # No description initially
                 }
                 all_image_blocks.append(block)
-
-        # Second pass: Describe all images concurrently across all pages
-        if api_key and all_image_blocks:
-            print(
-                f"Describing {len(all_image_blocks)} images concurrently across all pages..."
-            )
-
-            async def describe_block_image(block_data):
-                try:
-                    pil_image = Image.open(block_data["storage_url"])
-                    description_result = await describe_image_with_vlm(
-                        pil_image, api_key
-                    )
-                    if description_result:
-                        return f"{description_result.label}: {description_result.description}"
-                    else:
-                        return "Failed to generate description"
-                except Exception as e:
-                    print(
-                        f"    Error describing image {block_data['image_info']['filename']}: {e}"
-                    )
-                    return f"Error generating description: {str(e)}"
-
-            # Create description tasks for all images
-            description_tasks = [
-                describe_block_image(block) for block in all_image_blocks
-            ]
-
-            # Run all description tasks concurrently
-            descriptions = await asyncio.gather(
-                *description_tasks, return_exceptions=True
-            )
-
-            # Update blocks with descriptions
-            for block, description in zip(all_image_blocks, descriptions):
-                if isinstance(description, Exception):
-                    block["description"] = (
-                        f"Error generating description: {str(description)}"
-                    )
-                else:
-                    block["description"] = description
-                # Remove temporary field
-                del block["image_info"]
-        else:
-            # No API key provided or no images
-            for block in all_image_blocks:
-                block["description"] = "No API key provided for description"
-                if "image_info" in block:
-                    del block["image_info"]
 
         # Store page count before closing document
         total_pages = len(doc)
@@ -261,10 +124,7 @@ async def extract_images_from_pdf(
         # Convert processed dicts to Pydantic models
         image_blocks: List[ImageBlock] = []
         for block_data in all_image_blocks:
-            # Remove temporary field
-            if "image_info" in block_data:
-                del block_data["image_info"]
-            # Create ImageBlock from cleaned data
+            # Create ImageBlock from data
             image_block = ImageBlock(**block_data)
             image_blocks.append(image_block)
 
@@ -292,11 +152,8 @@ async def extract_images_from_pdf(
 
 
 if __name__ == "__main__":
-    import dotenv
     import tempfile
     import sys
-
-    dotenv.load_dotenv(override=True)
 
     if len(sys.argv) < 2:
         print("Usage: uv run -m transform.extract_images <pdf_file>")
@@ -311,18 +168,16 @@ if __name__ == "__main__":
     images_dir = os.path.join(temp_dir, "images")
 
     try:
-        output_path = asyncio.run(
-            extract_images_from_pdf(
-                pdf_path=pdf_path,
-                output_filename=output_filename,
-                api_key=os.getenv("GEMINI_API_KEY"),
-                images_dir=images_dir,
-            )
+        output_path = extract_images_from_pdf(
+            pdf_path=pdf_path,
+            output_filename=output_filename,
+            images_dir=images_dir,
         )
         print("Images extracted successfully!")
         print(f"Output file: {output_path}")
         print(f"Temporary directory: {temp_dir}")
         print(f"Note: Clean up temporary directory when done: rm -rf {temp_dir}")
+        print(f"To add descriptions, run: uv run -m transform.describe_images {output_filename} {images_dir}")
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)

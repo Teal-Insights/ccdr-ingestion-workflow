@@ -10,9 +10,11 @@ from transform.combine_blocks import combine_blocks
 from transform.convert_to_html import convert_blocks_to_html
 from transform.detect_structure import detect_structure
 from transform.clean_html import process_html_inputs_concurrently
+from transform.describe_images import describe_images_in_json
 
 dotenv.load_dotenv(override=True)
 
+# Fail fast if the API keys are not set
 gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
 assert gemini_api_key, "GEMINI_API_KEY is not set"
 deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
@@ -22,12 +24,14 @@ assert deepseek_api_key, "DEEPSEEK_API_KEY is not set"
 temp_dir: str = tempfile.mkdtemp(prefix="pdf_parsing_pipeline_")
 print(f"Using temporary directory: {temp_dir}")
 
+# TODO: Make this a command line argument and support use of folder paths
 pdf_path: str = "input.pdf"
 print(f"Processing PDF: {pdf_path}")
 
 # 1. Extract the text blocks from the PDF
 # Writes transform.models.BlocksDocument object to <temp_dir> / text_blocks.json
 # TODO: Blocks' text field contains HTML with in-line styles that still need cleaning
+# Extract unique styles and have an LLM write a transformation rule for each one
 blocks_output_file_path: str = os.path.join(temp_dir, "text_blocks.json")
 extracted_text_blocks_path: str = extract_text_blocks_with_styling(
     pdf_path, blocks_output_file_path, temp_dir
@@ -40,23 +44,18 @@ print(f"Text blocks extracted successfully to {extracted_text_blocks_path}!")
 # TODO: Pass text context with image to Gemini to improve description
 images_output_file_path: str = os.path.join(temp_dir, "images.json")
 images_dir: str = os.path.join(temp_dir, "images")
-extracted_image_blocks_path: str = asyncio.run(
-    extract_images_from_pdf(
-        pdf_path,
-        images_output_file_path,
-        api_key=os.getenv("GEMINI_API_KEY"),
-        images_dir=images_dir,
-    )
+extracted_image_blocks_path: str = extract_images_from_pdf(
+    pdf_path,
+    images_output_file_path,
+    images_dir=images_dir
 )
 print("Image blocks extracted successfully!")
 
 # 3. Extract the SVGs from the PDF and add them as blocks
 svg_output_file_path: str = os.path.join(temp_dir, "svgs.json")
 svgs_dir: str = os.path.join(temp_dir, "svgs")
-extracted_svg_blocks_path: str = asyncio.run(
-    extract_svgs_from_pdf(
-        pdf_path, svg_output_file_path, api_key=deepseek_api_key, svgs_dir=svgs_dir
-    )
+extracted_svg_blocks_path: str = extract_svgs_from_pdf(
+    pdf_path, svg_output_file_path, svgs_dir=svgs_dir
 )
 print("SVG blocks extracted successfully!")
 
@@ -72,7 +71,19 @@ combined_blocks_path: str = combine_blocks(
 )
 print("Blocks combined successfully!")
 
-# 5. Convert the blocks to HTML with plaintext and no bboxes
+# 5. Describe the images and SVGs with a VLM
+# TODO: Validate that all ImageBlocks and SvgBlocks have a description after this step
+descriptions_output_file_path: str = os.path.join(temp_dir, "described_blocks.json")
+described_blocks_path: str = asyncio.run(describe_images_in_json(
+    json_file_path=combined_blocks_path,
+    images_dir=images_dir,
+    api_key=gemini_api_key,
+    output_file_path=descriptions_output_file_path,
+    svg_as_text=True,
+))
+print("Images and SVGs described successfully!")
+
+# 6. Convert the blocks to HTML with plaintext and no bboxes
 html_output_file_path: str = os.path.join(temp_dir, "html.html")
 html_path: str = convert_blocks_to_html(
     combined_blocks_path,
