@@ -39,7 +39,7 @@ def render_svg_to_image(svg_content: str, width: int = 200, height: int = 200) -
         # Try to use Inkscape first (most accurate SVG rendering)
         temp_png_path = temp_svg_path.replace('.svg', '.png')
         
-        # Try Inkscape first
+        # Try Inkscape first with white background
         try:
             result = subprocess.run([
                 'inkscape', 
@@ -47,12 +47,24 @@ def render_svg_to_image(svg_content: str, width: int = 200, height: int = 200) -
                 '--export-filename=' + temp_png_path,
                 f'--export-width={width}',
                 f'--export-height={height}',
+                '--export-background=white',  # Force white background
+                '--export-background-opacity=1.0',  # Make background opaque
                 temp_svg_path
             ], capture_output=True, text=True, timeout=10)
             
             if result.returncode == 0 and os.path.exists(temp_png_path):
                 img = Image.open(temp_png_path)
-                img_copy = img.copy()
+                # Convert RGBA to RGB to ensure no alpha channel
+                if img.mode in ('RGBA', 'LA'):
+                    # Create white background
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'RGBA':
+                        background.paste(img, mask=img.split()[-1])  # Use alpha channel as mask
+                    else:  # LA mode
+                        background.paste(img.convert('RGB'), mask=img.split()[-1])
+                    img_copy = background
+                else:
+                    img_copy = img.convert('RGB')  # Ensure RGB mode
                 img.close()
                 os.unlink(temp_png_path)
                 return img_copy
@@ -66,13 +78,23 @@ def render_svg_to_image(svg_content: str, width: int = 200, height: int = 200) -
                 'rsvg-convert', 
                 '-w', str(width), 
                 '-h', str(height), 
+                '-b', 'white',  # Set background color to white
                 '-o', temp_png_path,
                 temp_svg_path
             ], capture_output=True, text=True, timeout=10)
             
             if result.returncode == 0 and os.path.exists(temp_png_path):
                 img = Image.open(temp_png_path)
-                img_copy = img.copy()
+                # Convert to RGB to ensure no alpha channel
+                if img.mode in ('RGBA', 'LA'):
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'RGBA':
+                        background.paste(img, mask=img.split()[-1])
+                    else:
+                        background.paste(img.convert('RGB'), mask=img.split()[-1])
+                    img_copy = background
+                else:
+                    img_copy = img.convert('RGB')
                 img.close()
                 os.unlink(temp_png_path)
                 return img_copy
@@ -83,10 +105,20 @@ def render_svg_to_image(svg_content: str, width: int = 200, height: int = 200) -
         # Fallback to cairosvg if available
         try:
             import cairosvg
+            # cairosvg doesn't have a direct background option, but we'll handle it in PIL
             cairosvg.svg2png(url=temp_svg_path, write_to=temp_png_path, output_width=width, output_height=height)
             if os.path.exists(temp_png_path):
                 img = Image.open(temp_png_path)
-                img_copy = img.copy()
+                # Convert to RGB with white background
+                if img.mode in ('RGBA', 'LA'):
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'RGBA':
+                        background.paste(img, mask=img.split()[-1])
+                    else:
+                        background.paste(img.convert('RGB'), mask=img.split()[-1])
+                    img_copy = background
+                else:
+                    img_copy = img.convert('RGB')
                 img.close()
                 os.unlink(temp_png_path)
                 return img_copy
