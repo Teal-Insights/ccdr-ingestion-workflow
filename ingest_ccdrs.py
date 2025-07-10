@@ -53,9 +53,9 @@ print("Image blocks extracted successfully!")
 
 # 2. Extract the SvgBlocks from the PDF and write BlocksDocument to <temp_dir>/svgs.json
 svgs_dir: str = os.path.join(temp_dir, "svgs")
-extracted_svg_blocks_path: str = asyncio.run(extract_svgs_from_pdf(
+extracted_svg_blocks_path: str = extract_svgs_from_pdf(
     pdf_path, os.path.join(temp_dir, "svgs.json"), svgs_dir=svgs_dir
-))
+)
 print("SVG blocks extracted successfully!")
 
 # 3. Extract TextBlocks from the PDF and write BlocksDocument to <temp_dir>/text_blocks.json
