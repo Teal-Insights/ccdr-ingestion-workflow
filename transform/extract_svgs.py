@@ -600,10 +600,9 @@ def segment_svg_groups(svg_content: str) -> list[str]:
         print(f"  DEBUG: Found {len(groups)} <g> elements using regex")
 
         if not groups:
-            # No groups found, clip the entire SVG and remove defs section
-            # since PyMuPDF only references clip paths from groups
-            svg_without_defs = re.sub(r"<defs[^>]*>.*?</defs>", "", svg_content, flags=re.DOTALL).strip()
-            clipped_svg = clip_svg_to_content_bounds(svg_without_defs)
+            # No groups found, clip the entire SVG
+            filtered_content = remove_unused_clippaths(svg_content)
+            clipped_svg = clip_svg_to_content_bounds(filtered_content)
             return [clipped_svg]
 
         segments = []
