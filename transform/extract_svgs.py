@@ -117,10 +117,10 @@ def remove_element_by_id(svg_content: str, element_id: str) -> str:
     """
     try:
         # Use regex to remove the element, handling both self-closing and paired tags
-        # Pattern for self-closing tags: <tag ... id="element_id" ... />
-        self_closing_pattern = rf'<[^>]*id="{re.escape(element_id)}"[^>]*/?>'
+        # Pattern for ACTUAL self-closing tags: <tag ... id="element_id" ... />
+        self_closing_pattern = rf'<[^>]*id="{re.escape(element_id)}"[^>]*\s*/>'
         
-        # First try to match self-closing tags
+        # First try to match ACTUAL self-closing tags (must end with />)
         if re.search(self_closing_pattern, svg_content):
             result = re.sub(self_closing_pattern, '', svg_content)
             print(f"    Removed self-closing element {element_id}")
@@ -166,13 +166,15 @@ def get_element_bbox_from_svg(svg_content: str, element_id: str) -> tuple[float,
         return None
 
 
-def filter_svg_elements_by_visual_contribution(svg_content: str, min_pixel_diff_threshold: int = 5) -> str:
+def filter_svg_elements_by_visual_contribution(svg_content: str, min_pixel_diff_threshold: int = 5, page_width: float | None = None, page_height: float | None = None) -> str:
     """
     Filter SVG elements by testing their visual contribution to the rendered output.
     
     Args:
-        svg_content: The original SVG content as a string
+        svg_content: The SVG content as a string (should already have text filtered out)
         min_pixel_diff_threshold: Minimum number of changed pixels to consider element visible
+        page_width: Page width in points for proper rendering scale
+        page_height: Page height in points for proper rendering scale
         
     Returns:
         Filtered SVG content with only visually contributing elements
@@ -202,8 +204,20 @@ def filter_svg_elements_by_visual_contribution(svg_content: str, min_pixel_diff_
                     break
                 current = parent
             
+            # Skip groups that contain image elements since we don't want to extract these
             if not inside_defs:
-                drawing_groups.append(group)
+                contains_image = False
+                # Check if this group or any of its children contain image elements
+                for element in group.iter():
+                    element_tag = element.tag.split('}')[1] if '}' in element.tag else element.tag
+                    if element_tag == 'image':
+                        contains_image = True
+                        break
+                
+                if not contains_image:
+                    drawing_groups.append(group)
+                else:
+                    print(f"    Excluding group from testing (contains image): {group.get('id', 'no-id')}")
         
         if not drawing_groups:
             print("  No drawing group elements found for testing, keeping original SVG")
@@ -211,24 +225,52 @@ def filter_svg_elements_by_visual_contribution(svg_content: str, min_pixel_diff_
         
         print(f"  Found {len(drawing_groups)} drawing group elements to test for visual contribution")
         
-        # Assign temporary IDs to groups that don't have them and update the SVG content
-        updated_svg_content = svg_content
-        temp_id_assignments = {}
-        
+        # Check if we need to assign temporary IDs
+        groups_needing_ids = []
         for i, group in enumerate(drawing_groups):
             group_id = group.get('id')
             if not group_id:
-                # Create a temporary ID for groups without one
+                groups_needing_ids.append((i, group))
+        
+        working_svg_content = svg_content
+        
+        # Only do XML conversion if we actually need to assign IDs
+        if groups_needing_ids:
+            print(f"  Assigning temporary IDs to {len(groups_needing_ids)} groups...")
+            temp_id_assignments = {}
+            
+            for i, group in groups_needing_ids:
                 group_id = f"temp_group_{i}"
                 group.set('id', group_id)
                 temp_id_assignments[i] = group_id
+            
+            # Convert the updated XML back to string
+            working_svg_content = ET.tostring(root, encoding='unicode')
+            print("  WARNING: XML conversion may alter SVG rendering!")
+        else:
+            print("  All groups have IDs, skipping XML conversion")
         
-        # Convert the updated XML back to string if we added any temporary IDs
-        if temp_id_assignments:
-            updated_svg_content = ET.tostring(root, encoding='unicode')
+        # Calculate proper render dimensions
+        if page_width and page_height:
+            # Use page dimensions with reasonable scaling
+            max_dimension = 800
+            aspect_ratio = page_width / page_height
+            
+            if page_width > page_height:
+                render_width = min(max_dimension, int(page_width))
+                render_height = int(render_width / aspect_ratio)
+            else:
+                render_height = min(max_dimension, int(page_height))
+                render_width = int(render_height * aspect_ratio)
+            
+            print(f"  Using render dimensions: {render_width} x {render_height} (from page: {page_width:.1f} x {page_height:.1f})")
+        else:
+            # Fallback to default dimensions
+            render_width, render_height = 200, 200
+            print(f"  Warning: No page dimensions provided, using default: {render_width} x {render_height}")
         
-        # Render the baseline (full SVG with any temporary IDs added)
-        baseline_image = render_svg_to_image(updated_svg_content)
+        # Render the baseline (full SVG)
+        baseline_image = render_svg_to_image(working_svg_content, width=render_width, height=render_height)
         if baseline_image is None:
             print("  Warning: Could not render baseline SVG, keeping original")
             return svg_content
@@ -242,10 +284,10 @@ def filter_svg_elements_by_visual_contribution(svg_content: str, min_pixel_diff_
             print(f"    Testing group {i+1}/{len(drawing_groups)}: {group_id}")
             
             # Create SVG without this group
-            svg_without_group = remove_element_by_id(updated_svg_content, group_id)
+            svg_without_group = remove_element_by_id(working_svg_content, group_id)
             
             # Render without the group
-            test_image = render_svg_to_image(svg_without_group)
+            test_image = render_svg_to_image(svg_without_group, width=render_width, height=render_height)
             if test_image is None:
                 print(f"    Warning: Could not render test image for {group_id}, assuming visible")
                 visible_element_ids.add(group_id)
@@ -269,7 +311,8 @@ def filter_svg_elements_by_visual_contribution(svg_content: str, min_pixel_diff_
                 visible_element_ids.add(group_id)
         
         # Build filtered SVG by removing non-contributing groups
-        filtered_svg = svg_content
+        # Use working_svg_content since that's where the temp IDs exist
+        filtered_svg = working_svg_content
         total_elements = len(drawing_groups)
         visible_count = len(visible_element_ids)
         
@@ -567,19 +610,26 @@ def remove_unused_clippaths(svg_content: str) -> str:
     return svg_content
 
 
-def filter_svg_content(svg_content: str) -> str:
+def filter_svg_content(svg_content: str, filter_text: bool = True, filter_images: bool = True) -> str:
     """
     Filter SVG content to capture only vector drawings that are not text or background colors/gradients.
+    
+    Args:
+        svg_content: The SVG content to filter
+        filter_text: Whether to remove text-related elements
+        filter_images: Whether to remove image elements
     """
-    # Remove text-related elements
-    # Handle both self-closing and paired font path elements
-    svg_content = re.sub(r'<path[^>]*id="font_[^"]*"[^>]*/?>', "", svg_content)
-    svg_content = re.sub(r"<use[^>]*data-text[^>]*>", "", svg_content)
-    svg_content = re.sub(r"<text[^>]*>.*?</text>", "", svg_content, flags=re.DOTALL)
+    if filter_text:
+        # Remove text-related elements
+        # Handle both self-closing and paired font path elements
+        svg_content = re.sub(r'<path[^>]*id="font_[^"]*"[^>]*/?>', "", svg_content)
+        svg_content = re.sub(r"<use[^>]*data-text[^>]*>", "", svg_content)
+        svg_content = re.sub(r"<text[^>]*>.*?</text>", "", svg_content, flags=re.DOTALL)
 
-    # Remove image elements
-    svg_content = re.sub(r"<image[^>]*>.*?</image>", "", svg_content, flags=re.DOTALL)
-    svg_content = re.sub(r"<image[^>]*/>", "", svg_content)
+    if filter_images:
+        # Remove image elements
+        svg_content = re.sub(r"<image[^>]*>.*?</image>", "", svg_content, flags=re.DOTALL)
+        svg_content = re.sub(r"<image[^>]*/>", "", svg_content)
 
     # Remove empty group tags
     # This needs to be done iteratively as removing inner groups may make outer groups empty
@@ -604,20 +654,6 @@ def filter_svg_content(svg_content: str) -> str:
     svg_content = re.sub(r"^\s*$", "", svg_content, flags=re.MULTILINE)
 
     return svg_content
-
-
-def extract_svg_from_page(page: pymupdf.Page, page_name: str, output_dir: str) -> str:
-    """Extract filtered SVG representation of the page (graphics only)"""
-    try:
-        svg_content = page.get_svg_image()
-
-        # Always filter to get graphics-only content
-        filtered_svg_content = filter_svg_content(svg_content)
-
-        return filtered_svg_content
-
-    except Exception as e:
-        return f"Error extracting SVG from page: {str(e)}"
 
 
 def _clean_namespaces(element):
@@ -815,34 +851,48 @@ def extract_svgs_from_pdf(
             print(f"Processing page {page_num + 1}...")
 
             # Extract SVG with filtered mode (graphics only)
-            svg_info = extract_svg_from_page(page, page_name, svg_dir)
-
-            if "error" not in svg_info:
-                # Get the filtered SVG content
-                filtered_svg_content = filter_svg_content(svg_info)
+            try:
+                svg_content = page.get_svg_image()
+                
+                # Get page dimensions for proper rendering
+                page_rect = page.rect
+                page_width = page_rect.width
+                page_height = page_rect.height
+                print(f"  Page dimensions: {page_width:.1f} x {page_height:.1f}")
+                
+                # Step 1: Filter text early in the pipeline (but keep images for visibility testing)
+                text_filtered_svg = filter_svg_content(svg_content, filter_text=True, filter_images=False)
 
                 print(
-                    f"  DEBUG: Filtered SVG content contains {len(re.findall(r'<g[^>]*>', filtered_svg_content))} <g> opening tags"
+                    f"  DEBUG: Text-filtered SVG content contains {len(re.findall(r'<g[^>]*>', text_filtered_svg))} <g> opening tags"
                 )
 
                 # Check if there's actual content (not just empty SVG)
                 if (
-                    "<path" in filtered_svg_content
-                    or "<rect" in filtered_svg_content
-                    or "<circle" in filtered_svg_content
-                    or "<polygon" in filtered_svg_content
+                    "<path" in text_filtered_svg
+                    or "<rect" in text_filtered_svg
+                    or "<circle" in text_filtered_svg
+                    or "<polygon" in text_filtered_svg
                 ):
-                    # Apply visual contribution filtering BEFORE segmentation
+                    # Step 2: Apply visual contribution filtering (images are kept but excluded from testing)
                     print("  Applying visual contribution filtering...")
-                    visually_filtered_svg = filter_svg_elements_by_visual_contribution(filtered_svg_content)
+                    visually_filtered_svg = filter_svg_elements_by_visual_contribution(
+                        text_filtered_svg, 
+                        page_width=page_width, 
+                        page_height=page_height
+                    )
                     
                     # Skip if visual contribution analysis determined the SVG has no meaningful content
                     if not visually_filtered_svg.strip():
                         print(f"  Skipped page {page_num + 1} - SVG has no visually contributing elements")
                         continue
                     
-                    # Segment the SVG using the visually filtered content
-                    svg_segments = segment_svg_groups(visually_filtered_svg)
+                    # Step 3: Filter images after visibility testing but before segmentation
+                    print("  Removing image elements from final output...")
+                    final_filtered_svg = filter_svg_content(visually_filtered_svg, filter_text=False, filter_images=True)
+                    
+                    # Segment the SVG using the final filtered content
+                    svg_segments = segment_svg_groups(final_filtered_svg)
 
                     for segment_idx, segment_content in enumerate(svg_segments):
                         
@@ -891,10 +941,8 @@ def extract_svgs_from_pdf(
                     print(
                         f"  Skipped page {page_num + 1} - no significant vector graphics"
                     )
-            elif svg_info.startswith("Error"):
-                print(f"  Error extracting SVG from page {page_num + 1}: {svg_info}")
-            else:
-                print(f"  Skipped page {page_num + 1} - no SVG saved")
+            except Exception as e:
+                print(f"  Error extracting SVG from page {page_num + 1}: {e}")
 
         doc.close()
 
