@@ -664,6 +664,23 @@ def segment_svg_groups(svg_content: str) -> list[str]:
         return [svg_content]
 
 
+def has_meaningful_content(svg_content: str) -> bool:
+    """
+    Check if SVG content has anything meaningful beyond defs and whitespace.
+    
+    Args:
+        svg_content: The SVG content to check
+        
+    Returns:
+        True if the SVG contains anything other than defs and whitespace, False otherwise
+    """
+    # Remove all unwanted parts in one go: XML declaration, SVG tags, and defs sections
+    cleaned = re.sub(r'<\?xml[^>]*>|</?svg[^>]*>|<defs[^>]*>.*?</defs>', '', svg_content, flags=re.DOTALL)
+    
+    # If anything non-whitespace remains, it's meaningful content
+    return bool(cleaned.strip())
+
+
 def extract_svgs_from_pdf(
     pdf_path: str,
     output_filename: str,
@@ -751,6 +768,11 @@ def extract_svgs_from_pdf(
 
                     for segment_idx, segment_content in enumerate(svg_segments):
                         
+                        # Check if this segment has meaningful content before processing
+                        if not has_meaningful_content(segment_content):
+                            print(f"  Skipped segment {segment_idx + 1} on page {page_num + 1} - no meaningful drawable content")
+                            continue
+                        
                         # Try to get bbox from the segmented SVG
                         bbox = None
                         if len(svg_segments) > 1:
@@ -775,7 +797,7 @@ def extract_svgs_from_pdf(
                         )
                         segment_path = os.path.join(svg_dir, segment_filename)
 
-                        # Save the segment (always save it to ensure the file exists)
+                        # Save the segment (only save if it has meaningful content)
                         with open(segment_path, "w", encoding="utf-8") as f:
                             f.write(segment_content)
 
