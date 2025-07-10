@@ -9,6 +9,7 @@ dependencies = [
     "litellm>=1.72.6.post2",
     "numpy>=2.3.1",
     "pillow>=11.2.1",
+    "playwright>=1.53.0",
     "pydantic>=2.11.5",
     "pymupdf>=1.26.0",
     "svgelements>=1.9.6",

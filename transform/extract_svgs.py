@@ -16,8 +16,190 @@ import pymupdf
 from .models import SvgBlock, BlocksDocument, Block
 import svgelements
 from PIL import Image
+import asyncio
+from playwright.async_api import async_playwright
 
 dotenv.load_dotenv(override=True)
+
+
+async def filter_svg_elements_with_playwright_optimized(svg_content: str, browser) -> str:
+    """
+    Optimized version of filter_svg_elements_with_playwright that reuses an existing browser instance.
+    
+    Args:
+        svg_content: The original SVG content as a string
+        browser: Existing Playwright browser instance
+        
+    Returns:
+        Filtered SVG content - either the original content or empty if not visible
+    """
+    try:
+        # Create a temporary HTML file with the SVG embedded
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ margin: 0; padding: 20px; }}
+                svg {{ max-width: 100%; height: auto; }}
+            </style>
+        </head>
+        <body>
+            {svg_content}
+        </body>
+        </html>
+        """
+        
+        # Create temporary HTML file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as temp_html:
+            temp_html.write(html_content)
+            temp_html_path = temp_html.name
+        
+        try:
+            page = await browser.new_page()
+            
+            # Load the HTML file
+            await page.goto(f"file://{temp_html_path}")
+            
+            # Wait for the page to load
+            await page.wait_for_load_state('networkidle')
+            
+            # Check if the main SVG element is visible
+            svg_element = await page.query_selector('svg')
+            if svg_element:
+                is_svg_visible = await svg_element.is_visible()
+                
+                if not is_svg_visible:
+                    print("  Playwright analysis: SVG is not visible, skipping")
+                    await page.close()
+                    return ""
+                
+                # Count visible vs invisible elements for informational purposes
+                svg_child_elements = await page.query_selector_all('svg *')
+                visible_count = 0
+                invisible_count = 0
+                
+                for element in svg_child_elements:
+                    try:
+                        if await element.is_visible():
+                            visible_count += 1
+                        else:
+                            invisible_count += 1
+                    except Exception:
+                        visible_count += 1  # Assume visible if we can't check
+                
+                print(f"  Playwright analysis: SVG is visible with {visible_count} visible, {invisible_count} invisible child elements")
+                
+                await page.close()
+                return svg_content
+            else:
+                print("  Playwright analysis: No SVG element found")
+                await page.close()
+                return svg_content
+                
+        finally:
+            # Clean up temporary HTML file
+            try:
+                os.unlink(temp_html_path)
+            except OSError:
+                pass
+                
+    except Exception as e:
+        print(f"  Warning: Playwright filtering failed: {e}")
+        print("  Falling back to original SVG content")
+        return svg_content
+
+
+async def filter_svg_elements_with_playwright(svg_content: str) -> str:
+    """
+    Filter SVG elements using Playwright to check visibility in the full page context.
+    This approach uses a simplified strategy: check if the overall SVG has visible content,
+    and if not, return empty. For more granular filtering, we rely on the existing
+    filter_svg_content and has_visible_content functions.
+    
+    Args:
+        svg_content: The original SVG content as a string
+        
+    Returns:
+        Filtered SVG content - either the original content or empty if not visible
+    """
+    try:
+        # Create a temporary HTML file with the SVG embedded
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ margin: 0; padding: 20px; }}
+                svg {{ max-width: 100%; height: auto; }}
+            </style>
+        </head>
+        <body>
+            {svg_content}
+        </body>
+        </html>
+        """
+        
+        # Create temporary HTML file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as temp_html:
+            temp_html.write(html_content)
+            temp_html_path = temp_html.name
+        
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
+                
+                # Load the HTML file
+                await page.goto(f"file://{temp_html_path}")
+                
+                # Wait for the page to load
+                await page.wait_for_load_state('networkidle')
+                
+                # Check if the main SVG element is visible
+                svg_element = await page.query_selector('svg')
+                if svg_element:
+                    is_svg_visible = await svg_element.is_visible()
+                    
+                    if not is_svg_visible:
+                        print("  Playwright analysis: SVG is not visible, skipping")
+                        await browser.close()
+                        return ""
+                    
+                    # Count visible vs invisible elements for informational purposes
+                    svg_child_elements = await page.query_selector_all('svg *')
+                    visible_count = 0
+                    invisible_count = 0
+                    
+                    for element in svg_child_elements:
+                        try:
+                            if await element.is_visible():
+                                visible_count += 1
+                            else:
+                                invisible_count += 1
+                        except Exception:
+                            visible_count += 1  # Assume visible if we can't check
+                    
+                    print(f"  Playwright analysis: SVG is visible with {visible_count} visible, {invisible_count} invisible child elements")
+                    
+                    await browser.close()
+                    return svg_content
+                else:
+                    print("  Playwright analysis: No SVG element found")
+                    await browser.close()
+                    return svg_content
+                
+        finally:
+            # Clean up temporary HTML file
+            try:
+                os.unlink(temp_html_path)
+            except OSError:
+                pass
+                
+    except Exception as e:
+        print(f"  Warning: Playwright filtering failed: {e}")
+        print("  Falling back to original SVG content")
+        return svg_content
 
 
 def has_visible_content(svg_content: str, min_variance_threshold: float = 100.0) -> bool:
@@ -506,10 +688,11 @@ def get_group_bbox(group_element) -> tuple[float, float, float, float] | None:
         return None
 
 
-def extract_svgs_from_pdf(
+async def extract_svgs_from_pdf(
     pdf_path: str,
     output_filename: str,
     svgs_dir: str | None = None,
+    use_contrast_fallback: bool = True,
 ) -> str:
     """
     Extract SVGs from a PDF and save them as JSON blocks.
@@ -518,6 +701,7 @@ def extract_svgs_from_pdf(
         pdf_path: Path to the PDF file to process
         output_filename: Full path to the output JSON file
         svgs_dir: Directory to which to save the SVGs
+        use_contrast_fallback: Whether to use contrast analysis as a fallback check
 
     Returns:
         Path to the output JSON file
@@ -539,92 +723,109 @@ def extract_svgs_from_pdf(
 
         total_pages = len(doc)
 
-        # Extract all SVGs
-        print("\n=== Extracting SVGs ===")
-        for page_num in range(total_pages):
-            page = doc[page_num]
-            page_name = f"page_{page_num + 1}"
+        # Launch browser once for the entire PDF processing
+        print("\n=== Starting Playwright browser ===")
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            
+            # Extract all SVGs
+            print("\n=== Extracting SVGs ===")
+            for page_num in range(total_pages):
+                page = doc[page_num]
+                page_name = f"page_{page_num + 1}"
 
-            print(f"Processing page {page_num + 1}...")
+                print(f"Processing page {page_num + 1}...")
 
-            # Extract SVG with filtered mode (graphics only)
-            svg_info = extract_svg_from_page(page, page_name, svg_dir)
+                # Extract SVG with filtered mode (graphics only)
+                svg_info = extract_svg_from_page(page, page_name, svg_dir)
 
-            if "error" not in svg_info:
-                # Get the filtered SVG content
-                filtered_svg_content = filter_svg_content(svg_info)
+                if "error" not in svg_info:
+                    # Get the filtered SVG content
+                    filtered_svg_content = filter_svg_content(svg_info)
 
-                print(
-                    f"  DEBUG: Filtered SVG content contains {len(re.findall(r'<g[^>]*>', filtered_svg_content))} <g> opening tags"
-                )
+                    print(
+                        f"  DEBUG: Filtered SVG content contains {len(re.findall(r'<g[^>]*>', filtered_svg_content))} <g> opening tags"
+                    )
 
-                # Check if there's actual content (not just empty SVG)
-                if (
-                    "<path" in filtered_svg_content
-                    or "<rect" in filtered_svg_content
-                    or "<circle" in filtered_svg_content
-                    or "<polygon" in filtered_svg_content
-                ):
-                    # Segment the SVG using the in-memory filtered content
-                    svg_segments = segment_svg_groups(filtered_svg_content)
-
-                    for segment_idx, segment_content in enumerate(svg_segments):
-                        # Check if this segment has visible content
-                        if not has_visible_content(segment_content):
-                            print(
-                                f"  Skipped page {page_num + 1}, segment {segment_idx + 1} - no visible content (low contrast)"
-                            )
+                    # Check if there's actual content (not just empty SVG)
+                    if (
+                        "<path" in filtered_svg_content
+                        or "<rect" in filtered_svg_content
+                        or "<circle" in filtered_svg_content
+                        or "<polygon" in filtered_svg_content
+                    ):
+                        # Apply Playwright-based visibility filtering BEFORE segmentation
+                        print("  Applying Playwright visibility filtering...")
+                        playwright_filtered_svg = await filter_svg_elements_with_playwright_optimized(filtered_svg_content, browser)
+                        
+                        # Skip if Playwright determined the SVG is not visible
+                        if not playwright_filtered_svg.strip():
+                            print(f"  Skipped page {page_num + 1} - SVG not visible per Playwright analysis")
                             continue
                         
-                        # Try to get bbox from the segmented SVG
-                        bbox = None
-                        if len(svg_segments) > 1:
-                            # For segmented SVGs, try to extract bbox from viewBox
-                            viewbox_values = extract_viewbox_values(segment_content)
-                            if viewbox_values:
-                                bbox = list(viewbox_values)
+                        # Segment the SVG using the Playwright-filtered content
+                        svg_segments = segment_svg_groups(playwright_filtered_svg)
 
-                        # Fallback to full page bbox if no specific bbox found
-                        if bbox is None:
-                            page_rect = page.rect
-                            bbox = [
-                                page_rect.x0,
-                                page_rect.y0,
-                                page_rect.x1,
-                                page_rect.y1,
-                            ]
+                        for segment_idx, segment_content in enumerate(svg_segments):
+                            # Optional fallback: Check if this segment has visible content using contrast analysis
+                            # This serves as a safety net after Playwright filtering
+                            if use_contrast_fallback and not has_visible_content(segment_content):
+                                print(
+                                    f"  Skipped page {page_num + 1}, segment {segment_idx + 1} - no visible content (low contrast fallback check)"
+                                )
+                                continue
+                            
+                            # Try to get bbox from the segmented SVG
+                            bbox = None
+                            if len(svg_segments) > 1:
+                                # For segmented SVGs, try to extract bbox from viewBox
+                                viewbox_values = extract_viewbox_values(segment_content)
+                                if viewbox_values:
+                                    bbox = list(viewbox_values)
 
-                        # Create storage path for this segment
-                        segment_filename = (
-                            f"{page_name}_graphics_only_segment_{segment_idx + 1}.svg"
-                        )
-                        segment_path = os.path.join(svg_dir, segment_filename)
+                            # Fallback to full page bbox if no specific bbox found
+                            if bbox is None:
+                                page_rect = page.rect
+                                bbox = [
+                                    page_rect.x0,
+                                    page_rect.y0,
+                                    page_rect.x1,
+                                    page_rect.y1,
+                                ]
 
-                        # Save the segment (always save it to ensure the file exists)
-                        with open(segment_path, "w", encoding="utf-8") as f:
-                            f.write(segment_content)
+                            # Create storage path for this segment
+                            segment_filename = (
+                                f"{page_name}_graphics_only_segment_{segment_idx + 1}.svg"
+                            )
+                            segment_path = os.path.join(svg_dir, segment_filename)
 
-                        # Create the block without description
-                        svg_block = {
-                            "block_type": "svg",
-                            "page_number": page_num + 1,
-                            "bbox": bbox,
-                            "storage_url": segment_path,
-                            "description": None,
-                        }
+                            # Save the segment (always save it to ensure the file exists)
+                            with open(segment_path, "w", encoding="utf-8") as f:
+                                f.write(segment_content)
 
-                        svg_blocks.append(svg_block)
+                            # Create the block without description
+                            svg_block = {
+                                "block_type": "svg",
+                                "page_number": page_num + 1,
+                                "bbox": bbox,
+                                "storage_url": segment_path,
+                                "description": None,
+                            }
+
+                            svg_blocks.append(svg_block)
+                            print(
+                                f"  Added SVG block for page {page_num + 1}, segment {segment_idx + 1}"
+                            )
+                    else:
                         print(
-                            f"  Added SVG block for page {page_num + 1}, segment {segment_idx + 1}"
+                            f"  Skipped page {page_num + 1} - no significant vector graphics"
                         )
+                elif svg_info.startswith("Error"):
+                    print(f"  Error extracting SVG from page {page_num + 1}: {svg_info}")
                 else:
-                    print(
-                        f"  Skipped page {page_num + 1} - no significant vector graphics"
-                    )
-            elif svg_info.startswith("Error"):
-                print(f"  Error extracting SVG from page {page_num + 1}: {svg_info}")
-            else:
-                print(f"  Skipped page {page_num + 1} - no SVG saved")
+                    print(f"  Skipped page {page_num + 1} - no SVG saved")
+
+            await browser.close()
 
         doc.close()
 
@@ -670,11 +871,11 @@ if __name__ == "__main__":
     output_filename = os.path.join(temp_dir, "svgs.json")
 
     try:
-        output_path = extract_svgs_from_pdf(
+        output_path = asyncio.run(extract_svgs_from_pdf(
             pdf_path=pdf_path,
             output_filename=output_filename,
             svgs_dir=temp_dir,
-        )
+        ))
 
         print("SVGs extracted successfully!")
         print(f"Output file: {output_path}")

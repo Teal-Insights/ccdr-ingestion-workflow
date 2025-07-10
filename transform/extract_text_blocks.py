@@ -1,4 +1,4 @@
-# TODO: Ignore text blocks that aren't visible (e.g., transparent, behind a vector image)
+# TODO: Ignore text blocks that aren't visible; use playwright's element.is_visible()
 
 import pymupdf
 import os
