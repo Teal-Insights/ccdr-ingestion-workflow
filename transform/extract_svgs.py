@@ -13,7 +13,7 @@ import pymupdf
 from .models import SvgBlock, BlocksDocument, Block
 import svgelements
 from PIL import Image
-import xml.etree.ElementTree as ET
+
 
 dotenv.load_dotenv(override=True)
 
@@ -164,73 +164,75 @@ def filter_svg_elements_by_visual_contribution(svg_content: str, min_pixel_diff_
     try:
         print("  Testing visual contribution of SVG elements...")
         
-        # Parse the SVG to find all group elements (the actual drawing units)
-        root = ET.fromstring(svg_content)
+        # Find all group elements using regex
+        group_pattern = r"<g[^>]*>.*?</g>"
+        group_matches = []
         
-        # Find all group elements, regardless of whether they have IDs
-        all_groups = root.findall(".//g") + root.findall(".//{http://www.w3.org/2000/svg}g")
-        
-        # Filter to only groups that are not inside defs (actual drawing groups)
-        parent_map = {c: p for p in root.iter() for c in p}
-        
-        drawing_groups = []
-        for group in all_groups:
-            # Walk up parent chain to check if inside defs
-            current = group
-            inside_defs = False
-            while current in parent_map:
-                parent = parent_map[current]
-                parent_tag = parent.tag.split('}')[1] if '}' in parent.tag else parent.tag
-                if parent_tag == 'defs':
-                    inside_defs = True
-                    break
-                current = parent
+        for match in re.finditer(group_pattern, svg_content, re.DOTALL):
+            group_content = match.group(0)
+            group_start = match.start()
+            group_end = match.end()
             
-            # Skip groups that contain image elements since we don't want to extract these
+            # Check if this group is inside <defs> by looking at the content before it
+            content_before = svg_content[:group_start]
+            
+            # Count unclosed <defs> tags before this group
+            defs_opens = len(re.findall(r'<defs[^>]*>', content_before))
+            defs_closes = len(re.findall(r'</defs>', content_before))
+            inside_defs = defs_opens > defs_closes
+            
             if not inside_defs:
-                contains_image = False
-                # Check if this group or any of its children contain image elements
-                for element in group.iter():
-                    element_tag = element.tag.split('}')[1] if '}' in element.tag else element.tag
-                    if element_tag == 'image':
-                        contains_image = True
-                        break
+                # Check if this group contains image elements
+                contains_image = bool(re.search(r'<image[^>]*/?>', group_content))
                 
                 if not contains_image:
-                    drawing_groups.append(group)
+                    # Extract the ID if it exists
+                    id_match = re.search(r'id="([^"]*)"', group_content)
+                    group_id = id_match.group(1) if id_match else None
+                    
+                    group_matches.append({
+                        'content': group_content,
+                        'start': group_start,
+                        'end': group_end,
+                        'id': group_id,
+                        'match_obj': match
+                    })
                 else:
-                    print(f"    Excluding group from testing (contains image): {group.get('id', 'no-id')}")
+                    id_match = re.search(r'id="([^"]*)"', group_content)
+                    group_id = id_match.group(1) if id_match else "no-id"
+                    print(f"    Excluding group from testing (contains image): {group_id}")
         
-        if not drawing_groups:
+        if not group_matches:
             print("  No drawing group elements found for testing, keeping original SVG")
             return svg_content
         
-        print(f"  Found {len(drawing_groups)} drawing group elements to test for visual contribution")
+        print(f"  Found {len(group_matches)} drawing group elements to test for visual contribution")
         
-        # Check if we need to assign temporary IDs
-        groups_needing_ids = []
-        for i, group in enumerate(drawing_groups):
-            group_id = group.get('id')
-            if not group_id:
-                groups_needing_ids.append((i, group))
-        
+        # Assign temporary IDs to groups that don't have them
         working_svg_content = svg_content
+        temp_id_counter = 0
         
-        # Only do XML conversion if we actually need to assign IDs
-        if groups_needing_ids:
-            print(f"  Assigning temporary IDs to {len(groups_needing_ids)} groups...")
-            temp_id_assignments = {}
-            
-            for i, group in groups_needing_ids:
-                group_id = f"temp_group_{i}"
-                group.set('id', group_id)
-                temp_id_assignments[i] = group_id
-            
-            # Convert the updated XML back to string
-            working_svg_content = ET.tostring(root, encoding='unicode')
-            print("  WARNING: XML conversion may alter SVG rendering!")
-        else:
-            print("  All groups have IDs, skipping XML conversion")
+        # Process groups from end to start to avoid position shifts
+        for group_info in reversed(group_matches):
+            if group_info['id'] is None:
+                temp_id = f"temp_group_{temp_id_counter}"
+                temp_id_counter += 1
+                
+                # Insert the ID into the opening tag
+                original_content = group_info['content']
+                # Find the opening <g tag and insert id attribute
+                opening_tag_match = re.match(r'(<g[^>]*)(>)', original_content)
+                if opening_tag_match:
+                    new_content = f'{opening_tag_match.group(1)} id="{temp_id}"{opening_tag_match.group(2)}{original_content[opening_tag_match.end():]}'
+                    # Replace in the working content
+                    working_svg_content = (
+                        working_svg_content[:group_info['start']] + 
+                        new_content + 
+                        working_svg_content[group_info['end']:]
+                    )
+                    # Update the group info
+                    group_info['id'] = temp_id
+                    group_info['content'] = new_content
         
         # Calculate proper render dimensions
         if page_width and page_height:
@@ -261,9 +263,9 @@ def filter_svg_elements_by_visual_contribution(svg_content: str, min_pixel_diff_
         visible_element_ids = set()
         
         # Test each group by removing it and comparing
-        for i, group in enumerate(drawing_groups):
-            group_id = group.get('id')
-            print(f"    Testing group {i+1}/{len(drawing_groups)}: {group_id}")
+        for i, group_info in enumerate(group_matches):
+            group_id = group_info['id']
+            print(f"    Testing group {i+1}/{len(group_matches)}: {group_id}")
             
             # Create SVG without this group
             svg_without_group = remove_element_by_id(working_svg_content, group_id)
@@ -293,13 +295,12 @@ def filter_svg_elements_by_visual_contribution(svg_content: str, min_pixel_diff_
                 visible_element_ids.add(group_id)
         
         # Build filtered SVG by removing non-contributing groups
-        # Use working_svg_content since that's where the temp IDs exist
         filtered_svg = working_svg_content
-        total_elements = len(drawing_groups)
+        total_elements = len(group_matches)
         visible_count = len(visible_element_ids)
         
-        for group in drawing_groups:
-            group_id = group.get('id')
+        for group_info in group_matches:
+            group_id = group_info['id']
             if group_id and group_id not in visible_element_ids:
                 filtered_svg = remove_element_by_id(filtered_svg, group_id)
         
