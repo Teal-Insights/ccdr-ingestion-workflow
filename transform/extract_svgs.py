@@ -147,25 +147,6 @@ def remove_element_by_id(svg_content: str, element_id: str) -> str:
         return svg_content
 
 
-def get_element_bbox_from_svg(svg_content: str, element_id: str) -> tuple[float, float, float, float] | None:
-    """
-    Extract bounding box for a specific element from SVG content.
-    
-    Args:
-        svg_content: The SVG content as a string
-        element_id: The ID of the element
-        
-    Returns:
-        Tuple of (x, y, width, height) or None if not found
-    """
-    try:
-        # For now, return None to use full image comparison
-        # This could be enhanced to parse element geometry for more targeted comparison
-        return None
-    except Exception:
-        return None
-
-
 def filter_svg_elements_by_visual_contribution(svg_content: str, min_pixel_diff_threshold: int = 5, page_width: float | None = None, page_height: float | None = None) -> str:
     """
     Filter SVG elements by testing their visual contribution to the rendered output.
@@ -328,117 +309,6 @@ def filter_svg_elements_by_visual_contribution(svg_content: str, min_pixel_diff_
         print(f"  Warning: Visual contribution filtering failed: {e}")
         print("  Falling back to original SVG content")
         return svg_content
-
-
-def has_visible_content(svg_content: str, min_variance_threshold: float = 100.0) -> bool:
-    """
-    Check if an SVG has visible content by converting it to PNG and analyzing pixel variance.
-    
-    Args:
-        svg_content: The SVG content as a string
-        min_variance_threshold: Minimum pixel variance to consider content "visible"
-        
-    Returns:
-        True if the SVG has visible content (sufficient contrast), False otherwise
-    """
-    try:
-        # Create a temporary SVG file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.svg', delete=False) as temp_svg:
-            temp_svg.write(svg_content)
-            temp_svg_path = temp_svg.name
-        
-        try:
-            # Try to use Inkscape first (most accurate SVG rendering)
-            temp_png_path = temp_svg_path.replace('.svg', '.png')
-            
-            # Try Inkscape first
-            try:
-                result = subprocess.run([
-                    'inkscape', 
-                    '--export-type=png',
-                    '--export-filename=' + temp_png_path,
-                    '--export-width=200',  # Small size for efficiency
-                    '--export-height=200',
-                    temp_svg_path
-                ], capture_output=True, text=True, timeout=10)
-                
-                if result.returncode != 0:
-                    raise subprocess.CalledProcessError(result.returncode, 'inkscape')
-                    
-            except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-                # Fallback to rsvg-convert if Inkscape fails or isn't available
-                try:
-                    result = subprocess.run([
-                        'rsvg-convert', 
-                        '-w', '200', 
-                        '-h', '200', 
-                        '-o', temp_png_path,
-                        temp_svg_path
-                    ], capture_output=True, text=True, timeout=10)
-                    
-                    if result.returncode != 0:
-                        raise subprocess.CalledProcessError(result.returncode, 'rsvg-convert')
-                        
-                except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-                    # Fallback to cairosvg if available
-                    try:
-                        import cairosvg
-                        cairosvg.svg2png(url=temp_svg_path, write_to=temp_png_path, output_width=200, output_height=200)
-                    except ImportError:
-                        print("  Warning: No SVG renderer available (tried inkscape, rsvg-convert, cairosvg)")
-                        return True  # Assume visible if we can't check
-                    except Exception as e:
-                        print(f"  Warning: Failed to render SVG with cairosvg: {e}")
-                        return True  # Assume visible if rendering fails
-            
-            # Check if PNG file was created
-            if not os.path.exists(temp_png_path):
-                print("  Warning: SVG rendering did not produce PNG file")
-                return True  # Assume visible if we can't check
-            
-            # Load the PNG and analyze pixels
-            try:
-                with Image.open(temp_png_path) as img:
-                    # Convert to grayscale for variance analysis
-                    if img.mode in ('RGBA', 'LA'):
-                        # Handle transparency by compositing on white background
-                        background = Image.new('RGB', img.size, (255, 255, 255))
-                        if img.mode == 'RGBA':
-                            background.paste(img, mask=img.split()[-1])  # Use alpha channel as mask
-                        else:  # LA mode
-                            background.paste(img.convert('RGB'), mask=img.split()[-1])
-                        img = background
-                    
-                    gray_img = img.convert('L')
-                    pixels = np.array(gray_img)
-                    
-                    # Calculate pixel variance
-                    variance = np.var(pixels)
-                    
-                    print(f"  SVG pixel variance: {variance:.1f} (threshold: {min_variance_threshold})")
-                    
-                    # Clean up temporary PNG
-                    try:
-                        os.unlink(temp_png_path)
-                    except OSError:
-                        pass
-                    
-                    return bool(variance >= min_variance_threshold)
-                    
-            except Exception as e:
-                print(f"  Warning: Failed to analyze PNG: {e}")
-                return True  # Assume visible if analysis fails
-                
-        finally:
-            # Clean up temporary SVG
-            try:
-                os.unlink(temp_svg_path)
-            except OSError:
-                pass
-                
-    except Exception as e:
-        print(f"  Warning: Error checking SVG visibility: {e}")
-        return True  # Assume visible if check fails completely
 
 
 def extract_viewbox_values(svg_content: str) -> tuple[float, float, float, float] | None:
@@ -656,17 +526,6 @@ def filter_svg_content(svg_content: str, filter_text: bool = True, filter_images
     return svg_content
 
 
-def _clean_namespaces(element):
-    """Remove namespace prefixes from element and its children for cleaner SVG output"""
-    # Remove namespace from tag name
-    if "}" in element.tag:
-        element.tag = element.tag.split("}")[1]
-
-    # Clean up children recursively
-    for child in element:
-        _clean_namespaces(child)
-
-
 def extract_svg_header(svg_content: str) -> str:
     """Extract the SVG header from the SVG content (everything before the first
     <g>, but excluding any <defs> section).
@@ -774,39 +633,6 @@ def segment_svg_groups(svg_content: str) -> list[str]:
     except Exception as e:
         print(f"Warning: Error during SVG segmentation: {e}")
         return [svg_content]
-
-
-def get_group_bbox(group_element) -> tuple[float, float, float, float] | None:
-    """
-    Calculate the bounding box of a group element.
-    Returns (x, y, width, height) or None if cannot be determined.
-    """
-    try:
-        # This is a simplified approach - in reality, calculating SVG bounding boxes
-        # is complex and would require parsing all the path data, transforms, etc.
-        # For now, we'll look for explicit bbox attributes or use a fallback
-
-        # Check if there's a transform attribute that might give us positioning info
-        transform = group_element.attrib.get("transform", "")
-
-        # Look for translate values in transform
-        translate_match = re.search(r"translate\(([^)]+)\)", transform)
-        if translate_match:
-            coords = translate_match.group(1).split(",")
-            if len(coords) >= 2:
-                try:
-                    x = float(coords[0].strip())
-                    y = float(coords[1].strip())
-                    # Use a default size for now - this is naive but works as a starting point
-                    return (x, y, 100, 100)
-                except ValueError:
-                    pass
-
-        # Fallback: return None to use original SVG dimensions
-        return None
-
-    except Exception:
-        return None
 
 
 def extract_svgs_from_pdf(
