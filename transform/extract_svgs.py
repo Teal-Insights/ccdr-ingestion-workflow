@@ -4,6 +4,7 @@
 import dotenv
 import os
 import re
+import io
 import tempfile
 import subprocess
 import numpy as np
@@ -368,14 +369,9 @@ def clip_svg_to_content_bounds(svg_content: str) -> str:
         
     Returns:
         Clipped SVG content with updated viewBox and dimensions
-    """
-    if svgelements is None:
-        print("  Warning: svgelements not available, returning original SVG")
-        return svg_content
-    
+    """    
     try:
         # Parse the SVG from string content using io.StringIO to simulate a file
-        import io
         svg_file = io.StringIO(svg_content)
         svg = svgelements.SVG.parse(svg_file, reify=True)
         
