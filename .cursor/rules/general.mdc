@@ -1,0 +1,10 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Python
+
+This repository uses `uv` for dependency management, so Python code should always be run with `uv run` (e.g., `uv run some_script.py`).
+
+Dependencies can be added like `uv add dependency_name`, or all dependencies listed in `pyproject.toml` can be installed with `uv sync`.

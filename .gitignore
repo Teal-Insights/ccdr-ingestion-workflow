@@ -20,7 +20,6 @@ artifacts/
 
 # IDE
 .vscode/
-.cursor/
 
 # Input data
 *.pdf
