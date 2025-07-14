@@ -70,7 +70,7 @@ Run the complete pipeline on a PDF:
 
 ```bash
 # Place your PDF as 'input.pdf' in the project root
-uv run main.py
+uv run ingest_ccdrs.py
 ```
 
 This will process the PDF through all stages and output the results to a temporary directory.

@@ -48,7 +48,8 @@ The project uses `litellm`'s `acompletion` method for interacting with language 
 
 ### Data Models
 
-Structured data is written to tempfiles for handoff from step to step. Pydantic models are used for JSON serialization and validation:
+Structured data is written to tempfiles for handoff from step to step.
+Pydantic models are used for JSON serialization and validation:
 
 - Located in `transform/models.py`
 - Type hints throughout codebase

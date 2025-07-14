@@ -1,0 +1,9 @@
+---
+description: Rules for agent in "build" mode
+globs: 
+alwaysApply: false
+---
+
+## AI Guidelines
+
+Always implement exactly the features requested by the user, and no additional features. It is not your job to make design decisions.
