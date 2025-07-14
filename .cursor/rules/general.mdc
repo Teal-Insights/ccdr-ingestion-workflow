@@ -3,8 +3,76 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Python
+## Project Overview
 
-This repository uses `uv` for dependency management, so Python code should always be run with `uv run` (e.g., `uv run some_script.py`).
+The CCDR Ingestion Workflow transforms World Bank Country and Climate Development Reports (CCDRs) from PDF format into a RAG-friendly schema for PostgreSQL semantic search and retrieval. The pipeline processes PDFs through 11 main stages to extract text, images, and vector graphics, then uses LLMs to clean and structure content into semantic HTML before converting to a graph database schema.
 
-Dependencies can be added like `uv add dependency_name`, or all dependencies listed in `pyproject.toml` can be installed with `uv sync`.
+## Development Environment
+
+### Dependency Management
+
+- **Package Manager**: `uv` (NOT pip or conda)
+- **Run Commands**: Always use `uv run` prefix (e.g., `uv run some_script.py`)
+- **Install Dependencies**: `uv add dependency_name` or `uv sync` for all dependencies
+- **Dependencies File**: `pyproject.toml`
+- **Intermediate Artifacts Storage**: Put exploratory scripts and assets in `artifacts/` to exclude from version control
+
+## Pipeline Architecture
+
+The main pipeline (`ingest_ccdrs.py`) processes PDFs through these stages:
+
+1. **Image Extraction** (`extract_images.py`) - Extract ImageBlocks and save to images.json
+2. **SVG Extraction** (`extract_svgs.py`) - Extract SvgBlocks and save to svgs.json (WIP)
+3. **Text Block Extraction** (`extract_text_blocks.py`) - Extract TextBlocks with styling to text_blocks.json
+4. **Block Combination** (`combine_blocks.py`) - Merge all blocks into combined_blocks.json
+5. **Image/SVG Description** (`describe_images.py`) - Use VLM to describe images and SVGs, output to described_blocks.json
+6. **Basic HTML Conversion** (`convert_to_html.py`) - Convert to HTML with IDs, plaintext, no bboxes for structure detection
+7. **Structure Detection** (`detect_structure.py`) - Use LLM to identify document sections (header/main/footer)
+8. **Rich HTML Generation** (`convert_to_html.py`) - Create styled HTML with rich text and bboxes for each section (WIP)
+9. **HTML Cleaning** (`clean_html.py`) - LLM-based cleaning to conform to semantic specification (WIP)
+10. **Graph Conversion** (`html_to_graph.py`) - Transform HTML DOM to [database schema](https://github.com/Teal-Insights/ccdr-explorer-api/blob/main/schema.md) (TODO)
+11. **Relation Enrichment** (`create_relations.py`) - Generate relationships from anchor tags (TODO)
+
+## Key Technical Details
+
+### LLM Usage
+
+The `.env` file contains the following environment variables that can be loaded in scripts using `python-dotenv`.
+
+```bash
+GEMINI_API_KEY=your_gemini_api_key
+DEEPSEEK_API_KEY=your_deepseek_api_key
+```
+
+The project uses `litellm`'s `acompletion` method for interacting with language model APIs, and `asyncio` with a semaphore to control concurrency.
+
+### Data Models
+
+Structured data is written to tempfiles for handoff from step to step. Pydantic models are used for JSON serialization and validation:
+
+- Located in `transform/models.py`
+- Type hints throughout codebase
+- Run `uv run mypy $file_path` to type check
+
+## Running the Pipeline
+
+### Full Pipeline
+
+```bash
+# Place PDF as 'input.pdf' in project root
+uv run ingest_ccdrs.py
+```
+
+### Individual Stages
+
+Individual steps are runnable with module syntax:
+
+```bash
+uv run -m transform.extract_text_blocks document.pdf
+```
+
+## Error Handling
+
+- Fail-fast approach for missing API keys
+- Comprehensive retry logic for API calls
+- Proper async error handling throughout pipeline

@@ -1,3 +1,9 @@
+---
+description: 
+globs: transform/extract_svgs.py
+alwaysApply: false
+---
+
 It's important to understand how the SVG content extracted from a PDF by `pymupdf` is structured.
 
 ## Structure of raw extracted SVG content

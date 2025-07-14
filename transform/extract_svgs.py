@@ -19,6 +19,26 @@
 # TODO: Check to make sure we're not extracting tables as drawings
 # TODO: (Long-term) Use a clustering algorithm to group SVG elements that are part of the same drawing
 
+"""
+### SVG Processing Pipeline
+
+The SVG extraction follows a specific order of operations (see `.cursor/rules/svg_content.mdc`):
+
+1. Extract raw SVG from PDF page using `page.get_svg_image()`
+2. Filter text elements early (preserving images for visibility testing)
+3. Apply visual contribution filtering to test each drawing group
+4. Filter image elements after visibility testing
+5. Segment into individual SVGs
+
+**Critical SVG Design Decisions**:
+- Only test `<g>` elements outside `<defs>` (actual drawing units)
+- Exclude groups containing image elements from testing
+- Use pixel-level comparison to detect visual impact
+- Remove elements causing fewer than 5 pixel changes
+- Preserve original SVG structure exactly as PyMuPDF generates it
+- Use regex for temporary ID assignment (no XML parsing)
+"""
+
 import dotenv
 import os
 import re
