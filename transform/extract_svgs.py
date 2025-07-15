@@ -1,14 +1,11 @@
-# TODO: Need to handle excluding groups inside the defs from our segmentation regex
-# TODO: Need to make sure we keep mask_* defs as well as clip_* defs
-# TODO: Need to fix bug where "<g><g></g></g>" returns 1 match: "<g><g></g>"
-# TODO: Related: Need to figure out how to match only top-level groups, not nested ones
+# TODO: Diagnose why we're only successfully extracting a segment with ungrouped paths in the case where the page has no groups
 # TODO: Need to make sure that if we match a nested group, we keep all the defs that are referenced inside it
 # <g clip-path="url(#clip_61)">
 #  <g mask="url(#mask_62)">
 #    <image x="42" y="38" width="42" height="41" xlink:href="..."/>
 #  </g>
 # </g>
-#
+# Make sure we keep mask_* defs as well as clip_* defs
 #
 # TODO: (Short-term) treat SVG segments as part of same image if one is contained in the other's bounding box
 # TODO: Make extraction configurable so we can extract as either SVG or PNG, and make PNG the default for now
@@ -36,7 +33,7 @@ The SVG extraction follows a specific order of operations (see `.cursor/rules/sv
 - Use pixel-level comparison to detect visual impact
 - Remove elements causing fewer than 5 pixel changes
 - Preserve original SVG structure exactly as PyMuPDF generates it
-- Use regex for temporary ID assignment (no XML parsing)
+- Use regex for all operations (no XML parsing)
 """
 
 import dotenv
@@ -72,43 +69,59 @@ def filter_svg_elements_by_visual_contribution(svg_content: str, min_pixel_diff_
     try:
         print("  Testing visual contribution of SVG elements...")
         
-        # Find all group elements using regex
-        group_pattern = r"<g[^>]*>.*?</g>"
+        # Find all top-level group elements not inside <defs>
+        # First extract content after </defs> and before </svg>
+        content_after_defs_pattern = r"</defs>\s*(.*?)(?=</svg>)"
+        content_match = re.findall(content_after_defs_pattern, svg_content, re.DOTALL)
+        content_after_defs = content_match[0] if content_match else svg_content
+        
+        # General-purpose patterns for different nesting levels
+        group_patterns = [
+            r'<g[^>]*></g>',  # Empty groups
+            r'<g[^>]*>[^<]*</g>',  # Groups with text content only  
+            r'<g[^>]*>(?:[^<]|<(?!/?g[^>]*>))*</g>',  # Groups with non-group elements
+            r'<g[^>]*>(?:[^<]|<(?!/?g[^>]*>))*<g[^>]*>(?:[^<]|<(?!/?g[^>]*>))*</g>(?:[^<]|<(?!/?g[^>]*>))*</g>',  # 1 level nested
+            r'<g[^>]*>(?:[^<]|<(?!/?g[^>]*>))*<g[^>]*>(?:[^<]|<(?!/?g[^>]*>))*<g[^>]*>(?:[^<]|<(?!/?g[^>]*>))*</g>(?:[^<]|<(?!/?g[^>]*>))*</g>(?:[^<]|<(?!/?g[^>]*>))*</g>'  # 2 levels nested
+        ]
+        
+        groups = []
+        remaining_text = content_after_defs
+        
+        # Apply patterns from most complex to simplest to avoid partial matches
+        for pattern in reversed(group_patterns):
+            matches = re.findall(pattern, remaining_text, re.DOTALL)
+            for match in matches:
+                groups.append(match)
+                # Remove this match to avoid double-counting
+                remaining_text = remaining_text.replace(match, '', 1)
+        
         group_matches = []
         
-        for match in re.finditer(group_pattern, svg_content, re.DOTALL):
-            group_content = match.group(0)
-            group_start = match.start()
-            group_end = match.end()
+        # Now process each found group to extract metadata
+        for group_content in groups:
+            # Check if this group contains image elements
+            contains_image = bool(re.search(r'<image[^>]*/?>', group_content))
             
-            # Check if this group is inside <defs> by looking at the content before it
-            content_before = svg_content[:group_start]
-            
-            # Count unclosed <defs> tags before this group
-            defs_opens = len(re.findall(r'<defs[^>]*>', content_before))
-            defs_closes = len(re.findall(r'</defs>', content_before))
-            inside_defs = defs_opens > defs_closes
-            
-            if not inside_defs:
-                # Check if this group contains image elements
-                contains_image = bool(re.search(r'<image[^>]*/?>', group_content))
+            if not contains_image:
+                # Extract the ID if it exists
+                id_match = re.search(r'id="([^"]*)"', group_content)
+                group_id = id_match.group(1) if id_match else None
                 
-                if not contains_image:
-                    # Extract the ID if it exists
-                    id_match = re.search(r'id="([^"]*)"', group_content)
-                    group_id = id_match.group(1) if id_match else None
-                    
-                    group_matches.append({
-                        'content': group_content,
-                        'start': group_start,
-                        'end': group_end,
-                        'id': group_id,
-                        'match_obj': match
-                    })
-                else:
-                    id_match = re.search(r'id="([^"]*)"', group_content)
-                    group_id = id_match.group(1) if id_match else "no-id"
-                    print(f"    Excluding group from testing (contains image): {group_id}")
+                # Find the position of this group in the original SVG for ID injection
+                group_start = svg_content.find(group_content)
+                group_end = group_start + len(group_content)
+                
+                group_matches.append({
+                    'content': group_content,
+                    'start': group_start,
+                    'end': group_end,
+                    'id': group_id,
+                    'match_obj': None  # No longer needed since we have the content
+                })
+            else:
+                id_match = re.search(r'id="([^"]*)"', group_content)
+                group_id = id_match.group(1) if id_match else "no-id"
+                print(f"    Excluding group from testing (contains image): {group_id}")
         
         if not group_matches:
             print("  No drawing group elements found for testing, keeping original SVG")
@@ -300,9 +313,31 @@ def segment_svg_groups(svg_content: str) -> list[str]:
     Each <g> tag is treated as a separate drawing.
     """
     try:
-        # Find all <g> elements using regex
-        group_pattern = r"<g[^>]*>.*?</g>(?![^<]*</defs>)"
-        groups = re.findall(group_pattern, svg_content, re.DOTALL)
+        # Find all top-level <g> elements not inside <defs>
+        # First extract content after </defs> and before </svg>
+        content_after_defs_pattern = r"</defs>\s*(.*?)(?=</svg>)"
+        content_match = re.findall(content_after_defs_pattern, svg_content, re.DOTALL)
+        content_after_defs = content_match[0] if content_match else svg_content
+        
+        # General-purpose patterns for different nesting levels
+        group_patterns = [
+            r'<g[^>]*></g>',  # Empty groups
+            r'<g[^>]*>[^<]*</g>',  # Groups with text content only  
+            r'<g[^>]*>(?:[^<]|<(?!/?g[^>]*>))*</g>',  # Groups with non-group elements
+            r'<g[^>]*>(?:[^<]|<(?!/?g[^>]*>))*<g[^>]*>(?:[^<]|<(?!/?g[^>]*>))*</g>(?:[^<]|<(?!/?g[^>]*>))*</g>',  # 1 level nested
+            r'<g[^>]*>(?:[^<]|<(?!/?g[^>]*>))*<g[^>]*>(?:[^<]|<(?!/?g[^>]*>))*<g[^>]*>(?:[^<]|<(?!/?g[^>]*>))*</g>(?:[^<]|<(?!/?g[^>]*>))*</g>(?:[^<]|<(?!/?g[^>]*>))*</g>'  # 2 levels nested
+        ]
+        
+        groups = []
+        remaining_text = content_after_defs
+        
+        # Apply patterns from most complex to simplest to avoid partial matches
+        for pattern in reversed(group_patterns):
+            matches = re.findall(pattern, remaining_text, re.DOTALL)
+            for match in matches:
+                groups.append(match)
+                # Remove this match to avoid double-counting
+                remaining_text = remaining_text.replace(match, '', 1)
 
         print(f"  DEBUG: Found {len(groups)} <g> elements using regex")
 

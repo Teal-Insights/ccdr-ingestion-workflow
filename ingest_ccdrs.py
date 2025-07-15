@@ -42,7 +42,7 @@ temp_dir: str = tempfile.mkdtemp(prefix="pdf_parsing_pipeline_")
 print(f"Using temporary directory: {temp_dir}")
 
 # TODO: Make this a command line argument and support use of folder paths
-pdf_path: str = "input.pdf"
+pdf_path: str = "artifacts/input.pdf"
 print(f"Processing PDF: {pdf_path}")
 
 # 1. Extract ImageBlocks and write BlocksDocument to <temp_dir>/images.json
