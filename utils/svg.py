@@ -29,7 +29,7 @@ def extract_elements(
     end: int
 
     if from_defs:
-        start = svg_text.find('<defs>') + 6
+        start = svg_text.find('>', svg_text.find('<defs')) + 1
         # In case there's more than one defs, find the last one
         end = svg_text.rfind('</defs>')
         if start < 6 or end == -1:
@@ -302,7 +302,7 @@ def update_svg_viewbox_and_dimensions(svg_content: str, x: float, y: float, widt
     return svg_content
 
 
-def clip_svg_to_content_bounds(svg_content: str) -> str:
+def clip_svg_to_content_bounds(svg_content: str) -> tuple[str, tuple[float, float, float, float]]:
     """
     Clip SVG content to its actual content bounds, removing empty space around the drawing.
     
@@ -310,80 +310,66 @@ def clip_svg_to_content_bounds(svg_content: str) -> str:
         svg_content: The original SVG content as a string
         
     Returns:
-        Clipped SVG content with updated viewBox and dimensions
+        Tuple of (clipped SVG content, bounding box as (x0, y0, x1, y1))
     """    
-    try:
-        # Parse the SVG from string content using io.StringIO to simulate a file
-        svg_file = io.StringIO(svg_content)
-        svg = svgelements.SVG.parse(svg_file, reify=True)
+    # Parse the SVG from string content using io.StringIO to simulate a file
+    svg_file = io.StringIO(svg_content)
+    svg = svgelements.SVG.parse(svg_file, reify=True)
+    
+    # Calculate the bounding box of all visible elements
+    bbox = None
+    for element in svg.elements():
+        # Skip elements that are hidden or have no geometry
+        try:
+            if hasattr(element, 'values') and element.values.get('visibility') == 'hidden':
+                continue
+            if hasattr(element, 'values') and element.values.get('display') == 'none':
+                continue
+        except (KeyError, AttributeError):
+            pass
         
-        # Calculate the bounding box of all visible elements
-        bbox = None
-        for element in svg.elements():
-            # Skip elements that are hidden or have no geometry
-            try:
-                if hasattr(element, 'values') and element.values.get('visibility') == 'hidden':
-                    continue
-                if hasattr(element, 'values') and element.values.get('display') == 'none':
-                    continue
-            except (KeyError, AttributeError):
-                pass
-            
-            # Get element bbox if it has geometry
-            if hasattr(element, 'bbox') and callable(element.bbox):
-                try:
-                    element_bbox = element.bbox()
-                    # Check if bbox is valid - must be a sequence with 4 numeric values
-                    if element_bbox is not None:
-                        try:
-                            # Try to convert to list and validate
-                            bbox_list = list(element_bbox)  # type: ignore
-                            if len(bbox_list) == 4:
-                                x0, y0, x1, y1 = bbox_list
-                                # Ensure all values are numeric
-                                x0, y0, x1, y1 = float(x0), float(y0), float(x1), float(y1)
-                                
-                                # Skip invalid or zero-size bboxes
-                                if x1 > x0 and y1 > y0:
-                                    if bbox is None:
-                                        bbox = [x0, y0, x1, y1]
-                                    else:
-                                        bbox[0] = min(bbox[0], x0)  # min x
-                                        bbox[1] = min(bbox[1], y0)  # min y
-                                        bbox[2] = max(bbox[2], x1)  # max x
-                                        bbox[3] = max(bbox[3], y1)  # max y
-                        except (TypeError, ValueError, IndexError):
-                            # Skip if bbox can't be converted to 4 numeric values
-                            pass
-                except Exception:
-                    # Skip elements that can't provide bbox
-                    continue
-        
-        if bbox is None:
-            print("  Warning: No valid content bounds found, returning original SVG")
-            return svg_content
-            
-        # Add a small padding around the content
-        padding = 2.0
-        x0, y0, x1, y1 = bbox  # bbox is guaranteed to be not None here
-        x0 -= padding
-        y0 -= padding
-        x1 += padding
-        y1 += padding
-        
-        # Calculate new dimensions
-        width = x1 - x0
-        height = y1 - y0
-        
-        print(f"  Content bounds: ({x0:.1f}, {y0:.1f}, {x1:.1f}, {y1:.1f})")
-        print(f"  New dimensions: {width:.1f} x {height:.1f}")
-        
-        # Update viewBox and dimensions in a single operation
-        return update_svg_viewbox_and_dimensions(svg_content, x0, y0, width, height)
-        
-    except Exception as e:
-        print(f"  Warning: Failed to clip SVG content bounds: {e}")
-        return svg_content
+        # Get element bbox if it has geometry
+        if hasattr(element, 'bbox') and callable(element.bbox):
+            element_bbox = element.bbox()
+            # Check if bbox is valid - must be a sequence with 4 numeric values
+            if element_bbox is not None:
+                # Try to convert to list and validate
+                bbox_list = list(element_bbox)  # type: ignore
+                if len(bbox_list) == 4:
+                    x0, y0, x1, y1 = bbox_list
+                    # Ensure all values are numeric
+                    x0, y0, x1, y1 = float(x0), float(y0), float(x1), float(y1)
+                    
+                    # Skip invalid or zero-size bboxes
+                    if x1 > x0 and y1 > y0:
+                        if bbox is None:
+                            bbox = [x0, y0, x1, y1]
+                        else:
+                            bbox[0] = min(bbox[0], x0)  # min x
+                            bbox[1] = min(bbox[1], y0)  # min y
+                            bbox[2] = max(bbox[2], x1)  # max x
+                            bbox[3] = max(bbox[3], y1)  # max y
+    
+    if bbox is None:
+        raise ValueError("No visible elements with geometry found in SVG to determine content bounds")
+
+    # Add a small padding around the content
+    padding = 2.0
+    x0, y0, x1, y1 = bbox  # bbox is guaranteed to be not None here
+    x0 -= padding
+    y0 -= padding
+    x1 += padding
+    y1 += padding
+    
+    # Calculate new dimensions
+    width = x1 - x0
+    height = y1 - y0
+    
+    print(f"  Content bounds: ({x0:.1f}, {y0:.1f}, {x1:.1f}, {y1:.1f})")
+    print(f"  New dimensions: {width:.1f} x {height:.1f}")
+    
+    # Update viewBox and dimensions in a single operation
+    return update_svg_viewbox_and_dimensions(svg_content, x0, y0, width, height), (x0, y0, x1, y1)
 
 
 def remove_unused_clippaths(svg_content: str) -> str:
@@ -461,284 +447,122 @@ def remove_element_by_id(svg_content: str, element_id: str) -> str:
         return svg_content
 
 
-def extract_svg_header(svg_content: str) -> str:
-    """Extract the SVG header from the SVG content (everything before the first
-    <g>, but excluding any <defs> section).
-    If no <g> is found, use the viewBox to determine the dimensions.
-    If no viewBox is found, something has gone wrong; let's raise an error.
-    """
-    svg_header_match = re.match(r"(.*?)(?=<defs|<g[^>]*>)", svg_content, re.DOTALL)
-    
-    if svg_header_match:
-        svg_header = svg_header_match.group(1)
-    else:
-        print("Warning: No header found in SVG content")
-        # Create template string with formattable values
-        svg_header_template = """<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="{width}px" height="{height}px" viewBox="0 0 {width} {height}">
-"""
-        # Fallback: create a minimal SVG header using extracted viewbox
-        viewbox_values = extract_viewbox_values(svg_content)
-        if viewbox_values and len(viewbox_values) == 4:
-            width = viewbox_values[2]
-            height = viewbox_values[3]
-            svg_header = svg_header_template.format(width=width, height=height)
-        else:
-            raise ValueError("No viewBox found in SVG content")
-
-    # Make sure the header ends with a newline for clean formatting
+def extract_svg_header(svg_content: str, page_num: int) -> str:
+    """Extract the SVG header from the SVG content"""
+    svg_header_match = re.search(r'^(<svg[^>]*>)', svg_content)
+    if not svg_header_match:
+        raise ValueError(f"Failed to extract SVG header on page {page_num + 1}")
+    svg_header: str = svg_header_match.group(1)
     if not svg_header.endswith("\n"):
         svg_header += "\n"
-
     return svg_header
 
 
-def filter_svg_elements_by_visual_contribution(svg_content: str, min_pixel_diff_threshold: int = 5, page_width: float | None = None, page_height: float | None = None) -> str:
+def assign_ids_to_elements(svg_content: str) -> str:
     """
-    Filter SVG elements by testing their visual contribution to the rendered output.
+    Find all opening tags that don't have an ID and assign them a unique ID.
     
     Args:
-        svg_content: The SVG content as a string (should already have text filtered out)
+        svg_content: The SVG content to modify
+        
+    Returns:
+        Modified SVG content with IDs assigned
+    """
+    working_svg_content = svg_content
+    id_counter = 0
+    
+    # Pattern to match opening tags (including self-closing) that don't have an id attribute
+    # Exclude the svg tag itself
+    pattern = r'<(?!svg\s|/)([\w-]+)(?![^>]*\sid\s*=)[^>]*?(?:/>|>)'
+    
+    # Find all matches with their positions (from end to start to avoid position shifts)
+    matches = list(re.finditer(pattern, working_svg_content))
+    
+    # Process from end to start to avoid position shifts when inserting IDs
+    for match in reversed(matches):
+        full_tag = match.group(0)
+        start_pos = match.start()
+        end_pos = match.end()
+        
+        # Generate unique ID
+        unique_id = f"temp_id_{id_counter}"
+        id_counter += 1
+        
+        # Insert the ID attribute
+        if full_tag.endswith('/>'):
+            # Self-closing tag - insert before the />
+            new_tag = full_tag[:-2] + f' id="{unique_id}"/>'
+        else:
+            # Opening tag - insert before the >
+            new_tag = full_tag[:-1] + f' id="{unique_id}">'
+        
+        # Replace in the working content
+        working_svg_content = working_svg_content[:start_pos] + new_tag + working_svg_content[end_pos:]
+    
+    return working_svg_content
+
+
+def filter_svg_elements_by_visual_contribution(
+        svg_content: str, groups: list[str], page_width: float,
+        page_height: float, min_pixel_diff_threshold: int = 5
+    ) -> list[str]:
+    """
+    Filter SVG elements by testing their visual contribution to the rendered output.
+
+    Args:
+        svg_content: The full baseline SVG content as a string
+        groups: List of substrings whose visual contribution should be tested
         min_pixel_diff_threshold: Minimum number of changed pixels to consider element visible
         page_width: Page width in points for proper rendering scale
         page_height: Page height in points for proper rendering scale
-        
+
     Returns:
-        Filtered SVG content with only visually contributing elements
-    """
-    try:
-        print("  Testing visual contribution of SVG elements...")
-        
-        # Find all top-level group elements not inside <defs>
-        groups: list[str] = extract_elements(
-            svg_content, elements_to_extract=["g"], from_defs=False
-        )
-        
-        group_matches = []
-        
-        # Now process each found group to extract metadata
-        for group_content in groups:
-            # Check if this group contains image elements
-            contains_image = bool(re.search(r'<image[^>]*/?>', group_content))
-            
-            if not contains_image:
-                # Extract the ID if it exists
-                id_match = re.search(r'id="([^"]*)"', group_content)
-                group_id = id_match.group(1) if id_match else None
-                
-                # Find the position of this group in the original SVG for ID injection
-                group_start = svg_content.find(group_content)
-                group_end = group_start + len(group_content)
-                
-                group_matches.append({
-                    'content': group_content,
-                    'start': group_start,
-                    'end': group_end,
-                    'id': group_id,
-                    'match_obj': None  # No longer needed since we have the content
-                })
+       Groups list with only visually contributing elements
+    """        
+    # Render the baseline (full SVG)
+    scale = 1.0
+    render_width = int(page_width * scale)
+    render_height = int(page_height * scale)
+    baseline_image = render_svg_to_image(
+        svg_content, width=render_width, height=render_height
+    )
+    if baseline_image is None:
+        raise Exception("Failed to render baseline SVG - SVG content may be malformed")
+
+    baseline_pixels = np.array(baseline_image)
+    baseline_image.close()
+
+    # Test each group by removing it and comparing
+    filtered_groups = []
+    filtered_svg_content: str = svg_content
+    for group in groups:
+        # Extract the group ID for logging
+        group_id: str
+        group_id_match: re.Match[str] | None = re.search(r'id="([^"]+)"', group)
+        if not group_id_match:
+            raise ValueError("All groups must have an ID assigned for visual contribution testing")
+        group_id = group_id_match.group(1)
+
+        # Render without the group
+        modified_svg_content: str = filtered_svg_content.replace(group, "")
+        test_image: Image.Image | None = render_svg_to_image(modified_svg_content, width=render_width, height=render_height)
+        if test_image is None:
+            raise Exception(f"Failed to render test image for group {group_id} - SVG content may be malformed")
+
+        # Count changed pixels
+        test_pixels = np.array(test_image)
+        if baseline_pixels.shape == test_pixels.shape:
+            pixel_diff = np.sum(baseline_pixels != test_pixels)
+            print(f"    Group {group_id}: {pixel_diff} pixels changed")
+
+            if pixel_diff >= min_pixel_diff_threshold:
+                filtered_groups.append(group)
+                print(f"    → Keeping {group_id} (contributes {pixel_diff} pixels)")
             else:
-                id_match = re.search(r'id="([^"]*)"', group_content)
-                group_id = id_match.group(1) if id_match else "no-id"
-                print(f"    Excluding group from testing (contains image): {group_id}")
-        
-        if not group_matches:
-            print("  No drawing group elements found for testing, keeping original SVG")
-            return svg_content
-        
-        print(f"  Found {len(group_matches)} drawing group elements to test for visual contribution")
-        
-        # Assign temporary IDs to groups that don't have them
-        working_svg_content = svg_content
-        temp_id_counter = 0
-        
-        # Process groups from end to start to avoid position shifts
-        for group_info in reversed(group_matches):
-            if group_info['id'] is None:
-                temp_id = f"temp_group_{temp_id_counter}"
-                temp_id_counter += 1
-                
-                # Insert the ID into the opening tag
-                original_content = group_info['content']
-                # Find the opening <g tag and insert id attribute
-                opening_tag_match = re.match(r'(<g[^>]*)(>)', original_content)
-                if opening_tag_match:
-                    new_content = f'{opening_tag_match.group(1)} id="{temp_id}"{opening_tag_match.group(2)}{original_content[opening_tag_match.end():]}'
-                    # Replace in the working content
-                    working_svg_content = (
-                        working_svg_content[:group_info['start']] + 
-                        new_content + 
-                        working_svg_content[group_info['end']:]
-                    )
-                    # Update the group info
-                    group_info['id'] = temp_id
-                    group_info['content'] = new_content
-        
-        # Calculate proper render dimensions
-        if page_width and page_height:
-            # Use page dimensions with reasonable scaling
-            max_dimension = 800
-            aspect_ratio = page_width / page_height
-            
-            if page_width > page_height:
-                render_width = min(max_dimension, int(page_width))
-                render_height = int(render_width / aspect_ratio)
-            else:
-                render_height = min(max_dimension, int(page_height))
-                render_width = int(render_height * aspect_ratio)
-            
-            print(f"  Using render dimensions: {render_width} x {render_height} (from page: {page_width:.1f} x {page_height:.1f})")
+                filtered_svg_content = modified_svg_content
+                print(f"    → Removing {group_id} (contributes only {pixel_diff} pixels)")
         else:
-            # Fallback to default dimensions
-            render_width, render_height = 200, 200
-            print(f"  Warning: No page dimensions provided, using default: {render_width} x {render_height}")
-        
-        # Render the baseline (full SVG)
-        baseline_image = render_svg_to_image(working_svg_content, width=render_width, height=render_height)
-        if baseline_image is None:
-            raise Exception("Failed to render baseline SVG - SVG content may be malformed")
-        
-        baseline_pixels = np.array(baseline_image)
-        visible_element_ids = set()
-        
-        # Test each group by removing it and comparing
-        for i, group_info in enumerate(group_matches):
-            group_id = group_info['id']
-            print(f"    Testing group {i+1}/{len(group_matches)}: {group_id}")
-            
-            # Create SVG without this group
-            svg_without_group = remove_element_by_id(working_svg_content, group_id)
-            
-            # Render without the group
-            test_image = render_svg_to_image(svg_without_group, width=render_width, height=render_height)
-            if test_image is None:
-                raise Exception(f"Failed to render test image for group {group_id} - SVG content may be malformed")
-            
-            # Compare pixels
-            test_pixels = np.array(test_image)
-            
-            # Count changed pixels
-            if baseline_pixels.shape == test_pixels.shape:
-                pixel_diff = np.sum(baseline_pixels != test_pixels)
-                print(f"    Group {group_id}: {pixel_diff} pixels changed")
-                
-                if pixel_diff >= min_pixel_diff_threshold:
-                    visible_element_ids.add(group_id)
-                    print(f"    → Keeping {group_id} (contributes {pixel_diff} pixels)")
-                else:
-                    print(f"    → Removing {group_id} (contributes only {pixel_diff} pixels)")
-            else:
-                raise Exception(f"Image size mismatch for group {group_id} - baseline: {baseline_pixels.shape}, test: {test_pixels.shape}")
-        
-        # Build filtered SVG by removing non-contributing groups
-        filtered_svg = working_svg_content
-        total_elements = len(group_matches)
-        visible_count = len(visible_element_ids)
-        
-        for group_info in group_matches:
-            group_id = group_info['id']
-            if group_id and group_id not in visible_element_ids:
-                filtered_svg = remove_element_by_id(filtered_svg, group_id)
-        
-        print(f"  Visual contribution analysis: kept {visible_count}/{total_elements} elements")
-        return filtered_svg
-        
-    except Exception as e:
-        print(f"  Error: Visual contribution filtering failed: {e}")
-        raise Exception(f"Visual contribution filtering failed: {e}") from e
+            raise ValueError(f"Image size mismatch for group {group_id} - baseline: {baseline_pixels.shape}, test: {test_pixels.shape}")
+        test_image.close()
 
-
-def segment_svg_groups(svg_content: str) -> list[str]:
-    """
-    Segment SVG content into separate SVG files based on groups.
-    Each <g> tag is treated as a separate drawing.
-    """
-    try:
-        # Find all top-level <g> elements not inside <defs>
-        groups: list[str] = extract_elements(
-            svg_content, elements_to_extract=["g"], from_defs=False
-        )
-
-        print(f"  DEBUG: Found {len(groups)} <g> elements using regex")
-
-        if not groups:
-            # No groups found, clip the entire SVG
-            filtered_content = remove_unused_clippaths(svg_content)
-            clipped_svg = clip_svg_to_content_bounds(filtered_content)
-            return [clipped_svg]
-
-        segments = []
-
-        svg_header = extract_svg_header(svg_content)
-
-        # Extract the defs section if it exists
-        defs_match = re.search(r"<defs[^>]*>.*?</defs>", svg_content, re.DOTALL)
-        defs_content = defs_match.group(0) if defs_match else ""
-
-        print(f"  DEBUG: Found defs section: {len(defs_content)} characters")
-
-        for i, group in enumerate(groups):
-            print(f"  DEBUG: Processing group {i + 1}/{len(groups)}")
-
-            # Find clip-path references in this group
-            clip_path_ids = []
-            clip_matches = re.findall(r'clip-path="url\(#([^)]+)\)"', group)
-            clip_path_ids.extend(clip_matches)
-
-            print(f"  DEBUG: Found clip-path references: {clip_path_ids}")
-
-            # Create a minimal defs section with only the required clipPaths
-            minimal_defs = ""
-            if clip_path_ids and defs_content:
-                minimal_defs = "<defs>\n"
-                for clip_id in clip_path_ids:
-                    # Find the specific clipPath definition
-                    clip_pattern = (
-                        rf'<clipPath[^>]*id="{re.escape(clip_id)}"[^>]*>.*?</clipPath>'
-                    )
-                    clip_match = re.search(clip_pattern, defs_content, re.DOTALL)
-                    if clip_match:
-                        minimal_defs += clip_match.group(0) + "\n"
-                        print(f"  DEBUG: Added clipPath definition: {clip_id}")
-                    else:
-                        print(
-                            f"  DEBUG: WARNING - Could not find clipPath definition for: {clip_id}"
-                        )
-                minimal_defs += "</defs>\n"
-
-            # Create the complete SVG for this segment
-            segment_content = svg_header
-            if minimal_defs:
-                segment_content += minimal_defs
-            segment_content += group + "\n</svg>"
-
-            # Clip the segment to its content bounds
-            clipped_segment = clip_svg_to_content_bounds(segment_content)
-            segments.append(clipped_segment)
-            print(
-                f"  DEBUG: Segment {i + 1} created with {len(clipped_segment)} characters (clipped)"
-            )
-
-        print(f"  DEBUG: Created {len(segments)} segments from {len(groups)} groups")
-        return segments
-
-    except Exception as e:
-        print(f"Warning: Error during SVG segmentation: {e}")
-        return [svg_content]
-
-
-def has_meaningful_content(svg_content: str) -> bool:
-    """
-    Check if SVG content has anything meaningful beyond defs and whitespace.
-    
-    Args:
-        svg_content: The SVG content to check
-        
-    Returns:
-        True if the SVG contains anything other than defs and whitespace, False otherwise
-    """
-    # Remove all unwanted parts in one go: XML declaration, SVG tags, and defs sections
-    cleaned = re.sub(r'<\?xml[^>]*>|</?svg[^>]*>|<defs[^>]*>.*?</defs>', '', svg_content, flags=re.DOTALL)
-    
-    # If anything non-whitespace remains, it's meaningful content
-    return bool(cleaned.strip())
+    return filtered_groups

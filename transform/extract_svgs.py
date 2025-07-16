@@ -1,15 +1,5 @@
-# TODO: Deduplicate nested group matching and move to a shared utility function in utils/svg.py
-# TODO: Diagnose why we're only successfully extracting a segment with ungrouped paths in the case where the page has no groups
-# TODO: Need to make sure that if we match a nested group, we keep all the defs that are referenced inside it
-# <g clip-path="url(#clip_61)">
-#  <g mask="url(#mask_62)">
-#    <image x="42" y="38" width="42" height="41" xlink:href="..."/>
-#  </g>
-# </g>
-# Make sure we keep mask_* defs as well as clip_* defs
-#
 # TODO: (Short-term) treat SVG segments as part of same image if one is contained in the other's bounding box
-# TODO: Make extraction configurable so we can extract as either SVG or PNG, and make PNG the default for now
+# TODO: Extract both SVG and PNG, updating the Pydantic model accordingly
 # TODO: Include necessary background image elements in the extracted content, but keep bounding box scoped to vector graphics
 # TODO: Store the file in S3 and capture the actual storage url
 # TODO: Either don't extract non-grouped paths at all, or do some triage to, e.g., only extract if contributing to a drawing
@@ -25,8 +15,8 @@ The SVG extraction follows a specific order of operations:
 1. Extract raw SVG from PDF page using `page.get_svg_image()`
 2. Delete text elements early (to simplify/speed up subsequent processing)
 3. Extract top-level groups in the SVG body (ignoring those in `<defs>`)
-4. Keep only groups that contain at least one visible drawing element (path, rect, circle, polygon), not just text or images
-5. Render page with and without each group to test visual contribution
+4. Render page with and without each group to test visual contribution
+5. Keep only groups that contain at least one visible drawing element (path, rect, circle, polygon), not just images
 6. For groups that contribute visually, extract `<defs>` they reference
 7. Extract SVG header
 8. Calculate the bbox of each group
@@ -55,9 +45,10 @@ from typing import List, cast
 import pymupdf
 from .models import SvgBlock, BlocksDocument, Block
 from utils.svg import (
-    extract_viewbox_values, segment_svg_groups,
-    filter_svg_content, has_meaningful_content,
-    filter_svg_elements_by_visual_contribution
+    filter_svg_content, extract_svg_header,
+    filter_svg_elements_by_visual_contribution,
+    extract_elements, assign_ids_to_elements,
+    clip_svg_to_content_bounds
 )
 
 dotenv.load_dotenv(override=True)
@@ -107,10 +98,12 @@ def extract_svgs_from_pdf(
     print("\n=== Extracting SVGs ===")
 
     for page_num in range(total_pages):
-        # Get raw SVG content from the pymupdf page object
+        # 1. Extract raw SVG from PDF page using `page.get_svg_image()`
         page: pymupdf.Page = doc[page_num]
         one_indexed_page_num: int = page_num + 1
-        svg_content: str = page.get_svg_image()  
+        svg_content: str = assign_ids_to_elements(
+            page.get_svg_image()
+        )
 
         print(f"Processing page {str(one_indexed_page_num)}...")
 
@@ -120,91 +113,106 @@ def extract_svgs_from_pdf(
         page_height: float = cast(float, page_rect.height)
         print(f"  Page dimensions: {page_width:.1f} x {page_height:.1f}")
 
-        # Step 1: Remove text early in the pipeline (but keep images for visibility testing)
-        text_filtered_svg = filter_svg_content(svg_content, filter_text=True, filter_images=False)
+        # 2. Delete text elements early to simplify/speed up subsequent processing
+        #    (This is the baseline for visual contribution testing)
+        print("  Removing text elements...")
+        text_filtered_svg: str = filter_svg_content(svg_content, filter_text=True, filter_images=False)
 
-        print(
-            f"  DEBUG: Text-filtered SVG content contains {len(re.findall(r'<g[^>]*>', text_filtered_svg))} <g> opening tags"
+        # TODO: Maybe create an image_filtered_svg here, extract groups from it, and use text-filtered content as baseline for visual contribution testing, deleting groups by id rather than substring replacement
+
+        # TODO: If we wanted to keep top-level paths, we could group them here
+        if extract_paths:
+            print("  Note: Top-level path extraction not currently implemented, skipping...")
+
+        # 3. Extract top-level groups in the SVG body (ignoring those in `<defs>`)
+        print("  Extracting top-level groups...")
+        top_level_groups: list[str] = extract_elements(text_filtered_svg, ["g"])
+
+        # 4. Render page with and without each group to test visual contribution, and filter accordingly
+        print("  Applying visual contribution filtering...")
+        # TODO: Edit function to re-render the baseline every time we remove a group
+        visually_filtered_groups: list[str] = filter_svg_elements_by_visual_contribution(
+            text_filtered_svg,
+            top_level_groups,
+            page_width=page_width, 
+            page_height=page_height,
+            min_pixel_diff_threshold=5,
         )
 
-        # Check if there's actual content (not just empty SVG)
-        if (
-            "<path" in text_filtered_svg
-            or "<rect" in text_filtered_svg
-            or "<circle" in text_filtered_svg
-            or "<polygon" in text_filtered_svg
-        ):
-            # Step 2: Apply visual contribution filtering (images are kept but excluded from testing)
-            print("  Applying visual contribution filtering...")
-            visually_filtered_svg = filter_svg_elements_by_visual_contribution(
-                text_filtered_svg, 
-                page_width=page_width, 
-                page_height=page_height
+        # 5. Keep only groups that contain a visible drawing, not just images
+        image_filtered_groups: list[str] = []
+        for group in visually_filtered_groups:
+            image_filtered_group: str = filter_svg_content(group, filter_text=False, filter_images=True).strip()
+            if image_filtered_group:
+                image_filtered_groups.append(group)
+
+        # Skip page if no visually contributing groups
+        if not image_filtered_groups:
+            print(f"  Skipped page {page_num + 1} - SVG has no visually contributing elements")
+            continue
+
+        # 6. For groups that contribute visually, extract `<defs>` they reference
+        print("  Extracting referenced defs...")
+        image_filtered_svg: str = filter_svg_content(text_filtered_svg, filter_text=False, filter_images=True)
+        defs: list[str] = []
+        for group in image_filtered_groups:
+            # Get all substrings in group matching "mask_", "clip_"
+            identifiers: list[str] = re.findall(r'(mask|clip)_\d+', group)
+            if identifiers:
+                # Extract corresponding defs from the full text-filtered SVG
+                referenced_defs: list[str] = extract_elements(
+                    image_filtered_svg,
+                    ["g", "mask", "clipPath"],
+                    filter_by=identifiers,
+                    from_defs=True
+                )
+
+                joined_defs: str = "\n".join(referenced_defs).strip()
+                defs.append(joined_defs)
+        assert len(defs) == len(image_filtered_groups), "Mismatch in number of groups and defs"
+
+        # 7. Extract SVG header
+        svg_header: str = extract_svg_header(svg_content, page_num)
+        
+        def wrap_with_svg_tags(body: str) -> str:
+            return f"{svg_header}\n{body}\n</svg>"
+
+        # Construct SVG segments
+        segments: list[str] = []
+        for defs_content, group in zip(defs, image_filtered_groups):
+            segments.append(
+                wrap_with_svg_tags(f"<defs>\n{defs_content}\n</defs>\n{group}")
             )
-            
-            # Skip if visual contribution analysis determined the SVG has no meaningful content
-            if not visually_filtered_svg.strip():
-                print(f"  Skipped page {page_num + 1} - SVG has no visually contributing elements")
-                continue
-            
-            # Step 3: Filter images after visibility testing but before segmentation
-            print("  Removing image elements from final output...")
-            final_filtered_svg = filter_svg_content(visually_filtered_svg, filter_text=False, filter_images=True)
-            
-            # Segment the SVG using the final filtered content
-            svg_segments = segment_svg_groups(final_filtered_svg)
 
-            for segment_idx, segment_content in enumerate(svg_segments):
-                
-                # Check if this segment has meaningful content before processing
-                if not has_meaningful_content(segment_content):
-                    print(f"  Skipped segment {segment_idx + 1} on page {page_num + 1} - no meaningful drawable content")
-                    continue
-                
-                # Try to get bbox from the segmented SVG
-                bbox = None
-                if len(svg_segments) > 1:
-                    # For segmented SVGs, try to extract bbox from viewBox
-                    viewbox_values = extract_viewbox_values(segment_content)
-                    if viewbox_values:
-                        bbox = list(viewbox_values)
+        for segment_idx, segment_content in enumerate(segments):
+            print(f"  Processing segment {segment_idx + 1} of {len(segments)}...")
 
-                # Fallback to full page bbox if no specific bbox found
-                if bbox is None:
-                    page_rect = page.rect
-                    bbox = [
-                        page_rect.x0,
-                        page_rect.y0,
-                        page_rect.x1,
-                        page_rect.y1,
-                    ]
+            # Clip SVG to content bounds
+            clipped_content, bbox = clip_svg_to_content_bounds(segment_content)
 
-                # Create storage path for this segment
-                segment_filename = (
-                    f"page_{str(one_indexed_page_num)}_graphics_only_segment_{segment_idx + 1}.svg"
-                )
-                segment_path = os.path.join(svg_dir, segment_filename)
+            # Create storage path for this segment
+            segment_filename = (
+                f"page_{str(one_indexed_page_num)}_graphics_only_segment_{segment_idx + 1}.svg"
+            )
+            segment_path = os.path.join(svg_dir, segment_filename)
 
-                # Save the segment (only save if it has meaningful content)
-                with open(segment_path, "w", encoding="utf-8") as f:
-                    f.write(segment_content)
+            # Save the segment (only save if it has meaningful content)
+            with open(segment_path, "w", encoding="utf-8") as f:
+                f.write(clipped_content)
+            print(f"    Saved SVG segment to {segment_path}")
 
-                # Create the block without description
-                svg_block = {
-                    "block_type": "svg",
-                    "page_number": page_num + 1,
-                    "bbox": bbox,
-                    "storage_url": segment_path,
-                    "description": None,
-                }
+            # Create the block without description
+            svg_block = {
+                "block_type": "svg",
+                "page_number": page_num + 1,
+                "bbox": bbox,
+                "storage_url": segment_path,
+                "description": None,
+            }
 
-                svg_blocks.append(svg_block)
-                print(
-                    f"  Added SVG block for page {page_num + 1}, segment {segment_idx + 1}"
-                )
-        else:
+            svg_blocks.append(svg_block)
             print(
-                f"  Skipped page {page_num + 1} - no significant vector graphics"
+                f"  Added SVG block for page {page_num + 1}, segment {segment_idx + 1}"
             )
 
     doc.close()
@@ -239,8 +247,10 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Extract SVGs from PDF files")
     parser.add_argument("pdf_file", help="Path to the PDF file to process")
-    parser.add_argument("--extract-paths", action="store_true", 
-                        help="Whether to extract paths (currently unused)")
+    parser.add_argument(
+        "--extract-paths", action="store_true", 
+        help="Whether to extract top-level path elements (currently unused)"
+    )
     
     args = parser.parse_args()
 
