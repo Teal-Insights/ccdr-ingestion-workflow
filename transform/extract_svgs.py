@@ -44,6 +44,7 @@ The SVG extraction follows a specific order of operations:
 - Remove elements causing fewer than 5 pixel changes
 - Preserve original SVG structure exactly as PyMuPDF generates it
 - No XML parsing, just regex and string manipulation
+- Fail the pipeline if any step fails, so we don't produce partial results
 """
 
 import dotenv
@@ -65,7 +66,8 @@ dotenv.load_dotenv(override=True)
 def extract_svgs_from_pdf(
     pdf_path: str,
     output_filename: str,
-    svgs_dir: str | None = None,
+    output_dir: str | None = None,
+    extract_paths: bool = False,
 ) -> str:
     """
     Extract SVGs from a PDF and save them as JSON blocks.
@@ -73,173 +75,176 @@ def extract_svgs_from_pdf(
     Args:
         pdf_path: Path to the PDF file to process
         output_filename: Full path to the output JSON file
-        svgs_dir: Directory to which to save the SVGs
+        output_dir: Directory to which to save the SVGs
+        extract_paths: Whether to extract paths (currently unused)
 
     Returns:
         Path to the output JSON file
     """
-    # Create temporary directory if not provided
-    if svgs_dir is None:
-        svgs_dir = tempfile.mkdtemp()
+    # Create temporary directory if no output dir provided
+    if output_dir is None:
+        output_dir = tempfile.mkdtemp()
 
-    os.makedirs(svgs_dir, exist_ok=True)
-    svg_dir = os.path.join(svgs_dir, "svg")
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Create subdirectories for SVG and PNG files if they don't exist
+    svg_dir: str = os.path.join(output_dir, "svg_files")
+    png_dir: str = os.path.join(output_dir, "png_files")
+
     os.makedirs(svg_dir, exist_ok=True)
+    os.makedirs(png_dir, exist_ok=True)
 
-    svg_blocks = []
+    # Open the PDF document
+    doc: pymupdf.Document = pymupdf.open(pdf_path)
+    total_pages: int = len(doc)
 
-    try:
-        doc = pymupdf.open(pdf_path)
-        print(f"Processing PDF: {pdf_path}")
-        print(f"Number of pages: {len(doc)}")
+    print(f"Processing PDF: {pdf_path}")
+    print(f"Number of pages: {total_pages}")
 
-        total_pages = len(doc)
+    # Loop through pages and extract all SVGs as blocks
+    svg_blocks: List[dict] = []
+    print("\n=== Extracting SVGs ===")
 
-        # Extract all SVGs
-        print("\n=== Extracting SVGs ===")
-        for page_num in range(total_pages):
-            page = doc[page_num]
-            page_name = f"page_{page_num + 1}"
+    for page_num in range(total_pages):
+        # Get raw SVG content from the pymupdf page object
+        page: pymupdf.Page = doc[page_num]
+        one_indexed_page_num: int = page_num + 1
+        svg_content: str = page.get_svg_image()  
 
-            print(f"Processing page {page_num + 1}...")
+        print(f"Processing page {str(one_indexed_page_num)}...")
 
-            # Extract SVG with filtered mode (graphics only)
-            try:
-                svg_content = page.get_svg_image()
-                
-                # Get page dimensions for proper rendering
-                page_rect = page.rect
-                page_width = page_rect.width
-                page_height = page_rect.height
-                print(f"  Page dimensions: {page_width:.1f} x {page_height:.1f}")
-                
-                # Step 1: Filter text early in the pipeline (but keep images for visibility testing)
-                text_filtered_svg = filter_svg_content(svg_content, filter_text=True, filter_images=False)
+        # Get page dimensions for proper rendering
+        page_rect: pymupdf.Rect = cast(pymupdf.Rect, page.rect)
+        page_width: float = cast(float, page_rect.width)
+        page_height: float = cast(float, page_rect.height)
+        print(f"  Page dimensions: {page_width:.1f} x {page_height:.1f}")
 
-                print(
-                    f"  DEBUG: Text-filtered SVG content contains {len(re.findall(r'<g[^>]*>', text_filtered_svg))} <g> opening tags"
-                )
-
-                # Check if there's actual content (not just empty SVG)
-                if (
-                    "<path" in text_filtered_svg
-                    or "<rect" in text_filtered_svg
-                    or "<circle" in text_filtered_svg
-                    or "<polygon" in text_filtered_svg
-                ):
-                    # Step 2: Apply visual contribution filtering (images are kept but excluded from testing)
-                    print("  Applying visual contribution filtering...")
-                    visually_filtered_svg = filter_svg_elements_by_visual_contribution(
-                        text_filtered_svg, 
-                        page_width=page_width, 
-                        page_height=page_height
-                    )
-                    
-                    # Skip if visual contribution analysis determined the SVG has no meaningful content
-                    if not visually_filtered_svg.strip():
-                        print(f"  Skipped page {page_num + 1} - SVG has no visually contributing elements")
-                        continue
-                    
-                    # Step 3: Filter images after visibility testing but before segmentation
-                    print("  Removing image elements from final output...")
-                    final_filtered_svg = filter_svg_content(visually_filtered_svg, filter_text=False, filter_images=True)
-                    
-                    # Segment the SVG using the final filtered content
-                    svg_segments = segment_svg_groups(final_filtered_svg)
-
-                    for segment_idx, segment_content in enumerate(svg_segments):
-                        
-                        # Check if this segment has meaningful content before processing
-                        if not has_meaningful_content(segment_content):
-                            print(f"  Skipped segment {segment_idx + 1} on page {page_num + 1} - no meaningful drawable content")
-                            continue
-                        
-                        # Try to get bbox from the segmented SVG
-                        bbox = None
-                        if len(svg_segments) > 1:
-                            # For segmented SVGs, try to extract bbox from viewBox
-                            viewbox_values = extract_viewbox_values(segment_content)
-                            if viewbox_values:
-                                bbox = list(viewbox_values)
-
-                        # Fallback to full page bbox if no specific bbox found
-                        if bbox is None:
-                            page_rect = page.rect
-                            bbox = [
-                                page_rect.x0,
-                                page_rect.y0,
-                                page_rect.x1,
-                                page_rect.y1,
-                            ]
-
-                        # Create storage path for this segment
-                        segment_filename = (
-                            f"{page_name}_graphics_only_segment_{segment_idx + 1}.svg"
-                        )
-                        segment_path = os.path.join(svg_dir, segment_filename)
-
-                        # Save the segment (only save if it has meaningful content)
-                        with open(segment_path, "w", encoding="utf-8") as f:
-                            f.write(segment_content)
-
-                        # Create the block without description
-                        svg_block = {
-                            "block_type": "svg",
-                            "page_number": page_num + 1,
-                            "bbox": bbox,
-                            "storage_url": segment_path,
-                            "description": None,
-                        }
-
-                        svg_blocks.append(svg_block)
-                        print(
-                            f"  Added SVG block for page {page_num + 1}, segment {segment_idx + 1}"
-                        )
-                else:
-                    print(
-                        f"  Skipped page {page_num + 1} - no significant vector graphics"
-                    )
-            except Exception as e:
-                print(f"  Error extracting SVG from page {page_num + 1}: {e}")
-
-        doc.close()
-
-        # Convert dict blocks to Pydantic models
-        svg_pydantic_blocks: List[SvgBlock] = []
-        for block_data in svg_blocks:
-            svg_block = SvgBlock(**block_data)
-            svg_pydantic_blocks.append(svg_block)
-
-        # Create output document using Pydantic model
-        output_data = BlocksDocument(
-            pdf_path=pdf_path,
-            total_pages=total_pages,
-            total_blocks=len(svg_pydantic_blocks),
-            blocks=cast(List[Block], svg_pydantic_blocks),
-        )
-
-        # Save the SVG blocks to JSON
-        with open(output_filename, "w", encoding="utf-8") as f:
-            f.write(output_data.model_dump_json(indent=2, exclude_none=True))
+        # Step 1: Remove text early in the pipeline (but keep images for visibility testing)
+        text_filtered_svg = filter_svg_content(svg_content, filter_text=True, filter_images=False)
 
         print(
-            f"\n✓ Extracted {len(svg_blocks)} SVG blocks to {output_filename}"
+            f"  DEBUG: Text-filtered SVG content contains {len(re.findall(r'<g[^>]*>', text_filtered_svg))} <g> opening tags"
         )
-        return output_filename
 
-    except Exception as e:
-        raise Exception(f"Failed to extract SVGs from PDF: {e}")
+        # Check if there's actual content (not just empty SVG)
+        if (
+            "<path" in text_filtered_svg
+            or "<rect" in text_filtered_svg
+            or "<circle" in text_filtered_svg
+            or "<polygon" in text_filtered_svg
+        ):
+            # Step 2: Apply visual contribution filtering (images are kept but excluded from testing)
+            print("  Applying visual contribution filtering...")
+            visually_filtered_svg = filter_svg_elements_by_visual_contribution(
+                text_filtered_svg, 
+                page_width=page_width, 
+                page_height=page_height
+            )
+            
+            # Skip if visual contribution analysis determined the SVG has no meaningful content
+            if not visually_filtered_svg.strip():
+                print(f"  Skipped page {page_num + 1} - SVG has no visually contributing elements")
+                continue
+            
+            # Step 3: Filter images after visibility testing but before segmentation
+            print("  Removing image elements from final output...")
+            final_filtered_svg = filter_svg_content(visually_filtered_svg, filter_text=False, filter_images=True)
+            
+            # Segment the SVG using the final filtered content
+            svg_segments = segment_svg_groups(final_filtered_svg)
+
+            for segment_idx, segment_content in enumerate(svg_segments):
+                
+                # Check if this segment has meaningful content before processing
+                if not has_meaningful_content(segment_content):
+                    print(f"  Skipped segment {segment_idx + 1} on page {page_num + 1} - no meaningful drawable content")
+                    continue
+                
+                # Try to get bbox from the segmented SVG
+                bbox = None
+                if len(svg_segments) > 1:
+                    # For segmented SVGs, try to extract bbox from viewBox
+                    viewbox_values = extract_viewbox_values(segment_content)
+                    if viewbox_values:
+                        bbox = list(viewbox_values)
+
+                # Fallback to full page bbox if no specific bbox found
+                if bbox is None:
+                    page_rect = page.rect
+                    bbox = [
+                        page_rect.x0,
+                        page_rect.y0,
+                        page_rect.x1,
+                        page_rect.y1,
+                    ]
+
+                # Create storage path for this segment
+                segment_filename = (
+                    f"page_{str(one_indexed_page_num)}_graphics_only_segment_{segment_idx + 1}.svg"
+                )
+                segment_path = os.path.join(svg_dir, segment_filename)
+
+                # Save the segment (only save if it has meaningful content)
+                with open(segment_path, "w", encoding="utf-8") as f:
+                    f.write(segment_content)
+
+                # Create the block without description
+                svg_block = {
+                    "block_type": "svg",
+                    "page_number": page_num + 1,
+                    "bbox": bbox,
+                    "storage_url": segment_path,
+                    "description": None,
+                }
+
+                svg_blocks.append(svg_block)
+                print(
+                    f"  Added SVG block for page {page_num + 1}, segment {segment_idx + 1}"
+                )
+        else:
+            print(
+                f"  Skipped page {page_num + 1} - no significant vector graphics"
+            )
+
+    doc.close()
+
+    # Convert dict blocks to Pydantic models
+    svg_pydantic_blocks: List[SvgBlock] = []
+    for block_data in svg_blocks:
+        svg_block = SvgBlock(**block_data)
+        svg_pydantic_blocks.append(svg_block)
+
+    # Create output document using Pydantic model
+    output_data = BlocksDocument(
+        pdf_path=pdf_path,
+        total_pages=total_pages,
+        total_blocks=len(svg_pydantic_blocks),
+        blocks=cast(List[Block], svg_pydantic_blocks),
+    )
+
+    # Save the SVG blocks to JSON
+    with open(output_filename, "w", encoding="utf-8") as f:
+        f.write(output_data.model_dump_json(indent=2, exclude_none=True))
+
+    print(
+        f"\n✓ Extracted {len(svg_blocks)} SVG blocks to {output_filename}"
+    )
+    return output_filename
 
 
 if __name__ == "__main__":
     import sys
+    import argparse
 
-    if len(sys.argv) < 2:
-        print("Usage: uv run -m transform.extract_svgs <pdf_file>")
-        print("Example: uv run -m transform.extract_svgs document.pdf")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Extract SVGs from PDF files")
+    parser.add_argument("pdf_file", help="Path to the PDF file to process")
+    parser.add_argument("--extract-paths", action="store_true", 
+                        help="Whether to extract paths (currently unused)")
+    
+    args = parser.parse_args()
 
-    pdf_path = sys.argv[1]
+    pdf_path = args.pdf_file
 
     # Create a real temporary directory for testing
     temp_dir = tempfile.mkdtemp(prefix="svgs_test_")
@@ -249,7 +254,8 @@ if __name__ == "__main__":
         output_path = extract_svgs_from_pdf(
             pdf_path=pdf_path,
             output_filename=output_filename,
-            svgs_dir=temp_dir,
+            output_dir=temp_dir,
+            extract_paths=args.extract_paths,
         )
 
         print("SVGs extracted successfully!")
