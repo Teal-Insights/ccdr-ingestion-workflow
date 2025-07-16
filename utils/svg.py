@@ -2,9 +2,137 @@ import tempfile
 import subprocess
 import os
 from PIL import Image
+from typing import Literal
 import re
 import io
 import svgelements
+import numpy as np
+
+def extract_elements(
+        svg_text: str, elements_to_extract: list[Literal["g", "mask", "clipPath"]] = ["g"], filter_by: list[str] = [], from_defs: bool = False
+    ) -> list[str]:
+    """
+    Extract top-level <g> groups from SVG content, either from within <defs> or the main content.
+    This function uses a stack-based approach to correctly handle nested groups.
+    Args:
+        svg_text: The SVG content as a string
+        elements_to_extract: List of top-level element types to extract
+        filter_by: List of substrings; only groups containing any of these will be returned
+            (intended for filtering defs by "mask_" or "clip_" identifiers)
+        from_defs: If True, extract groups from within <defs>; otherwise from main content
+    Returns:
+        List of top-level <g> group strings
+    """
+    
+    # Handle switching between defs and main content
+    start: int
+    end: int
+
+    if from_defs:
+        start = svg_text.find('<defs>') + 6
+        # In case there's more than one defs, find the last one
+        end = svg_text.rfind('</defs>')
+        if start < 6 or end == -1:
+            return [] # No defs found
+    else:
+        defs_end: int
+        defs_end = svg_text.rfind('</defs>')
+        if defs_end == -1:
+            start = svg_text.find('>', svg_text.find('<svg')) + 1
+        else:
+            start = defs_end + 6
+        end = svg_text.find('</svg>')
+
+    # Extract top-level elements between the determined start and end
+    content: str = svg_text[start:end]
+    elements: list[str] = []
+    stack: list[tuple[int, str]] = []
+    i: int = 0
+    element_start: int | None = None
+    popped_element: tuple[int, str] | None = None
+    matched: bool
+
+    while i < len(content):
+        matched = False
+        for element, length in [(el, len(el)) for el in elements_to_extract]:
+            if content[i:i+length+1] == f'<{element}':
+                if not stack:  # Top-level group
+                    element_start = i
+                stack.append((i, element))
+                i = content.find('>', i) + 1
+                matched = True
+                break
+
+            elif content[i:i+length+3] == f'</{element}>':
+                if stack:
+                    popped_element = stack.pop()
+                    if not stack:  # Stack empty = complete top-level group
+                        group_end = i + length + 3
+                        if not element_start or popped_element[1] != element:
+                            raise ValueError(f"Mismatched tag found: </{popped_element[1]} has no corresponding opening tag")
+                        if filter_by:
+                            if any(f in content[element_start:group_end] for f in filter_by):
+                                elements.append(content[element_start:group_end])
+                        else:
+                            # No filter, add all groups
+                            elements.append(content[element_start:group_end])
+                        element_start = None
+                        popped_element = None
+                else:
+                    raise ValueError(f"Mismatched closing tag found: </{element}>")
+                i = content.find('>', i) + 1
+                matched = True
+                break
+        if not matched:
+            i += 1
+
+    return elements
+
+
+def filter_svg_content(svg_content: str, filter_text: bool = True, filter_images: bool = True) -> str:
+    """
+    Filter SVG content to capture only vector drawings that are not text or background colors/gradients.
+    
+    Args:
+        svg_content: The SVG content to filter
+        filter_text: Whether to remove text-related elements
+        filter_images: Whether to remove image elements
+    """
+    if filter_text:
+        # Remove text-related elements
+        # Handle both self-closing and paired font path elements
+        svg_content = re.sub(r'<path[^>]*id="font_[^"]*"[^>]*/?>', "", svg_content)
+        svg_content = re.sub(r"<use[^>]*data-text[^>]*>", "", svg_content)
+        svg_content = re.sub(r"<text[^>]*>.*?</text>", "", svg_content, flags=re.DOTALL)
+
+    if filter_images:
+        # Remove image elements
+        svg_content = re.sub(r"<image[^>]*>.*?</image>", "", svg_content, flags=re.DOTALL)
+        svg_content = re.sub(r"<image[^>]*/>", "", svg_content)
+
+    # Remove empty group tags
+    # This needs to be done iteratively as removing inner groups may make outer groups empty
+    prev_content = ""
+    iteration = 0
+    while prev_content != svg_content:
+        prev_content = svg_content
+        iteration += 1
+
+        # Remove empty groups (both self-closing and paired)
+        svg_content = re.sub(r"<g[^>]*>\s*</g>", "", svg_content)
+        svg_content = re.sub(r"<g[^>]*/>", "", svg_content)
+
+        if iteration > 10:  # Safety break
+            raise Exception("Likely infinite loop in filter_svg_content")
+
+    # Remove unused clipPath definitions (after text/images/groups are removed)
+    svg_content = remove_unused_clippaths(svg_content)
+
+    # Clean up empty lines and excessive whitespace
+    svg_content = re.sub(r"\n\s*\n", "\n", svg_content)
+    svg_content = re.sub(r"^\s*$", "", svg_content, flags=re.MULTILINE)
+
+    return svg_content
 
 
 def render_svg_to_image(svg_content: str, width: int = 200, height: int = 200) -> Image.Image | None:
@@ -363,3 +491,254 @@ def extract_svg_header(svg_content: str) -> str:
         svg_header += "\n"
 
     return svg_header
+
+
+def filter_svg_elements_by_visual_contribution(svg_content: str, min_pixel_diff_threshold: int = 5, page_width: float | None = None, page_height: float | None = None) -> str:
+    """
+    Filter SVG elements by testing their visual contribution to the rendered output.
+    
+    Args:
+        svg_content: The SVG content as a string (should already have text filtered out)
+        min_pixel_diff_threshold: Minimum number of changed pixels to consider element visible
+        page_width: Page width in points for proper rendering scale
+        page_height: Page height in points for proper rendering scale
+        
+    Returns:
+        Filtered SVG content with only visually contributing elements
+    """
+    try:
+        print("  Testing visual contribution of SVG elements...")
+        
+        # Find all top-level group elements not inside <defs>
+        groups: list[str] = extract_elements(
+            svg_content, elements_to_extract=["g"], from_defs=False
+        )
+        
+        group_matches = []
+        
+        # Now process each found group to extract metadata
+        for group_content in groups:
+            # Check if this group contains image elements
+            contains_image = bool(re.search(r'<image[^>]*/?>', group_content))
+            
+            if not contains_image:
+                # Extract the ID if it exists
+                id_match = re.search(r'id="([^"]*)"', group_content)
+                group_id = id_match.group(1) if id_match else None
+                
+                # Find the position of this group in the original SVG for ID injection
+                group_start = svg_content.find(group_content)
+                group_end = group_start + len(group_content)
+                
+                group_matches.append({
+                    'content': group_content,
+                    'start': group_start,
+                    'end': group_end,
+                    'id': group_id,
+                    'match_obj': None  # No longer needed since we have the content
+                })
+            else:
+                id_match = re.search(r'id="([^"]*)"', group_content)
+                group_id = id_match.group(1) if id_match else "no-id"
+                print(f"    Excluding group from testing (contains image): {group_id}")
+        
+        if not group_matches:
+            print("  No drawing group elements found for testing, keeping original SVG")
+            return svg_content
+        
+        print(f"  Found {len(group_matches)} drawing group elements to test for visual contribution")
+        
+        # Assign temporary IDs to groups that don't have them
+        working_svg_content = svg_content
+        temp_id_counter = 0
+        
+        # Process groups from end to start to avoid position shifts
+        for group_info in reversed(group_matches):
+            if group_info['id'] is None:
+                temp_id = f"temp_group_{temp_id_counter}"
+                temp_id_counter += 1
+                
+                # Insert the ID into the opening tag
+                original_content = group_info['content']
+                # Find the opening <g tag and insert id attribute
+                opening_tag_match = re.match(r'(<g[^>]*)(>)', original_content)
+                if opening_tag_match:
+                    new_content = f'{opening_tag_match.group(1)} id="{temp_id}"{opening_tag_match.group(2)}{original_content[opening_tag_match.end():]}'
+                    # Replace in the working content
+                    working_svg_content = (
+                        working_svg_content[:group_info['start']] + 
+                        new_content + 
+                        working_svg_content[group_info['end']:]
+                    )
+                    # Update the group info
+                    group_info['id'] = temp_id
+                    group_info['content'] = new_content
+        
+        # Calculate proper render dimensions
+        if page_width and page_height:
+            # Use page dimensions with reasonable scaling
+            max_dimension = 800
+            aspect_ratio = page_width / page_height
+            
+            if page_width > page_height:
+                render_width = min(max_dimension, int(page_width))
+                render_height = int(render_width / aspect_ratio)
+            else:
+                render_height = min(max_dimension, int(page_height))
+                render_width = int(render_height * aspect_ratio)
+            
+            print(f"  Using render dimensions: {render_width} x {render_height} (from page: {page_width:.1f} x {page_height:.1f})")
+        else:
+            # Fallback to default dimensions
+            render_width, render_height = 200, 200
+            print(f"  Warning: No page dimensions provided, using default: {render_width} x {render_height}")
+        
+        # Render the baseline (full SVG)
+        baseline_image = render_svg_to_image(working_svg_content, width=render_width, height=render_height)
+        if baseline_image is None:
+            raise Exception("Failed to render baseline SVG - SVG content may be malformed")
+        
+        baseline_pixels = np.array(baseline_image)
+        visible_element_ids = set()
+        
+        # Test each group by removing it and comparing
+        for i, group_info in enumerate(group_matches):
+            group_id = group_info['id']
+            print(f"    Testing group {i+1}/{len(group_matches)}: {group_id}")
+            
+            # Create SVG without this group
+            svg_without_group = remove_element_by_id(working_svg_content, group_id)
+            
+            # Render without the group
+            test_image = render_svg_to_image(svg_without_group, width=render_width, height=render_height)
+            if test_image is None:
+                raise Exception(f"Failed to render test image for group {group_id} - SVG content may be malformed")
+            
+            # Compare pixels
+            test_pixels = np.array(test_image)
+            
+            # Count changed pixels
+            if baseline_pixels.shape == test_pixels.shape:
+                pixel_diff = np.sum(baseline_pixels != test_pixels)
+                print(f"    Group {group_id}: {pixel_diff} pixels changed")
+                
+                if pixel_diff >= min_pixel_diff_threshold:
+                    visible_element_ids.add(group_id)
+                    print(f"    → Keeping {group_id} (contributes {pixel_diff} pixels)")
+                else:
+                    print(f"    → Removing {group_id} (contributes only {pixel_diff} pixels)")
+            else:
+                raise Exception(f"Image size mismatch for group {group_id} - baseline: {baseline_pixels.shape}, test: {test_pixels.shape}")
+        
+        # Build filtered SVG by removing non-contributing groups
+        filtered_svg = working_svg_content
+        total_elements = len(group_matches)
+        visible_count = len(visible_element_ids)
+        
+        for group_info in group_matches:
+            group_id = group_info['id']
+            if group_id and group_id not in visible_element_ids:
+                filtered_svg = remove_element_by_id(filtered_svg, group_id)
+        
+        print(f"  Visual contribution analysis: kept {visible_count}/{total_elements} elements")
+        return filtered_svg
+        
+    except Exception as e:
+        print(f"  Error: Visual contribution filtering failed: {e}")
+        raise Exception(f"Visual contribution filtering failed: {e}") from e
+
+
+def segment_svg_groups(svg_content: str) -> list[str]:
+    """
+    Segment SVG content into separate SVG files based on groups.
+    Each <g> tag is treated as a separate drawing.
+    """
+    try:
+        # Find all top-level <g> elements not inside <defs>
+        groups: list[str] = extract_elements(
+            svg_content, elements_to_extract=["g"], from_defs=False
+        )
+
+        print(f"  DEBUG: Found {len(groups)} <g> elements using regex")
+
+        if not groups:
+            # No groups found, clip the entire SVG
+            filtered_content = remove_unused_clippaths(svg_content)
+            clipped_svg = clip_svg_to_content_bounds(filtered_content)
+            return [clipped_svg]
+
+        segments = []
+
+        svg_header = extract_svg_header(svg_content)
+
+        # Extract the defs section if it exists
+        defs_match = re.search(r"<defs[^>]*>.*?</defs>", svg_content, re.DOTALL)
+        defs_content = defs_match.group(0) if defs_match else ""
+
+        print(f"  DEBUG: Found defs section: {len(defs_content)} characters")
+
+        for i, group in enumerate(groups):
+            print(f"  DEBUG: Processing group {i + 1}/{len(groups)}")
+
+            # Find clip-path references in this group
+            clip_path_ids = []
+            clip_matches = re.findall(r'clip-path="url\(#([^)]+)\)"', group)
+            clip_path_ids.extend(clip_matches)
+
+            print(f"  DEBUG: Found clip-path references: {clip_path_ids}")
+
+            # Create a minimal defs section with only the required clipPaths
+            minimal_defs = ""
+            if clip_path_ids and defs_content:
+                minimal_defs = "<defs>\n"
+                for clip_id in clip_path_ids:
+                    # Find the specific clipPath definition
+                    clip_pattern = (
+                        rf'<clipPath[^>]*id="{re.escape(clip_id)}"[^>]*>.*?</clipPath>'
+                    )
+                    clip_match = re.search(clip_pattern, defs_content, re.DOTALL)
+                    if clip_match:
+                        minimal_defs += clip_match.group(0) + "\n"
+                        print(f"  DEBUG: Added clipPath definition: {clip_id}")
+                    else:
+                        print(
+                            f"  DEBUG: WARNING - Could not find clipPath definition for: {clip_id}"
+                        )
+                minimal_defs += "</defs>\n"
+
+            # Create the complete SVG for this segment
+            segment_content = svg_header
+            if minimal_defs:
+                segment_content += minimal_defs
+            segment_content += group + "\n</svg>"
+
+            # Clip the segment to its content bounds
+            clipped_segment = clip_svg_to_content_bounds(segment_content)
+            segments.append(clipped_segment)
+            print(
+                f"  DEBUG: Segment {i + 1} created with {len(clipped_segment)} characters (clipped)"
+            )
+
+        print(f"  DEBUG: Created {len(segments)} segments from {len(groups)} groups")
+        return segments
+
+    except Exception as e:
+        print(f"Warning: Error during SVG segmentation: {e}")
+        return [svg_content]
+
+
+def has_meaningful_content(svg_content: str) -> bool:
+    """
+    Check if SVG content has anything meaningful beyond defs and whitespace.
+    
+    Args:
+        svg_content: The SVG content to check
+        
+    Returns:
+        True if the SVG contains anything other than defs and whitespace, False otherwise
+    """
+    # Remove all unwanted parts in one go: XML declaration, SVG tags, and defs sections
+    cleaned = re.sub(r'<\?xml[^>]*>|</?svg[^>]*>|<defs[^>]*>.*?</defs>', '', svg_content, flags=re.DOTALL)
+    
+    # If anything non-whitespace remains, it's meaningful content
+    return bool(cleaned.strip())
