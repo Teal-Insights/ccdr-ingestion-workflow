@@ -135,7 +135,7 @@ def filter_svg_content(svg_content: str, filter_text: bool = True, filter_images
     return svg_content
 
 
-def render_svg_to_image(svg_content: str, width: int = 200, height: int = 200) -> Image.Image | None:
+def render_svg_to_pixels(svg_content: str, width: int = 200, height: int = 200) -> np.ndarray:
     """
     Render SVG content to a PIL Image using available SVG renderers.
     
@@ -145,113 +145,56 @@ def render_svg_to_image(svg_content: str, width: int = 200, height: int = 200) -
         height: Height for rendering
         
     Returns:
-        PIL Image object or None if rendering failed
+        Numpy array of pixel data (RGB) or None if rendering failed
     """
     # Create a temporary SVG file
     with tempfile.NamedTemporaryFile(mode='w', suffix='.svg', delete=False) as temp_svg:
         temp_svg.write(svg_content)
         temp_svg_path = temp_svg.name
     
-    try:
-        # Try to use Inkscape first (most accurate SVG rendering)
-        temp_png_path = temp_svg_path.replace('.svg', '.png')
+    # Use Inkscape
+    temp_png_path = temp_svg_path.replace('.svg', '.png')
         
-        # Try Inkscape first with white background
-        try:
-            result = subprocess.run([
-                'inkscape', 
-                '--export-type=png',
-                '--export-filename=' + temp_png_path,
-                f'--export-width={width}',
-                f'--export-height={height}',
-                '--export-background=white',  # Force white background
-                '--export-background-opacity=1.0',  # Make background opaque
-                temp_svg_path
-            ], capture_output=True, text=True, timeout=10)
-            
-            if result.returncode == 0 and os.path.exists(temp_png_path):
-                img = Image.open(temp_png_path)
-                # Convert RGBA to RGB to ensure no alpha channel
-                if img.mode in ('RGBA', 'LA'):
-                    # Create white background
-                    background = Image.new('RGB', img.size, (255, 255, 255))
-                    if img.mode == 'RGBA':
-                        background.paste(img, mask=img.split()[-1])  # Use alpha channel as mask
-                    else:  # LA mode
-                        background.paste(img.convert('RGB'), mask=img.split()[-1])
-                    img_copy = background
-                else:
-                    img_copy = img.convert('RGB')  # Ensure RGB mode
-                img.close()
-                os.unlink(temp_png_path)
-                return img_copy
-                
-        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-            pass
-            
-        # Fallback to rsvg-convert if Inkscape fails or isn't available
-        try:
-            result = subprocess.run([
-                'rsvg-convert', 
-                '-w', str(width), 
-                '-h', str(height), 
-                '-b', 'white',  # Set background color to white
-                '-o', temp_png_path,
-                temp_svg_path
-            ], capture_output=True, text=True, timeout=10)
-            
-            if result.returncode == 0 and os.path.exists(temp_png_path):
-                img = Image.open(temp_png_path)
-                # Convert to RGB to ensure no alpha channel
-                if img.mode in ('RGBA', 'LA'):
-                    background = Image.new('RGB', img.size, (255, 255, 255))
-                    if img.mode == 'RGBA':
-                        background.paste(img, mask=img.split()[-1])
-                    else:
-                        background.paste(img.convert('RGB'), mask=img.split()[-1])
-                    img_copy = background
-                else:
-                    img_copy = img.convert('RGB')
-                img.close()
-                os.unlink(temp_png_path)
-                return img_copy
-                
-        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-            pass
-            
-        # Fallback to cairosvg if available
-        try:
-            import cairosvg
-            # cairosvg doesn't have a direct background option, but we'll handle it in PIL
-            cairosvg.svg2png(url=temp_svg_path, write_to=temp_png_path, output_width=width, output_height=height)
-            if os.path.exists(temp_png_path):
-                img = Image.open(temp_png_path)
-                # Convert to RGB with white background
-                if img.mode in ('RGBA', 'LA'):
-                    background = Image.new('RGB', img.size, (255, 255, 255))
-                    if img.mode == 'RGBA':
-                        background.paste(img, mask=img.split()[-1])
-                    else:
-                        background.paste(img.convert('RGB'), mask=img.split()[-1])
-                    img_copy = background
-                else:
-                    img_copy = img.convert('RGB')
-                img.close()
-                os.unlink(temp_png_path)
-                return img_copy
-        except ImportError:
-            pass
-        except Exception:
-            pass
-            
-        return None
-        
-    finally:
-        # Clean up temporary SVG
-        try:
-            os.unlink(temp_svg_path)
-        except OSError:
-            pass
+    result = subprocess.run([
+        'inkscape', 
+        '--export-type=png',
+        '--export-filename=' + temp_png_path,
+        f'--export-width={width}',
+        f'--export-height={height}',
+        '--export-background=white',  # Force white background
+        '--export-background-opacity=1.0',  # Make background opaque
+        temp_svg_path
+    ], capture_output=True, text=True, timeout=10)
+    
+    pixels: np.ndarray | None = None
+    if result.returncode == 0 and os.path.exists(temp_png_path):
+        img = Image.open(temp_png_path)
+        # Convert RGBA to RGB to ensure no alpha channel
+        if img.mode in ('RGBA', 'LA'):
+            # Create white background
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            if img.mode == 'RGBA':
+                background.paste(img, mask=img.split()[-1])  # Use alpha channel as mask
+            else:  # LA mode
+                background.paste(img.convert('RGB'), mask=img.split()[-1])
+            img_copy = background
+        else:
+            img_copy = img.convert('RGB')  # Ensure RGB mode
+        if img_copy is None:
+            raise Exception("Failed to render SVG - SVG content may be malformed")
+    
+        pixels = np.array(img_copy)
+        img.close()
+    else:
+        raise Exception(f"Inkscape rendering failed: {result.stderr}")
+    
+    os.unlink(temp_png_path)
+    os.unlink(temp_svg_path)
+
+    if pixels is None:
+        raise Exception("Failed to render SVG - SVG content may be malformed")
+
+    return pixels
 
 
 def extract_viewbox_values(svg_content: str) -> tuple[float, float, float, float] | None:
@@ -311,11 +254,11 @@ def clip_svg_to_content_bounds(svg_content: str) -> tuple[str, tuple[float, floa
         
     Returns:
         Tuple of (clipped SVG content, bounding box as (x0, y0, x1, y1))
-    """    
+    """
     # Parse the SVG from string content using io.StringIO to simulate a file
     svg_file = io.StringIO(svg_content)
     svg = svgelements.SVG.parse(svg_file, reify=True)
-    
+
     # Calculate the bounding box of all visible elements
     bbox = None
     for element in svg.elements():
@@ -406,7 +349,7 @@ def remove_unused_clippaths(svg_content: str) -> str:
 
 def remove_element_by_id(svg_content: str, element_id: str) -> str:
     """
-    Remove an SVG element by its ID using regex to avoid namespace issues.
+    Remove an SVG element by its ID using a stack-based approach to handle nested elements correctly.
     
     Args:
         svg_content: The SVG content as a string
@@ -415,36 +358,71 @@ def remove_element_by_id(svg_content: str, element_id: str) -> str:
     Returns:
         SVG content with the element removed
     """
-    try:
-        # Use regex to remove the element, handling both self-closing and paired tags
-        # Pattern for ACTUAL self-closing tags: <tag ... id="element_id" ... />
-        self_closing_pattern = rf'<[^>]*id="{re.escape(element_id)}"[^>]*\s*/>'
+    i = 0
+    stack = []
+    element_start = None
+    element_tag_name = None
+    
+    while i < len(svg_content):
+        if svg_content[i] == '<':
+            # Find the end of the tag
+            tag_end = svg_content.find('>', i)
+            if tag_end == -1:
+                i += 1
+                continue
+                
+            tag_content = svg_content[i:tag_end + 1]
+            
+            # Check if this is a self-closing tag
+            if tag_content.endswith('/>'):
+                # Handle self-closing tags
+                if f'id="{element_id}"' in tag_content:
+                    # Found target self-closing element - remove it
+                    print(f"    Removed self-closing element {element_id}")
+                    return svg_content[:i] + svg_content[tag_end + 1:]
+                i = tag_end + 1
+                continue
+            
+            # Check if this is a closing tag
+            if tag_content.startswith('</'):
+                tag_name = tag_content[2:-1].strip()
+                if stack and stack[-1][1] == tag_name:
+                    # Pop from stack
+                    start_pos, popped_tag = stack.pop()
+                    
+                    # Check if this was our target element
+                    if start_pos == element_start and popped_tag == element_tag_name:
+                        # We've found the end of our target element - remove the entire element
+                        print(f"    Removed paired element {element_id} (tag: {element_tag_name})")
+                        return svg_content[:element_start] + svg_content[tag_end + 1:]
+                
+                i = tag_end + 1
+                continue
+            
+            # This is an opening tag
+            # Extract tag name
+            tag_parts = tag_content[1:-1].split()
+            if tag_parts:
+                tag_name = tag_parts[0]
+                
+                # Check if this tag has our target ID
+                if f'id="{element_id}"' in tag_content:
+                    # Found our target element
+                    element_start = i
+                    element_tag_name = tag_name
+                    stack.append((element_start, tag_name))
+                    i = tag_end + 1
+                    continue
+                
+                # Push to stack for all opening tags
+                stack.append((i, tag_name))
+                i = tag_end + 1
+                continue
         
-        # First try to match ACTUAL self-closing tags (must end with />)
-        if re.search(self_closing_pattern, svg_content):
-            result = re.sub(self_closing_pattern, '', svg_content)
-            print(f"    Removed self-closing element {element_id}")
-            return result
-        
-        # Pattern for paired tags: <tag ... id="element_id" ...>...</tag>
-        # This is more complex as we need to find the matching closing tag
-        start_pattern = rf'<([^>\s]+)[^>]*id="{re.escape(element_id)}"[^>]*>'
-        start_match = re.search(start_pattern, svg_content)
-        
-        if start_match:
-            tag_name = start_match.group(1)
-            # Find the complete element including its content
-            element_pattern = rf'<{re.escape(tag_name)}[^>]*id="{re.escape(element_id)}"[^>]*>.*?</{re.escape(tag_name)}>'
-            result = re.sub(element_pattern, '', svg_content, flags=re.DOTALL)
-            print(f"    Removed paired element {element_id} (tag: {tag_name})")
-            return result
-        
-        print(f"    Element {element_id} not found")
-        return svg_content
-        
-    except Exception as e:
-        print(f"  Warning: Failed to remove element {element_id}: {e}")
-        return svg_content
+        i += 1
+    
+    # Element not found
+    raise ValueError(f"Element {element_id} not found")
 
 
 def extract_svg_header(svg_content: str, page_num: int) -> str:
@@ -520,37 +498,41 @@ def filter_svg_elements_by_visual_contribution(
        Groups list with only visually contributing elements
     """        
     # Render the baseline (full SVG)
-    scale = 1.0
-    render_width = int(page_width * scale)
-    render_height = int(page_height * scale)
-    baseline_image = render_svg_to_image(
-        svg_content, width=render_width, height=render_height
-    )
-    if baseline_image is None:
-        raise Exception("Failed to render baseline SVG - SVG content may be malformed")
-
-    baseline_pixels = np.array(baseline_image)
-    baseline_image.close()
+    scale: float = 1.0
+    render_width: int = int(page_width * scale)
+    render_height: int = int(page_height * scale)
 
     # Test each group by removing it and comparing
     filtered_groups = []
     filtered_svg_content: str = svg_content
+    re_render_baseline: bool = True
+    baseline_pixels: np.ndarray = np.zeros((render_height, render_width, 3), dtype=np.uint8)
+
+    group_id_match: re.Match[str] | None
+    group_id: str
+    test_pixels: np.ndarray
+    modified_svg_content: str
+
     for group in groups:
-        # Extract the group ID for logging
-        group_id: str
-        group_id_match: re.Match[str] | None = re.search(r'id="([^"]+)"', group)
+        # Extract the group ID
+        group_id_match = re.search(r'id="([^"]+)"', group)
         if not group_id_match:
             raise ValueError("All groups must have an ID assigned for visual contribution testing")
         group_id = group_id_match.group(1)
 
-        # Render without the group
-        modified_svg_content: str = filtered_svg_content.replace(group, "")
-        test_image: Image.Image | None = render_svg_to_image(modified_svg_content, width=render_width, height=render_height)
-        if test_image is None:
-            raise Exception(f"Failed to render test image for group {group_id} - SVG content may be malformed")
+        # Re-render baseline only if we removed a group last time
+        if re_render_baseline:
+            baseline_pixels = render_svg_to_pixels(
+                filtered_svg_content, width=render_width, height=render_height
+            )
+
+        # Render test image without the current group
+        modified_svg_content = filtered_svg_content.replace(group, "")
+        test_pixels = render_svg_to_pixels(
+            modified_svg_content, width=render_width, height=render_height
+        )
 
         # Count changed pixels
-        test_pixels = np.array(test_image)
         if baseline_pixels.shape == test_pixels.shape:
             pixel_diff = np.sum(baseline_pixels != test_pixels)
             print(f"    Group {group_id}: {pixel_diff} pixels changed")
@@ -558,11 +540,12 @@ def filter_svg_elements_by_visual_contribution(
             if pixel_diff >= min_pixel_diff_threshold:
                 filtered_groups.append(group)
                 print(f"    → Keeping {group_id} (contributes {pixel_diff} pixels)")
-            else:
+                re_render_baseline = True
                 filtered_svg_content = modified_svg_content
+            else:
+                re_render_baseline = False
                 print(f"    → Removing {group_id} (contributes only {pixel_diff} pixels)")
         else:
             raise ValueError(f"Image size mismatch for group {group_id} - baseline: {baseline_pixels.shape}, test: {test_pixels.shape}")
-        test_image.close()
 
     return filtered_groups

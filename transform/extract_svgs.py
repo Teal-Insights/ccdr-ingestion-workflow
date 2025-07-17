@@ -1,3 +1,5 @@
+# TODO: Processing input2.pdf errors on page 4: "Error: No visible elements with geometry found in SVG to determine content bounds"; calculating bbox of group in context of full SVG may solve this?
+# TODO: Finish implementing steps 8-14 in the SVG processing pipeline below
 # TODO: (Short-term) treat SVG segments as part of same image if one is contained in the other's bounding box
 # TODO: Extract both SVG and PNG, updating the Pydantic model accordingly
 # TODO: Include necessary background image elements in the extracted content, but keep bounding box scoped to vector graphics
@@ -13,7 +15,7 @@
 The SVG extraction follows a specific order of operations:
 
 1. Extract raw SVG from PDF page using `page.get_svg_image()`
-2. Delete text elements early (to simplify/speed up subsequent processing)
+2. Delete text and image elements early (to simplify/speed up subsequent processing)
 3. Extract top-level groups in the SVG body (ignoring those in `<defs>`)
 4. Render page with and without each group to test visual contribution
 5. Keep only groups that contain at least one visible drawing element (path, rect, circle, polygon), not just images
@@ -118,19 +120,21 @@ def extract_svgs_from_pdf(
         print("  Removing text elements...")
         text_filtered_svg: str = filter_svg_content(svg_content, filter_text=True, filter_images=False)
 
-        # TODO: Maybe create an image_filtered_svg here, extract groups from it, and use text-filtered content as baseline for visual contribution testing, deleting groups by id rather than substring replacement
+        # Delete image elements (baseline for extracting drawing groups)
+        image_filtered_svg: str = filter_svg_content(
+            text_filtered_svg, filter_text=False, filter_images=True
+        )
 
-        # TODO: If we wanted to keep top-level paths, we could group them here
+        # TODO: If we wanted to keep top-level paths, we could group them here (but would need to be careful about rendering order; alternatively, do this at the end)
         if extract_paths:
             print("  Note: Top-level path extraction not currently implemented, skipping...")
 
         # 3. Extract top-level groups in the SVG body (ignoring those in `<defs>`)
         print("  Extracting top-level groups...")
-        top_level_groups: list[str] = extract_elements(text_filtered_svg, ["g"])
+        top_level_groups: list[str] = extract_elements(image_filtered_svg, ["g"])
 
         # 4. Render page with and without each group to test visual contribution, and filter accordingly
         print("  Applying visual contribution filtering...")
-        # TODO: Edit function to re-render the baseline every time we remove a group
         visually_filtered_groups: list[str] = filter_svg_elements_by_visual_contribution(
             text_filtered_svg,
             top_level_groups,
@@ -187,7 +191,8 @@ def extract_svgs_from_pdf(
         for segment_idx, segment_content in enumerate(segments):
             print(f"  Processing segment {segment_idx + 1} of {len(segments)}...")
 
-            # Clip SVG to content bounds
+            # 8. Calculate the bbox of each group
+            # TODO: Separate bbox calculation from clipping to content bounds
             clipped_content, bbox = clip_svg_to_content_bounds(segment_content)
 
             # Create storage path for this segment
@@ -196,7 +201,7 @@ def extract_svgs_from_pdf(
             )
             segment_path = os.path.join(svg_dir, segment_filename)
 
-            # Save the segment (only save if it has meaningful content)
+            # 12. Save segments as separate SVG files
             with open(segment_path, "w", encoding="utf-8") as f:
                 f.write(clipped_content)
             print(f"    Saved SVG segment to {segment_path}")
