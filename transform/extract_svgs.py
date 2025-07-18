@@ -1,3 +1,4 @@
+# TODO: Figure out why p1 icons aren't extracted for Angola
 # TODO: Extract both SVG and PNG, updating the Pydantic model accordingly
 # TODO: Include necessary background image elements in the extracted content, but keep bounding box scoped to vector graphics
 # TODO: Store the file in S3 and capture the actual storage url
@@ -116,11 +117,15 @@ def extract_svgs_from_pdf(
         #    (This is the baseline for visual contribution testing)
         print("  Removing text elements...")
         text_filtered_svg: str = filter_svg_content(svg_content, filter_text=True, filter_images=False)
+        with open(f"artifacts/page_{str(one_indexed_page_num)}_text_filtered.svg", "w", encoding="utf-8") as f:
+            f.write(text_filtered_svg)
 
         # Delete image elements (baseline for extracting drawing groups)
         image_filtered_svg: str = filter_svg_content(
             text_filtered_svg, filter_text=False, filter_images=True
         )
+        with open(f"artifacts/page_{str(one_indexed_page_num)}_image_filtered.svg", "w", encoding="utf-8") as f:
+            f.write(image_filtered_svg)
 
         # TODO: If we wanted to keep top-level paths, we could group them here (but would need to be careful about rendering order; alternatively, do this at the end)
         top_level_paths: list[str] = extract_elements(image_filtered_svg, ["path", "rect", "circle", "ellipse", "line", "polyline", "polygon"])

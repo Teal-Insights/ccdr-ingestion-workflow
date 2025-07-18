@@ -214,6 +214,10 @@ def render_svg_to_pixels(svg_content: str, width: int = 200, height: int = 200) 
             raise Exception("Failed to render SVG - SVG content may be malformed")
     
         pixels = np.array(img_copy)
+        # For debugging purposes
+        import time
+        timestamp = int(time.time() * 1000)
+        img.save(f"debug_render_{timestamp}.png")
         img.close()
     else:
         raise Exception(f"Inkscape rendering failed: {result.stderr}")
