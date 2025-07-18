@@ -1,3 +1,5 @@
+# Use remove element by id to remove unused clip paths for better reliability than regex
+
 import tempfile
 import subprocess
 import os
@@ -9,7 +11,7 @@ import svgelements
 import numpy as np
 
 def extract_elements(
-        svg_text: str, elements_to_extract: list[Literal["g", "mask", "clipPath"]] = ["g"], filter_by: list[str] = [], from_defs: bool = False
+        svg_text: str, elements_to_extract: list[Literal["g", "mask", "clipPath", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon"]] = ["g"], filter_by: list[str] = [], from_defs: bool = False
     ) -> list[str]:
     """
     Extract top-level <g> groups from SVG content, either from within <defs> or the main content.
@@ -50,46 +52,74 @@ def extract_elements(
     i: int = 0
     element_start: int | None = None
     popped_element: tuple[int, str] | None = None
-    matched: bool
 
     while i < len(content):
-        matched = False
-        for element, length in [(el, len(el)) for el in elements_to_extract]:
-            if content[i:i+length+1] == f'<{element}':
-                if not stack:  # Top-level group
-                    element_start = i
-                stack.append((i, element))
-                i = content.find('>', i) + 1
-                matched = True
-                break
-
-            elif content[i:i+length+3] == f'</{element}>':
-                if stack:
-                    popped_element = stack.pop()
-                    if not stack:  # Stack empty = complete top-level group
-                        group_end = i + length + 3
-                        if not element_start or popped_element[1] != element:
-                            raise ValueError(f"Mismatched tag found: </{popped_element[1]} has no corresponding opening tag")
-                        if filter_by:
-                            if any(f in content[element_start:group_end] for f in filter_by):
-                                elements.append(content[element_start:group_end])
-                        else:
-                            # No filter, add all groups
-                            elements.append(content[element_start:group_end])
-                        element_start = None
-                        popped_element = None
+        if content[i] == '<':
+            # Check if this is a closing tag
+            if content[i+1] == '/':
+                # Find the tag name
+                end_tag_start = i + 2
+                end_tag_end = content.find('>', end_tag_start)
+                if end_tag_end != -1:
+                    tag_name = content[end_tag_start:end_tag_end]
+                    
+                    # Check if this closing tag matches one of our elements_to_extract
+                    if tag_name in elements_to_extract and stack:
+                        popped_element = stack.pop()
+                        if not stack and popped_element[1] == tag_name:  # Stack empty = complete top-level element
+                            group_end = end_tag_end + 1
+                            if element_start is not None:
+                                if filter_by:
+                                    if any(f in content[element_start:group_end] for f in filter_by):
+                                        elements.append(content[element_start:group_end])
+                                else:
+                                    # No filter, add all elements
+                                    elements.append(content[element_start:group_end])
+                                element_start = None
+                    # Pop from stack for any closing tag (even if not in elements_to_extract)
+                    elif stack:
+                        stack.pop()
+                    i = end_tag_end + 1
                 else:
-                    raise ValueError(f"Mismatched closing tag found: </{element}>")
-                i = content.find('>', i) + 1
-                matched = True
-                break
-        if not matched:
+                    i += 1
+            else:
+                # This is an opening tag - find the tag name
+                tag_start = i + 1
+                tag_end = tag_start
+                while tag_end < len(content) and content[tag_end] not in ' >\t\n':
+                    tag_end += 1
+                
+                if tag_end < len(content):
+                    tag_name = content[tag_start:tag_end]
+                    
+                    # Check if it's a self-closing tag
+                    tag_close = content.find('>', tag_end)
+                    if tag_close != -1 and content[tag_close-1] == '/':
+                        # Self-closing tag - if it's a top-level element we want, extract it
+                        if tag_name in elements_to_extract and not stack:
+                            if filter_by:
+                                if any(f in content[i:tag_close+1] for f in filter_by):
+                                    elements.append(content[i:tag_close+1])
+                            else:
+                                elements.append(content[i:tag_close+1])
+                        i = tag_close + 1
+                    else:
+                        # Opening tag - push ALL tags onto stack
+                        if tag_name in elements_to_extract and not stack:
+                            element_start = i  # Only set start for top-level elements we want
+                        stack.append((i, tag_name))
+                        i = tag_close + 1 if tag_close != -1 else i + 1
+                else:
+                    i += 1
+        else:
             i += 1
 
     return elements
 
 
-def filter_svg_content(svg_content: str, filter_text: bool = True, filter_images: bool = True) -> str:
+def filter_svg_content(
+        svg_content: str, filter_text: bool = True, filter_images: bool = True
+    ) -> str:
     """
     Filter SVG content to capture only vector drawings that are not text or background colors/gradients.
     
@@ -245,15 +275,58 @@ def update_svg_viewbox_and_dimensions(svg_content: str, x: float, y: float, widt
     return svg_content
 
 
-def clip_svg_to_content_bounds(svg_content: str) -> tuple[str, tuple[float, float, float, float]]:
+def get_group_bounding_box(svg_content: str, group_id: str) -> tuple[float, float, float, float]:
     """
-    Clip SVG content to its actual content bounds, removing empty space around the drawing.
+    Get the bounding box of a specific group by its ID.
     
     Args:
-        svg_content: The original SVG content as a string
+        svg_content: The SVG content as a string
+        group_id: The ID of the group to get the bounding box for
         
     Returns:
-        Tuple of (clipped SVG content, bounding box as (x0, y0, x1, y1))
+        Bounding box as (x0, y0, x1, y1)
+    """
+    # Parse the SVG from string content using io.StringIO to simulate a file
+    svg_file = io.StringIO(svg_content)
+    svg = svgelements.SVG.parse(svg_file, reify=True)
+
+    # Find the element with the specified ID
+    target_element = None
+    for element in svg.elements():
+        if hasattr(element, 'values') and element.values.get('id') == group_id:
+            target_element = element
+            break
+    
+    if target_element is None:
+        raise ValueError(f"Group with ID '{group_id}' not found in SVG")
+
+    # Get the bounding box of the target element
+    if hasattr(target_element, 'bbox') and callable(target_element.bbox):
+        element_bbox = target_element.bbox()
+        if element_bbox is not None:
+            # Try to convert to list and validate
+            bbox_list = list(element_bbox)  # type: ignore
+            if len(bbox_list) == 4:
+                x0, y0, x1, y1 = bbox_list
+                # Ensure all values are numeric
+                x0, y0, x1, y1 = float(x0), float(y0), float(x1), float(y1)
+                
+                # Check if bbox is valid
+                if x1 > x0 and y1 > y0:
+                    return (x0, y0, x1, y1)
+    
+    raise ValueError(f"Group with ID '{group_id}' has no valid bounding box: {svg_content}")
+
+
+def get_svg_bounding_box(svg_content: str) -> tuple[float, float, float, float]:
+    """
+    Get the bounding box of all visible elements in an SVG.
+    
+    Args:
+        svg_content: The SVG content as a string
+        
+    Returns:
+        Bounding box as (x0, y0, x1, y1)
     """
     # Parse the SVG from string content using io.StringIO to simulate a file
     svg_file = io.StringIO(svg_content)
@@ -296,9 +369,24 @@ def clip_svg_to_content_bounds(svg_content: str) -> tuple[str, tuple[float, floa
     if bbox is None:
         raise ValueError("No visible elements with geometry found in SVG to determine content bounds")
 
-    # Add a small padding around the content
-    padding = 2.0
-    x0, y0, x1, y1 = bbox  # bbox is guaranteed to be not None here
+    return tuple(bbox)  # type: ignore
+
+
+def clip_svg_to_bounding_box(svg_content: str, bbox: tuple[float, float, float, float], padding: float = 2.0) -> str:
+    """
+    Clip SVG content to a specified bounding box.
+    
+    Args:
+        svg_content: The original SVG content as a string
+        bbox: Bounding box as (x0, y0, x1, y1)
+        padding: Padding to add around the bounding box
+        
+    Returns:
+        Clipped SVG content
+    """
+    x0, y0, x1, y1 = bbox
+    
+    # Add padding around the content
     x0 -= padding
     y0 -= padding
     x1 += padding
@@ -312,7 +400,31 @@ def clip_svg_to_content_bounds(svg_content: str) -> tuple[str, tuple[float, floa
     print(f"  New dimensions: {width:.1f} x {height:.1f}")
     
     # Update viewBox and dimensions in a single operation
-    return update_svg_viewbox_and_dimensions(svg_content, x0, y0, width, height), (x0, y0, x1, y1)
+    return update_svg_viewbox_and_dimensions(svg_content, x0, y0, width, height)
+
+
+def clip_svg_to_content_bounds(svg_content: str) -> tuple[str, tuple[float, float, float, float]]:
+    """
+    Clip SVG content to its actual content bounds, removing empty space around the drawing.
+    
+    Args:
+        svg_content: The original SVG content as a string
+        
+    Returns:
+        Tuple of (clipped SVG content, bounding box as (x0, y0, x1, y1))
+    """
+    # Get the bounding box of all visible elements
+    bbox = get_svg_bounding_box(svg_content)
+    
+    # Clip the SVG to the bounding box
+    clipped_svg = clip_svg_to_bounding_box(svg_content, bbox)
+    
+    # Calculate the final bounding box with padding for return value
+    x0, y0, x1, y1 = bbox
+    padding = 2.0
+    final_bbox = (x0 - padding, y0 - padding, x1 + padding, y1 + padding)
+    
+    return clipped_svg, final_bbox
 
 
 def remove_unused_clippaths(svg_content: str) -> str:
@@ -549,3 +661,98 @@ def filter_svg_elements_by_visual_contribution(
             raise ValueError(f"Image size mismatch for group {group_id} - baseline: {baseline_pixels.shape}, test: {test_pixels.shape}")
 
     return filtered_groups
+
+
+def bboxes_overlap(bbox1, bbox2):
+    """Check if two bboxes overlap or are contained within each other."""
+    x1, y1, x2, y2 = bbox1
+    x3, y3, x4, y4 = bbox2
+    
+    # Check if they don't overlap (easier to check the negative case)
+    if x2 < x3 or x4 < x1 or y2 < y3 or y4 < y1:
+        return False
+    return True
+
+
+def union_bbox(bbox1, bbox2):
+    """Calculate the union bbox of two bboxes."""
+    x1, y1, x2, y2 = bbox1
+    x3, y3, x4, y4 = bbox2
+    return (min(x1, x3), min(y1, y3), max(x2, x4), max(y2, y4))
+
+
+def cluster_by_bbox_overlap(
+        groups: list[str], defs: list[str],
+        bboxes: list[tuple[float, float, float, float]], ids: list[str] | None = None
+    ) -> tuple[list[str], list[str], list[tuple[float, float, float, float]]]:
+    """
+    Cluster groups based on bbox overlaps and return segments.
+    
+    Args:
+        groups: List of group strings
+        defs: List of definition strings  
+        bboxes: List of bbox tuples (x1, y1, x2, y2)
+        ids: Optional list of group ID strings for sorting within clusters
+        
+    Returns:
+        Tuple of (clustered_groups, clustered_defs, clustered_bboxes)
+    """
+    n = len(groups)
+    if n != len(defs) or n != len(bboxes):
+        raise ValueError("All input lists must have the same length")
+    if ids is not None and len(ids) != n:
+        raise ValueError("ids list must have the same length as other inputs")
+    
+    # Build adjacency matrix for overlapping bboxes
+    overlaps = [[False] * n for _ in range(n)]
+    for i in range(n):
+        for j in range(i + 1, n):
+            if bboxes_overlap(bboxes[i], bboxes[j]):
+                overlaps[i][j] = overlaps[j][i] = True
+    
+    # Find connected components using DFS
+    visited = [False] * n
+    clusters = []
+    
+    def dfs(idx, cluster):
+        visited[idx] = True
+        cluster.append(idx)
+        for j in range(n):
+            if overlaps[idx][j] and not visited[j]:
+                dfs(j, cluster)
+    
+    for i in range(n):
+        if not visited[i]:
+            cluster = []
+            dfs(i, cluster)
+            clusters.append(cluster)
+    
+    # Build output
+    result_groups = []
+    result_defs = []
+    result_bboxes = []
+    
+    for cluster in clusters:
+        # Sort cluster indices by id if provided
+        if ids is not None:
+            cluster.sort(key=lambda idx: ids[idx])
+        
+        # Concatenate groups
+        cluster_groups = []
+        for idx in cluster:
+            cluster_groups.append(groups[idx])
+        result_groups.append('\n'.join(cluster_groups))
+        
+        # Concatenate unique defs
+        cluster_defs = set()
+        for idx in cluster:
+            cluster_defs.add(defs[idx])
+        result_defs.append('\n'.join(sorted(cluster_defs)))
+        
+        # Calculate union bbox
+        cluster_bbox = bboxes[cluster[0]]
+        for idx in cluster[1:]:
+            cluster_bbox = union_bbox(cluster_bbox, bboxes[idx])
+        result_bboxes.append(cluster_bbox)
+    
+    return result_groups, result_defs, result_bboxes

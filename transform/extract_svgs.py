@@ -23,11 +23,10 @@ The SVG extraction follows a specific order of operations:
 7. Extract SVG header
 8. Calculate the bbox of each group
 9. Concatenate groups with overlapping or contained bboxes (and take the union of associated defs) to get segment contents
-10. Write SVG segments to separate files, using the same header for each
-11. Clip each segment to its content bounds
-12. Save segments as separate SVG files
-13. Also save PNG page crop of bounding box corresponding to each SVG segment
-14. Create JSON blocks for each SVG segment (without description)
+10. Clip each segment to its content bounds
+11. Write SVG segments to separate SVG files
+12. Also save PNG page crop of bounding box corresponding to each SVG segment
+13. Create JSON blocks for each SVG segment (without description)
 
 **Critical SVG Design Decisions**:
 - Only test `<g>` elements outside `<defs>` (actual drawing units)
@@ -50,7 +49,8 @@ from utils.svg import (
     filter_svg_content, extract_svg_header,
     filter_svg_elements_by_visual_contribution,
     extract_elements, assign_ids_to_elements,
-    clip_svg_to_content_bounds
+    clip_svg_to_bounding_box, get_group_bounding_box,
+    cluster_by_bbox_overlap, remove_element_by_id
 )
 
 dotenv.load_dotenv(override=True)
@@ -126,8 +126,18 @@ def extract_svgs_from_pdf(
         )
 
         # TODO: If we wanted to keep top-level paths, we could group them here (but would need to be careful about rendering order; alternatively, do this at the end)
+        top_level_paths: list[str] = extract_elements(image_filtered_svg, ["path", "rect", "circle", "ellipse", "line", "polyline", "polygon"])
         if extract_paths:
             print("  Note: Top-level path extraction not currently implemented, skipping...")
+        else:
+            # Filter out top-level paths
+            for path in top_level_paths:
+                # Get the id attribute of the path
+                match = re.search(r'id="([^"]+)"', path)
+                if not match:
+                    raise ValueError("Path without ID found after assigning IDs")
+                path_id = match.group(1)
+                image_filtered_svg = remove_element_by_id(image_filtered_svg, path_id)
 
         # 3. Extract top-level groups in the SVG body (ignoring those in `<defs>`)
         print("  Extracting top-level groups...")
@@ -181,43 +191,77 @@ def extract_svgs_from_pdf(
         def wrap_with_svg_tags(body: str) -> str:
             return f"{svg_header}\n{body}\n</svg>"
 
+        # 8. Calculate the bbox of each group
+        group_ids: list[str] = []
+        for group in image_filtered_groups:
+            match = re.search(r'id="([^"]+)"', group)
+            if match:
+                group_ids.append(match.group(1))
+            else:
+                raise ValueError("Group without ID found after assigning IDs")
+        assert len(group_ids) == len(image_filtered_groups), "Mismatch in number of groups and IDs"
+
+        print("  Calculating bounding boxes for groups...")
+        bboxes: list[tuple[float, float, float, float]] = []
+        for group_id in group_ids:
+            group_bbox: tuple[float, float, float, float] = get_group_bounding_box(
+                image_filtered_svg, group_id
+            )
+            bboxes.append(group_bbox)
+
+        # 9. Concatenate groups with overlapping or contained bboxes
+        # (and take the union of associated defs) to get segment content
+        print("  Grouping overlapping/contained bounding boxes into segments...")
+        clustered_groups, clustered_defs, unified_bbox = cluster_by_bbox_overlap(
+            image_filtered_groups,
+            defs,
+            bboxes,
+            group_ids
+        )
+        clustered_groups = cast(list[str], clustered_groups)
+        clustered_defs = cast(list[str], clustered_defs)
+        unified_bboxes = cast(list[tuple[float, float, float, float]], unified_bbox)
+
         # Construct SVG segments
-        segments: list[str] = []
-        for defs_content, group in zip(defs, image_filtered_groups):
-            segments.append(
-                wrap_with_svg_tags(f"<defs>\n{defs_content}\n</defs>\n{group}")
+        for i in range(len(clustered_groups)):
+            print(f"  Processing segment {i + 1} of {len(clustered_groups)}...")
+
+            unified_bbox = unified_bboxes[i]
+            concatenated_groups = clustered_groups[i]
+            concatenated_defs = clustered_defs[i]
+
+            segment: str = (
+                wrap_with_svg_tags(f"<defs>\n{concatenated_defs}\n</defs>\n{concatenated_groups}")
             )
 
-        for segment_idx, segment_content in enumerate(segments):
-            print(f"  Processing segment {segment_idx + 1} of {len(segments)}...")
+            # 10. Clip each segment to its content bounds
+            clipped_content = clip_svg_to_bounding_box(segment, unified_bbox)
 
-            # 8. Calculate the bbox of each group
-            # TODO: Separate bbox calculation from clipping to content bounds
-            clipped_content, bbox = clip_svg_to_content_bounds(segment_content)
-
+            # 11. Save segments as separate SVG files
             # Create storage path for this segment
             segment_filename = (
-                f"page_{str(one_indexed_page_num)}_graphics_only_segment_{segment_idx + 1}.svg"
+                f"page_{str(one_indexed_page_num)}_graphics_only_segment_{i + 1}.svg"
             )
             segment_path = os.path.join(svg_dir, segment_filename)
 
-            # 12. Save segments as separate SVG files
             with open(segment_path, "w", encoding="utf-8") as f:
                 f.write(clipped_content)
             print(f"    Saved SVG segment to {segment_path}")
 
-            # Create the block without description
+            # 12. TODO: Also save PNG page crop of bounding box corresponding to each SVG segment
+
+            # 13. Create JSON blocks for each SVG segment (without description)
             svg_block = {
                 "block_type": "svg",
                 "page_number": page_num + 1,
-                "bbox": bbox,
+                "bbox": unified_bbox,
                 "storage_url": segment_path,
                 "description": None,
             }
 
             svg_blocks.append(svg_block)
             print(
-                f"  Added SVG block for page {page_num + 1}, segment {segment_idx + 1}"
+                f"  Added SVG block for page {page_num + 1}, segment {i + 1}"
             )
 
     doc.close()
