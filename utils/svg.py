@@ -275,7 +275,7 @@ def update_svg_viewbox_and_dimensions(svg_content: str, x: float, y: float, widt
     return svg_content
 
 
-def get_group_bounding_box(svg_content: str, group_id: str) -> tuple[float, float, float, float]:
+def get_group_bounding_box(svg_content: str, group_id: str) -> tuple[float, float, float, float] | None:
     """
     Get the bounding box of a specific group by its ID.
     
@@ -315,7 +315,9 @@ def get_group_bounding_box(svg_content: str, group_id: str) -> tuple[float, floa
                 if x1 > x0 and y1 > y0:
                     return (x0, y0, x1, y1)
     
-    raise ValueError(f"Group with ID '{group_id}' has no valid bounding box: {svg_content}")
+    print(f"Warning: Group with ID '{group_id}' has no valid bounding box: {svg_content}")
+    print("This may happen if the group contains only a vertical or horizontal line.")
+    return None
 
 
 def get_svg_bounding_box(svg_content: str) -> tuple[float, float, float, float]:

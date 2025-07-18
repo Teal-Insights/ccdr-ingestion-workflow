@@ -1,6 +1,3 @@
-# TODO: Processing input2.pdf errors on page 4: "Error: No visible elements with geometry found in SVG to determine content bounds"; calculating bbox of group in context of full SVG may solve this?
-# TODO: Finish implementing steps 8-14 in the SVG processing pipeline below
-# TODO: (Short-term) treat SVG segments as part of same image if one is contained in the other's bounding box
 # TODO: Extract both SVG and PNG, updating the Pydantic model accordingly
 # TODO: Include necessary background image elements in the extracted content, but keep bounding box scoped to vector graphics
 # TODO: Store the file in S3 and capture the actual storage url
@@ -202,12 +199,24 @@ def extract_svgs_from_pdf(
         assert len(group_ids) == len(image_filtered_groups), "Mismatch in number of groups and IDs"
 
         print("  Calculating bounding boxes for groups...")
-        bboxes: list[tuple[float, float, float, float]] = []
+        returned_bboxes: list[tuple[float, float, float, float] | None] = []
         for group_id in group_ids:
-            group_bbox: tuple[float, float, float, float] = get_group_bounding_box(
+            group_bbox: tuple[float, float, float, float] | None = get_group_bounding_box(
                 image_filtered_svg, group_id
             )
-            bboxes.append(group_bbox)
+            returned_bboxes.append(group_bbox)
+
+        # Delete any group, defs, group_id, bbox combo where bbox is None (vertical or horizontal line)
+        indices_to_delete = [i for i, bbox in enumerate(returned_bboxes) if bbox is None]
+        for index in reversed(indices_to_delete):
+            image_filtered_groups.pop(index)
+            defs.pop(index)
+            group_ids.pop(index)
+            returned_bboxes.pop(index)
+        bboxes: list[tuple[float, float, float, float]] = cast(list[tuple[float, float, float, float]], returned_bboxes)
+        if not image_filtered_groups:
+            print(f"  Skipped page {page_num + 1} - SVG has no visually contributing elements")
+            continue
 
         # 9. Concatenate groups with overlapping or contained bboxes
         # (and take the union of associated defs) to get segment content
