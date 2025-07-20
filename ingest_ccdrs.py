@@ -26,7 +26,7 @@ from transform.describe_images import describe_images_in_json
 from transform.extract_layout import extract_layout
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
-from utils.aws import download_from_s3, verify_environment_variables
+from utils.aws import download_from_s3, upload_to_s3, verify_environment_variables
 
 dotenv.load_dotenv(override=True)
 
@@ -84,9 +84,12 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
 
     # 3. Extract layout JSON from the PDF using the Layout Extractor API
     if not layout_path:
-        layout_path = extract_layout(pdf_path, os.path.join(temp_dir, "layout.json"))
+        layout_path = extract_layout(pdf_path, os.path.join(temp_dir, f"doc_{document_id}.json"))
+        print(f"Extracted layout to {layout_path}")
+        upload_to_s3(temp_dir, (publication_id, document_id))
 
     # 4. Use page numbers to label all blocks with logical page numbers, then discard header and footers
+    
 
     # 5. Re-label text blocks that are actually images or figures by detecting if there's an image or geometry in the bbox
 

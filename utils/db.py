@@ -3,7 +3,9 @@ from sqlmodel import create_engine
 import requests
 import difflib
 from pathlib import Path
+import dotenv
 
+dotenv.load_dotenv(override=True)
 
 # Database connection setup
 def get_database_url():
@@ -35,7 +37,7 @@ def check_schema_sync():
         master_schema = response.text
 
         # Read local schema
-        local_schema_path = Path("load/schema.py")
+        local_schema_path = Path("utils/schema.py")
         if not local_schema_path.exists():
             raise FileNotFoundError(f"Local schema file not found: {local_schema_path}")
 
@@ -59,7 +61,7 @@ def check_schema_sync():
                 master_lines,
                 local_lines,
                 fromfile="master/db/schema.py",
-                tofile="local/extract/schema.py",
+                tofile="utils/schema.py",
                 lineterm="",
             )
 
@@ -74,7 +76,7 @@ def check_schema_sync():
             print("-" * 40)
             print("\nTo sync your schema, run:")
             print(
-                "curl -s https://raw.githubusercontent.com/Teal-Insights/ccdr-explorer-api/refs/heads/main/db/schema.py > extract/schema.py"
+                "curl -s https://raw.githubusercontent.com/Teal-Insights/ccdr-explorer-api/refs/heads/main/db/schema.py > utils/schema.py"
             )
             return False
 
