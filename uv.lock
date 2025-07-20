@@ -189,6 +189,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pymupdf" },
     { name = "reportlab" },
+    { name = "roman" },
     { name = "sqlmodel" },
     { name = "svgelements" },
     { name = "svglib" },
@@ -214,6 +215,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11.5" },
     { name = "pymupdf", specifier = ">=1.26.0" },
     { name = "reportlab", specifier = ">=4.4.2" },
+    { name = "roman", specifier = ">=5.1" },
     { name = "sqlmodel", specifier = ">=0.0.24" },
     { name = "svgelements", specifier = ">=1.9.6" },
     { name = "svglib", specifier = ">=1.5.1" },
@@ -1297,6 +1299,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e1/0a/929373653770d8a0d7ea76c37de6e41f11eb07559b103b1c02cafb3f7cf8/requests-2.32.4.tar.gz", hash = "sha256:27d0316682c8a29834d3264820024b62a36942083d52caf2f14c0591336d3422", size = 135258, upload-time = "2025-06-09T16:43:07.34Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7c/e4/56027c4a6b4ae70ca9de302488c5ca95ad4a39e190093d6c1a8ace08341b/requests-2.32.4-py3-none-any.whl", hash = "sha256:27babd3cda2a6d50b30443204ee89830707d396671944c998b5975b031ac2b2c", size = 64847, upload-time = "2025-06-09T16:43:05.728Z" },
+]
+
+[[package]]
+name = "roman"
+version = "5.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/30/86/8bdb59db4b7ea9a2bd93f8d25298981e09a4c9f4744cf4cbafa7ef6fee7b/roman-5.1.tar.gz", hash = "sha256:3a86572e9bc9183e771769601189e5fa32f1620ffeceebb9eca836affb409986", size = 8066, upload-time = "2025-07-18T05:25:12.753Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/d0/27c9840ddaf331ace898c7f4aa1e1304a7acc22b844b5420fabb6d14c3a0/roman-5.1-py3-none-any.whl", hash = "sha256:bf595d8a9bc4a8e8b1dfa23e1d4def0251b03b494786df6b8c3d3f1635ce285a", size = 5825, upload-time = "2025-07-18T05:25:11.496Z" },
 ]
 
 [[package]]

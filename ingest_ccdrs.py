@@ -13,6 +13,7 @@
 
 import dotenv
 import asyncio
+import json
 import os
 import requests
 from typing import Literal, Sequence
@@ -24,6 +25,8 @@ from transform.detect_structure import detect_structure
 from transform.clean_html import process_html_inputs_concurrently
 from transform.describe_images import describe_images_in_json
 from transform.extract_layout import extract_layout
+from transform.map_page_numbers import add_logical_page_numbers
+from transform.models import ExtractedLayoutBlock, BlockType, LayoutBlock
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
 from utils.aws import download_from_s3, upload_to_s3, verify_environment_variables
@@ -88,8 +91,16 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
         print(f"Extracted layout to {layout_path}")
         upload_to_s3(temp_dir, (publication_id, document_id))
 
-    # 4. Use page numbers to label all blocks with logical page numbers, then discard header and footers
-    
+    with open(layout_path, "r") as f:
+        extracted_layout_blocks: list[ExtractedLayoutBlock] = [
+            ExtractedLayoutBlock.model_validate(block) for block in json.load(f)
+        ]
+
+    # 4. Use page numbers to label all blocks with logical page numbers, then discard headers footer, and page number blocks
+    layout_blocks: list[LayoutBlock] = add_logical_page_numbers(extracted_layout_blocks)
+    filtered_layout_blocks: list[LayoutBlock] = [
+        block for block in layout_blocks if block.type not in [BlockType.PAGE_HEADER, BlockType.PAGE_FOOTER]
+    ]
 
     # 5. Re-label text blocks that are actually images or figures by detecting if there's an image or geometry in the bbox
 
@@ -180,4 +191,4 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
 
     # 11. Enrich the database records by generating relations from anchor tags
 
-    print(f"Pipeline completed! All outputs in: {temp_dir}")
+print(f"Pipeline completed! All outputs in: {temp_dir}")
