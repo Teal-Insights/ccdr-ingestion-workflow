@@ -25,6 +25,7 @@ class NodeType(str, Enum):
 
 
 class TagName(str, Enum):
+    # Only structural elements
     HEADER = "HEADER"
     MAIN = "MAIN"
     FOOTER = "FOOTER"
@@ -49,13 +50,6 @@ class TagName(str, Enum):
     H4 = "H4"
     H5 = "H5"
     H6 = "H6"
-    I = "I"
-    B = "B"
-    U = "U"
-    S = "S"
-    SUP = "SUP"
-    SUB = "SUB"
-    A = "A"
     IMG = "IMG"
     MATH = "MATH"
     CODE = "CODE"
@@ -110,7 +104,15 @@ class RelationType(str, Enum):
 
 
 # Pydantic model for positional data
-class PositionalData(SQLModel):
+class PositionalData(SQLModel, table=False):
+    """Represents the position of *one* of the bounding boxes
+    that make up a node. Intended for storage in a JSONB array
+    containing complete positional data for the node.
+
+    Most nodes will have only one bounding box, but some will
+    have multiple (e.g., paragraphs split across pages).
+    """
+
     page_pdf: int
     page_logical: Optional[int] = None
     bbox: Dict[str, float]  # {x1, y1, x2, y2}

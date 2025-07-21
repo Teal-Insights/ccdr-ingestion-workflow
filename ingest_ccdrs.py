@@ -12,21 +12,16 @@
 """
 
 import dotenv
-import asyncio
 import json
 import os
 import requests
-from typing import Literal, Sequence
+import asyncio
+from typing import Sequence
 from sqlmodel import Session, select
-from transform.extract_text_blocks import extract_text_blocks_with_styling
-from transform.extract_images import extract_images_from_pdf
-from transform.convert_to_html import convert_blocks_to_html
-from transform.detect_structure import detect_structure
-from transform.clean_html import process_html_inputs_concurrently
-from transform.describe_images import describe_images_in_json
 from transform.extract_layout import extract_layout
 from transform.map_page_numbers import add_logical_page_numbers
-from transform.models import ExtractedLayoutBlock, BlockType, LayoutBlock
+from transform.reclassify_blocks import reclassify_block_types
+from transform.models import ExtractedLayoutBlock, BlockType, LayoutBlock, ContentBlock
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
 from utils.aws import download_from_s3, upload_to_s3, verify_environment_variables
@@ -103,6 +98,9 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
     ]
 
     # 5. Re-label text blocks that are actually images or figures by detecting if there's an image or geometry in the bbox
+    filtered_layout_blocks: list[ContentBlock] = asyncio.run(
+        reclassify_block_types(filtered_layout_blocks, pdf_path)
+    )
 
     # Extract ImageBlocks and write BlocksDocument to <temp_dir>/images.json
     # extracted_image_blocks_path, images_dir = extract_images_from_pdf(
