@@ -24,6 +24,7 @@ from transform.reclassify_blocks import reclassify_block_types
 from transform.models import ExtractedLayoutBlock, BlockType, LayoutBlock, ContentBlockBase
 from transform.extract_images import extract_images_from_pdf
 from transform.describe_images import describe_images_with_vlm
+from transform.extract_text_blocks import extract_text_blocks
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
 from utils.aws import download_pdf_from_s3, upload_json_to_s3, verify_environment_variables
@@ -44,7 +45,7 @@ assert layout_extractor_api_key, "LAYOUT_EXTRACTOR_API_KEY is not set"
 layout_extractor_api_url: str = os.getenv("LAYOUT_EXTRACTOR_API_URL", "")
 assert layout_extractor_api_url, "LAYOUT_EXTRACTOR_API_URL is not set"
 verify_environment_variables()
-check_schema_sync()
+assert check_schema_sync(), "DB schema is out of sync."
 
 # Create a temporary working directory for the entire pipeline
 # temp_dir: str = tempfile.mkdtemp(prefix="pdf_parsing_pipeline_")
@@ -104,6 +105,9 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
         block for block in layout_blocks if block.type not in [BlockType.PAGE_HEADER, BlockType.PAGE_FOOTER]
     ]
     print(f"Added logical page numbers to {len(layout_blocks)} blocks")
+    import pickle
+    with open(os.path.join("artifacts", "filtered_layout_blocks.pkl"), "wb") as f:
+        pickle.dump(filtered_layout_blocks, f)
 
     # 5. Re-label text blocks that are actually images or figures by detecting if there's an image or geometry in the bbox
     content_blocks: list[ContentBlockBase] = asyncio.run(
@@ -115,17 +119,16 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
     print("Images extracted successfully!")
 
     # 7. Describe the images with a VLM (e.g., Gemini)
-    content_blocks_with_descriptions = describe_images_with_vlm(
+    content_blocks_with_descriptions = asyncio.run(describe_images_with_vlm(
         content_blocks_with_images, gemini_api_key, temp_dir, document_id
-    )
+    ))
     print("Images described successfully!")
 
-
-    # 8. Mechanically extract text from text boxes using PyMuPDF
-    # extracted_text_blocks_path: str = extract_text_blocks_with_styling(
-    #     pdf_path, os.path.join(temp_dir, "text_blocks.json"), temp_dir
-    # )
-    # print(f"Text blocks extracted successfully to {extracted_text_blocks_path}!")
+    #8. Mechanically extract text from text boxes using PyMuPDF
+    extracted_text_blocks: str = extract_text_blocks(
+        content_blocks_with_descriptions, pdf_path, temp_dir
+    )
+    print("Text blocks extracted successfully!")
 
     # TODO: Blocks' text field contains HTML with in-line styles that still need cleaning
     # Extract unique styles and have an LLM write a transformation rule for each one
