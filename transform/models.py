@@ -49,15 +49,26 @@ class LayoutBlock(ExtractedLayoutBlock):
     )
 
 
-class ContentBlock(BaseModel):
+class ContentBlockBase(BaseModel):
     """
-    Represents a layout block with positional data condensed to our own
-    schema (and with BlockType fixed up using rules-based heuristics).
+    Conforms the layout block's positional data to the schema used by
+    content nodes in our database. Also fixes up the block type using
+    rules-based heuristics, and infers the embedding source from the
+    block type.
     """
     positional_data: PositionalData = Field(description="Positional data for the block")
+    block_type: BlockType = Field(description="Type/category of the layout block (e.g., 'Page header', 'Paragraph', etc.)")
+    embedding_source: Optional[EmbeddingSource] = Field(default=None, description="Whether to embed text, description, or caption")
+
+
+class ContentBlock(ContentBlockBase):
+    """
+    Adds text content or image description and storage location to the
+    base content block. Contains all the information needed to create a
+    database content node.
+    """
     text_content: Optional[str] = Field(default=None, description="Text content (if a text block)")
     storage_url: Optional[str] = Field(default=None, description="URL of the image or other content (if a non-text block)")
     description: Optional[str] = Field(default=None, description="Description of the block (if a non-text block)")
     caption: Optional[str] = Field(default=None, description="Caption associated with the block (if available)")
-    embedding_source: Optional[EmbeddingSource] = Field(default=None, description="Whether to embed text, description, or caption")
-    block_type: BlockType = Field(description="Type/category of the layout block (e.g., 'Page header', 'Paragraph', etc.)")
+    

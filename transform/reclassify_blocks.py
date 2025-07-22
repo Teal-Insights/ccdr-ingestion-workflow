@@ -1,5 +1,5 @@
 import pymupdf
-from transform.models import LayoutBlock, BlockType, ContentBlock
+from transform.models import LayoutBlock, BlockType, ContentBlockBase
 from utils.schema import EmbeddingSource, PositionalData
 from transform.extract_drawings_by_bbox import is_completely_contained, extract_geometries_in_bbox
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -95,24 +95,22 @@ async def reclassify_images_with_gemini(
     return [get_classification(response.message.content) for response in responses]
 
 
-async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> list[ContentBlock]:
+async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> list[ContentBlockBase]:
     """Reclassify block types based on the content of the bbox"""
     pdf = pymupdf.open(pdf_path)
 
-    content_blocks: list[ContentBlock] = []
+    content_blocks: list[ContentBlockBase] = []
     indices_to_reclassify: list[int] = []
     for i, block in enumerate(blocks):
         # Coerce positional data to our own schema
-        bbox = (block.left, block.top, block.left + block.width, block.top + block.height)
-        content_block_base = ContentBlock(
-            positional_data=PositionalData(
-                bbox=bbox,
-                page_pdf=block.page_number,
-                page_logical=block.logical_page_number,
-            )
+        positional_data = PositionalData(
+            bbox=(block.left, block.top, block.left + block.width, block.top + block.height),
+            page_pdf=block.page_number,
+            page_logical=block.logical_page_number,
         )
 
         # If a text block, check for images or drawings in the bbox
+        new_block_type = block.type
         if block.type == BlockType.TEXT:
             page = pdf[block.page_number - 1]
 
@@ -121,17 +119,23 @@ async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> li
             for xref, *_rest in image_list:
                 rect_list = page.get_image_rects(xref)
                 for rect in rect_list:
-                    if is_completely_contained(rect, bbox):
-                        content_block_base.block_type = BlockType.PICTURE
+                    if is_completely_contained(rect, positional_data.bbox):
+                        new_block_type = BlockType.PICTURE
                         break
 
             # If a drawing in bbox, add to indices to reclassify
             page_svg_image = page.get_svg_image()
-            drawings = extract_geometries_in_bbox(page_svg_image, bbox)
+            drawings = extract_geometries_in_bbox(page_svg_image, positional_data.bbox)
             if drawings:
                 indices_to_reclassify.append(i)
 
-        content_blocks.append(content_block_base)
+        content_blocks.append(ContentBlockBase(
+            positional_data=positional_data,
+            block_type=new_block_type,
+            embedding_source=get_embedding_source(new_block_type),
+        ))
+
+    pdf.close()
 
     if indices_to_reclassify:
         semaphore = asyncio.Semaphore(2)
@@ -140,8 +144,6 @@ async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> li
         )
         for i, classification in enumerate(classifications):
             content_blocks[indices_to_reclassify[i]].block_type = classification
-
-    for content_block in content_blocks:
-        content_block.embedding_source = get_embedding_source(content_block.block_type)
+            content_blocks[indices_to_reclassify[i]].embedding_source = get_embedding_source(classification)
 
     return content_blocks

@@ -4,11 +4,11 @@
 3. Send the PDF to the Layout Extractor API to get bounding boxes and labels for each element on each page
 4. Ignore headers and footers based on their labels
 5. Many boxes are mislabeled as text; use heuristics to re-label them as images or figures
-6. Mechanically extract text from text boxes using PyMuPDF
-7. Get pixmap and extract images from image boxes using PyMuPDF
-8. Describe the images with a VLM (e.g., Gemini) and add the descriptions to the JSON
+6. Extract images from the PDF and save them to S3
+7. Describe the images with a VLM (e.g., Gemini)
+8. Mechanically extract text from text boxes using PyMuPDF
 9. Convert text to my HTML spec
-10, Convert HTML to graph and ingest into the database
+10. Convert HTML to graph and ingest into the database
 """
 
 import dotenv
@@ -21,10 +21,12 @@ from sqlmodel import Session, select
 from transform.extract_layout import extract_layout
 from transform.map_page_numbers import add_logical_page_numbers
 from transform.reclassify_blocks import reclassify_block_types
-from transform.models import ExtractedLayoutBlock, BlockType, LayoutBlock, ContentBlock
+from transform.models import ExtractedLayoutBlock, BlockType, LayoutBlock, ContentBlockBase
+from transform.extract_images import extract_images_from_pdf
+from transform.describe_images import describe_images_with_vlm
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
-from utils.aws import download_from_s3, upload_to_s3, verify_environment_variables
+from utils.aws import download_pdf_from_s3, upload_json_to_s3, verify_environment_variables
 
 dotenv.load_dotenv(override=True)
 
@@ -71,7 +73,7 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
     pdf_path: str | None
     layout_path: str | None = None
     if USE_S3 and storage_url:
-        pdf_path, layout_path = download_from_s3(temp_dir, (publication_id, document_id), storage_url)
+        pdf_path, layout_path = download_pdf_from_s3(temp_dir, (publication_id, document_id), storage_url)
     else:
         # Fall back to downloading directly from the World Bank
         pdf_path = os.path.join(temp_dir, "pdfs", f"{document_id}.pdf")
@@ -84,7 +86,7 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
     if not layout_path:
         layout_path = extract_layout(pdf_path, os.path.join(temp_dir, f"doc_{document_id}.json"))
         print(f"Extracted layout to {layout_path}")
-        upload_to_s3(temp_dir, (publication_id, document_id))
+        upload_json_to_s3(temp_dir, (publication_id, document_id))
 
     with open(layout_path, "r") as f:
         extracted_layout_blocks: list[ExtractedLayoutBlock] = [
@@ -98,36 +100,26 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
     ]
 
     # 5. Re-label text blocks that are actually images or figures by detecting if there's an image or geometry in the bbox
-    filtered_layout_blocks: list[ContentBlock] = asyncio.run(
+    content_blocks: list[ContentBlockBase] = asyncio.run(
         reclassify_block_types(filtered_layout_blocks, pdf_path)
     )
 
-    # Extract ImageBlocks and write BlocksDocument to <temp_dir>/images.json
-    # extracted_image_blocks_path, images_dir = extract_images_from_pdf(
-    #     pdf_path, os.path.join(temp_dir, "images.json"), images_dir=os.path.join(temp_dir, "images")
-    # )
-    # print("Image blocks extracted successfully!")
+    # 6. Extract and describe images with a VLM (e.g., Gemini)
+    content_blocks_with_images = extract_images_from_pdf(content_blocks, pdf_path, temp_dir, document_id)
+    print("Images extracted successfully!")
 
-    # 6. Extract TextBlocks from the PDF and write BlocksDocument to <temp_dir>/text_blocks.json
+    # 7. Describe the images with a VLM (e.g., Gemini)
+    content_blocks_with_descriptions = describe_images_with_vlm(
+        content_blocks_with_images, gemini_api_key, temp_dir, document_id
+    )
+    print("Images described successfully!")
+
+
+    # 8. Mechanically extract text from text boxes using PyMuPDF
     # extracted_text_blocks_path: str = extract_text_blocks_with_styling(
     #     pdf_path, os.path.join(temp_dir, "text_blocks.json"), temp_dir
     # )
     # print(f"Text blocks extracted successfully to {extracted_text_blocks_path}!")
-
-    # 7. Get pixmap and extract images from image boxes using PyMuPDF
-
-    # 8. Describe the images and SVGs with a VLM
-    # TODO: Pass text context with image to Gemini to improve description
-    # TODO: Validate that all ImageBlocks and SvgBlocks have a description after this step
-    # descriptions_output_file_path: str = os.path.join(temp_dir, "described_blocks.json")
-    # described_blocks_path: str = asyncio.run(describe_images_in_json(
-    #     json_file_path=combined_blocks_path,
-    #     images_dir=images_dir,
-    #     api_key=gemini_api_key,
-    #     output_file_path=descriptions_output_file_path,
-    #     svg_as_text=True,
-    # ))
-    # print("Images and SVGs described successfully!")
 
     # TODO: Blocks' text field contains HTML with in-line styles that still need cleaning
     # Extract unique styles and have an LLM write a transformation rule for each one

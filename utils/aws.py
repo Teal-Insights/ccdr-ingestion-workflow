@@ -76,7 +76,7 @@ def get_s3_client() -> S3Client:
         return boto3.client("s3")
 
 
-def download_from_s3(
+def download_pdf_from_s3(
     temp_dir: str, ids: Tuple[int, int] | None = None, storage_url: str | None = None
 ) -> Tuple[str, str | None]:
     """Download a PDF and, if available, the corresponding layout JSON file
@@ -134,7 +134,7 @@ def download_from_s3(
     return local_pdf_path, local_layout_path
 
 
-def upload_to_s3(
+def upload_json_to_s3(
     temp_dir: str, ids: Tuple[int, int] | None = None
 ) -> str:
     """
@@ -150,6 +150,26 @@ def upload_to_s3(
     bucket_name, _ = verify_environment_variables()
     local_file = Path(temp_dir) / f"doc_{ids[1]}.json"
     s3_key = f"pub_{ids[0]}/doc_{ids[1]}.json"
+
+    s3_client = get_s3_client()
+    s3_client.upload_file(str(local_file), bucket_name, s3_key)
+
+    region = s3_client.meta.region_name
+    storage_url = f"https://{bucket_name}.s3.{region}.amazonaws.com/{s3_key}"
+    logger.info(f"Upload complete. Storage URL: {storage_url}")
+
+    return storage_url
+
+
+def upload_image_to_s3(
+    temp_dir: str, ids: Tuple[int, int] | None = None
+) -> str:
+    """
+    Uploads an image to S3 and returns its public URL.
+    """
+    bucket_name, _ = verify_environment_variables()
+    local_file = Path(temp_dir) / f"doc_{ids[1]}.png"
+    s3_key = f"pub_{ids[0]}/doc_{ids[1]}.png"
 
     s3_client = get_s3_client()
     s3_client.upload_file(str(local_file), bucket_name, s3_key)
