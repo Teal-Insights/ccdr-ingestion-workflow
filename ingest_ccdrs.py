@@ -37,6 +37,8 @@ USE_S3: bool = True
 # Fail fast if required env vars are not set or DB schema is out of sync
 gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
 assert gemini_api_key, "GEMINI_API_KEY is not set"
+deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
+assert deepseek_api_key, "DEEPSEEK_API_KEY is not set"
 layout_extractor_api_key: str = os.getenv("LAYOUT_EXTRACTOR_API_KEY", "")
 assert layout_extractor_api_key, "LAYOUT_EXTRACTOR_API_KEY is not set"
 layout_extractor_api_url: str = os.getenv("LAYOUT_EXTRACTOR_API_URL", "")
@@ -87,17 +89,21 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
         layout_path = extract_layout(pdf_path, os.path.join(temp_dir, f"doc_{document_id}.json"))
         print(f"Extracted layout to {layout_path}")
         upload_json_to_s3(temp_dir, (publication_id, document_id))
+    else:
+        print(f"Skipping layout extraction and using downloaded layout at {layout_path}")
 
+    # Load the layout JSON from the file
     with open(layout_path, "r") as f:
         extracted_layout_blocks: list[ExtractedLayoutBlock] = [
             ExtractedLayoutBlock.model_validate(block) for block in json.load(f)
         ]
 
     # 4. Use page numbers to label all blocks with logical page numbers, then discard headers footer, and page number blocks
-    layout_blocks: list[LayoutBlock] = add_logical_page_numbers(extracted_layout_blocks)
+    layout_blocks: list[LayoutBlock] = add_logical_page_numbers(extracted_layout_blocks, deepseek_api_key)
     filtered_layout_blocks: list[LayoutBlock] = [
         block for block in layout_blocks if block.type not in [BlockType.PAGE_HEADER, BlockType.PAGE_FOOTER]
     ]
+    print(f"Added logical page numbers to {len(layout_blocks)} blocks")
 
     # 5. Re-label text blocks that are actually images or figures by detecting if there's an image or geometry in the bbox
     content_blocks: list[ContentBlockBase] = asyncio.run(

@@ -2,12 +2,14 @@ import pymupdf
 from transform.models import LayoutBlock, BlockType, ContentBlockBase
 from utils.schema import EmbeddingSource, PositionalData
 from transform.extract_drawings_by_bbox import is_completely_contained, extract_geometries_in_bbox
+from utils.svg import has_geometry, is_font_element
 from tenacity import retry, stop_after_attempt, wait_exponential
 from PIL import Image
 import asyncio
 import base64
 import io
 import os
+from math import ceil
 import dotenv
 from litellm import acompletion
 
@@ -104,7 +106,12 @@ async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> li
     for i, block in enumerate(blocks):
         # Coerce positional data to our own schema
         positional_data = PositionalData(
-            bbox=(block.left, block.top, block.left + block.width, block.top + block.height),
+            bbox={
+                "x1": int(block.left),
+                "y1": int(block.top),
+                "x2": int(ceil(float(block.left) + float(block.width))),
+                "y2": int(ceil(float(block.top) + float(block.height))),
+            },
             page_pdf=block.page_number,
             page_logical=block.logical_page_number,
         )
@@ -123,11 +130,15 @@ async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> li
                         new_block_type = BlockType.PICTURE
                         break
 
-            # If a drawing in bbox, add to indices to reclassify
+            # If there's a visible non-text drawing in bbox, have Gemini reclassify
             page_svg_image = page.get_svg_image()
             drawings = extract_geometries_in_bbox(page_svg_image, positional_data.bbox)
-            if drawings:
-                indices_to_reclassify.append(i)
+            for drawing in drawings:
+                if is_font_element(drawing):
+                    continue
+                if has_geometry(drawing):
+                    indices_to_reclassify.append(i)
+                    break
 
         content_blocks.append(ContentBlockBase(
             positional_data=positional_data,

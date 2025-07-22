@@ -1,17 +1,17 @@
 import os
 from io import StringIO
-from svgelements import SVG, Path, Rect
+from svgelements import SVG, Rect, SVGElement
 
-def extract_geometries_in_bbox(svg_content, bbox):
+def extract_geometries_in_bbox(svg_content: str, bbox: dict[str, int]) -> list[SVGElement]:
     """
-    Extract all SVG geometries that intersect with a given bounding box.
+    Extract all SVG geometries contained within a given bounding box.
 
     Args:
         svg_content: SVG content as string or file path
-        bbox: Tuple (x_min, y_min, x_max, y_max) defining the bounding box
+        bbox: dict[str, int] with keys "x1", "y1", "x2", "y2"
 
     Returns:
-        List of geometry elements that intersect with the bbox
+        List of non-text geometry elements that are contained within the bbox
     """
     # Parse the SVG
     if isinstance(svg_content, str) and os.path.isfile(svg_content):
@@ -21,18 +21,20 @@ def extract_geometries_in_bbox(svg_content, bbox):
         # It's SVG content as string
         svg = SVG.parse(StringIO(svg_content), reify=True)
 
-    x_min, y_min, x_max, y_max = bbox
-    target_bbox = Rect(x_min, y_min, x_max - x_min, y_max - y_min)
-
     geometries_in_bbox = []
 
     # Iterate through all elements in the SVG
+    element: SVGElement
     for element in svg.elements():
         # Skip containers and non-geometric elements
         if isinstance(element, SVG) or not hasattr(element, 'bbox'):
             continue
 
         try:
+            # Skip if element id matches "font_"
+            if element.id and element.id.startswith("font_"):
+                continue
+
             # Get the bounding box of the current element
             element_bbox = element.bbox()
             if element_bbox is None:
@@ -44,7 +46,7 @@ def extract_geometries_in_bbox(svg_content, bbox):
                            element_bbox[3] - element_bbox[1])
 
             # Check if element is completely contained within the target bbox
-            if is_completely_contained(elem_rect, target_bbox):
+            if is_completely_contained(elem_rect, bbox):
                 geometries_in_bbox.append(element)
    
         except Exception as e:
@@ -54,77 +56,22 @@ def extract_geometries_in_bbox(svg_content, bbox):
 
     return geometries_in_bbox
 
-def is_completely_contained(elem_rect, target_rect):
+
+def is_completely_contained(elem_rect: Rect, target_bbox: dict[str, int]) -> bool:
     """Check if elem_rect is completely contained within target_rect"""
-    return (elem_rect.x >= target_rect.x and 
-            elem_rect.y >= target_rect.y and
-            elem_rect.x + elem_rect.width <= target_rect.x + target_rect.width and
-            elem_rect.y + elem_rect.height <= target_rect.y + target_rect.height)
-
-def rectangles_intersect(rect1, rect2):
-    """Check if two rectangles intersect"""
-    return not (rect1.x + rect1.width < rect2.x or 
-                rect2.x + rect2.width < rect1.x or
-                rect1.y + rect1.height < rect2.y or 
-                rect2.y + rect2.height < rect1.y)
-
-def extract_geometries_precise_intersection(svg_content, bbox):
-    """
-    More precise extraction that checks actual geometry intersection,
-    not just bounding box intersection.
-    """
-    import os
-    if isinstance(svg_content, str) and os.path.isfile(svg_content):
-        # It's a file path
-        svg = SVG.parse(svg_content, reify=True)
-    else:
-        # It's SVG content as string
-        from io import StringIO
-        svg = SVG.parse(StringIO(svg_content), reify=True)
-
-    x_min, y_min, x_max, y_max = bbox
-    bbox_path = Path(f"M{x_min},{y_min} L{x_max},{y_min} L{x_max},{y_max} L{x_min},{y_max} Z")
-
-    intersecting_geometries = []
-
-    for element in svg.elements():
-        if not hasattr(element, 'as_path'):
-            continue
-
-        try:
-            # Convert element to path for intersection testing
-            element_path = element.as_path()
-            if element_path is None:
-                continue
-
-            # Check for intersection (this is more computationally expensive)
-            if paths_intersect(element_path, bbox_path):
-                intersecting_geometries.append(element)
-
-        except Exception as e:
-            print(f"Warning: Could not process element {type(element)}: {e}")
-            continue
-
-    return intersecting_geometries
-
-def paths_intersect(path1, path2):
-    """
-    Simple intersection test - you might want to use a more sophisticated
-    method depending on your needs
-    """
+    x1, y1, x2, y2 = int(target_bbox["x1"]), int(target_bbox["y1"]), int(target_bbox["x2"]), int(target_bbox["y2"])
     try:
-        # This is a simplified check - for production use, consider
-        # using more robust computational geometry libraries
-        bbox1 = path1.bbox()
-        bbox2 = path2.bbox()
-
-        if bbox1 is None or bbox2 is None:
-            return False
-
-        return not (bbox1[2] < bbox2[0] or bbox2[2] < bbox1[0] or
-                   bbox1[3] < bbox2[1] or bbox2[3] < bbox1[1])
-    except Exception:
-        return False
+        # SVG rects have x, y, width, height
+        return (elem_rect.x >= x1 and 
+            elem_rect.y >= y1 and
+            elem_rect.x + elem_rect.width <= x2 and
+            elem_rect.y + elem_rect.height <= y2)
+    except AttributeError:
+        # image rects have x0, y0, x1, y1
+        return (elem_rect.x0 >= x1 and 
+            elem_rect.y0 >= y1 and
+            elem_rect.x1 <= x2 and
+            elem_rect.y1 <= y2)
 
 # Example usage
 if __name__ == "__main__":
@@ -139,7 +86,7 @@ if __name__ == "__main__":
     """
 
     # Define bounding box (x_min, y_min, x_max, y_max)
-    bbox = (0, 0, 100, 100)
+    bbox = {"x1": 0, "y1": 0, "x2": 100, "y2": 100}
 
     # Extract geometries
     geometries = extract_geometries_in_bbox(svg_content, bbox)

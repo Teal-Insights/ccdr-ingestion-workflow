@@ -115,7 +115,7 @@ class PositionalData(SQLModel, table=False):
 
     page_pdf: int
     page_logical: Optional[int] = None
-    bbox: Dict[str, float]  # {x1, y1, x2, y2}
+    bbox: dict[str, int]  # {"x1", "y1", "x2", "y2"}
 
     def dict(self, *args, **kwargs) -> Dict[str, Any]:
         return {
