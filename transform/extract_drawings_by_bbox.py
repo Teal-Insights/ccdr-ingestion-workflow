@@ -73,6 +73,13 @@ def is_completely_contained(elem_rect: Rect, target_bbox: dict[str, int]) -> boo
             elem_rect.x1 <= x2 and
             elem_rect.y1 <= y2)
 
+
+def is_bbox_contained(element_bbox: tuple[float, float, float, float], target_bbox: dict[str, int]) -> bool:
+    """Check if element_bbox tuple is completely contained within target_bbox"""
+    x1, y1, x2, y2 = int(target_bbox["x1"]), int(target_bbox["y1"]), int(target_bbox["x2"]), int(target_bbox["y2"])
+    elem_x1, elem_y1, elem_x2, elem_y2 = element_bbox
+    return (elem_x1 >= x1 and elem_y1 >= y1 and elem_x2 <= x2 and elem_y2 <= y2)
+
 # Example usage
 if __name__ == "__main__":
     # Example SVG content
