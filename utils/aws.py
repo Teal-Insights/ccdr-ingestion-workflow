@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Literal
 import boto3
 from types_boto3_s3 import S3Client
 from botocore.exceptions import NoCredentialsError
@@ -162,14 +162,14 @@ def upload_json_to_s3(
 
 
 def upload_image_to_s3(
-    temp_dir: str, ids: Tuple[int, int] | None = None
+    temp_dir: str, ids: Tuple[int, int], block_number: int, extension: Literal["png", "webp"] = "png"
 ) -> str:
     """
     Uploads an image to S3 and returns its public URL.
     """
     bucket_name, _ = verify_environment_variables()
-    local_file = Path(temp_dir) / f"doc_{ids[1]}.png"
-    s3_key = f"pub_{ids[0]}/doc_{ids[1]}.png"
+    local_file = Path(temp_dir) / "images" / f"doc_{ids[1]}_{block_number}.{extension}"
+    s3_key = f"pub_{ids[0]}/doc_{ids[1]}_{block_number}.{extension}"
 
     s3_client = get_s3_client()
     s3_client.upload_file(str(local_file), bucket_name, s3_key)
