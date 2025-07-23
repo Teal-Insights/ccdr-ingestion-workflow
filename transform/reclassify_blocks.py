@@ -14,26 +14,28 @@ from collections import defaultdict
 from typing import Dict, List
 from svgelements import SVG, SVGElement
 from io import StringIO
+import pydantic
+from typing import Literal
 
 dotenv.load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 
-def get_classification(input: str) -> BlockType:
-    if "text" in input.lower() and not any([
-        "picture" in input.lower(), "table" in input.lower()
-    ]):
-        return BlockType.TEXT
-    elif "picture" in input.lower() and not any([
-        "text" in input.lower(), "table" in input.lower()
-    ]):
+class ImageClassification(pydantic.BaseModel):
+    reason: str
+    classification: Literal["text", "picture", "table"]
+
+
+def get_classification(response: str) -> BlockType:
+    classification = ImageClassification.model_validate_json(response)
+    if classification.classification == "picture":
         return BlockType.PICTURE
-    elif "table" in input.lower() and not any([
-        "text" in input.lower(), "picture" in input.lower()
-    ]):
+    elif classification.classification == "table":
         return BlockType.TABLE
+    elif classification.classification == "text":
+        return BlockType.TEXT
     else:
-        print(f"Warning: LLM returned invalid classification ({input}); falling back to 'text'")
+        print(f"Warning: LLM returned invalid classification ({classification.classification}); falling back to 'text'")
         return BlockType.TEXT
 
 
@@ -88,7 +90,11 @@ async def _classify_single_image(
         response = await acompletion(
             model="gemini/gemini-2.5-flash",
             messages=message,
-            temperature=0.0
+            temperature=0.0,
+            response_format={
+                "type": "json_object",
+                "response_schema": ImageClassification.model_json_schema(),
+            }
         )
         return response.choices[0].message.content
 
@@ -102,13 +108,17 @@ async def reclassify_images_with_gemini(
     os.environ["GEMINI_API_KEY"] = api_key
 
     prompt = """Here is a layout block, extracted from a PDF. Classify it as a text
-    block, a picture/figure block, or a table block. If it's a picture/figure block,
-    return "picture". If it's a text block, return "text". If it's a table block,
-    return "table". Charts should be classified as "picture", even if the legends or
-    axes contain text. If the block contains more than one chart, return "picture".
-    If it contains a combination of text and decorative elements (such as logos or
-    icons), return "text".
-    """
+block, a picture/figure block, or a table block.
+
+Charts should be classified as "picture", even if the legends or axes contain text.
+If the block contains more than one chart, return "picture".
+If it contains a combination of text and decorative elements (such as logos or icons),
+return "text".
+
+You should return a JSON object with the following fields:
+- reason: a short explanation of why you made this classification
+- classification: "text", "picture", or "table"
+"""
 
     messages = []
     for content_block in content_blocks:
@@ -146,38 +156,31 @@ async def reclassify_images_with_gemini(
 async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> list[ContentBlockBase]:
     """Reclassify block types based on the content of the bbox, optimized to process by page"""
     pdf = pymupdf.open(pdf_path)
-    
+
     # Group blocks by page number for efficient processing
     blocks_by_page: Dict[int, List[LayoutBlock]] = defaultdict(list)
     for block in blocks:
         blocks_by_page[block.page_number].append(block)
-    
+
     content_blocks: list[ContentBlockBase] = []
     indices_to_reclassify: list[int] = []
-    
-    total_blocks_processed = 0
-    
+
     # Process each page
     for page_num in sorted(blocks_by_page.keys()):
         page_blocks = blocks_by_page[page_num]
-            
+
         print(f"Processing page {page_num} with {len(page_blocks)} blocks")
-        
+
         # Extract page SVG content and geometries once per page
         page = pdf[page_num - 1]
         page_svg_content = page.get_svg_image()
         page_geometries = extract_page_geometries(page_svg_content)
-        
+
         # Extract image list once per page
         image_list = page.get_images(full=True)
-        
+
         # Process each block on this page
         for block in page_blocks:
-            if total_blocks_processed > 2:
-                break
-                
-            total_blocks_processed += 1
-            
             # Coerce positional data to our own schema
             positional_data = PositionalData(
                 bbox={
@@ -189,7 +192,7 @@ async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> li
                 page_pdf=block.page_number,
                 page_logical=block.logical_page_number,
             )
-            
+
             # If a text block, check for images or drawings in the bbox
             new_block_type = block.type
             if block.type == BlockType.TEXT:
@@ -202,14 +205,14 @@ async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> li
                             break
                     if new_block_type == BlockType.PICTURE:
                         break
-                
+
                 # Check for drawings in bbox using pre-extracted geometries
                 for geometry in page_geometries:
                     try:
                         element_bbox = geometry.bbox()
                         if element_bbox is None:
                             continue
-                        
+
                         # Check if geometry is contained within block bbox using optimized function
                         if is_bbox_contained(element_bbox, positional_data.bbox):
                             indices_to_reclassify.append(len(content_blocks))
@@ -243,5 +246,9 @@ if __name__ == "__main__":
     import pickle
     import asyncio
     with open(os.path.join("artifacts", "filtered_layout_blocks.pkl"), "rb") as f:
-        content_blocks = pickle.load(f)
-    asyncio.run(reclassify_block_types(content_blocks, "artifacts/wkdir/doc_601.pdf"))
+        layout_blocks = pickle.load(f)
+    print(f"Loaded {len(layout_blocks)} layout blocks")
+    content_blocks = asyncio.run(reclassify_block_types(layout_blocks, "artifacts/wkdir/doc_601.pdf"))
+    print(f"Re-classified {len(content_blocks)} content blocks")
+    with open(os.path.join("artifacts", "content_blocks.pkl"), "wb") as f:
+        pickle.dump(content_blocks, f)
