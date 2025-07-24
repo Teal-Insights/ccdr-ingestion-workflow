@@ -1,191 +1,105 @@
 # TODO: Ignore text blocks that aren't visible; use playwright's element.is_visible()
+# (Note: this actually doesn't work unless you're working with the SVG version of the page)
 
-import pymupdf
-import os
-import tempfile
 import re
-import html
-from typing import Any, Dict, List, Tuple, Union, cast, Literal, overload
+from typing import cast
 from pathlib import Path
-from .models import TextBlock, BlocksDocument, Block
+from collections import defaultdict
+import pymupdf
+from bs4 import BeautifulSoup, Tag
+import copy
+
+from transform.models import ContentBlock, BlockType, PositionalData
 
 
-"""Type stub for PyMuPDF dynamically added method"""
-
-
-class Page(pymupdf.Page):
-    @overload
-    def get_text(self, option: Literal["text"] = "text", **kwargs) -> str: ...
-
-    @overload
-    def get_text(
-        self, option: Literal["blocks"], **kwargs
-    ) -> List[Tuple[float, float, float, float, str, int, int]]: ...
-
-    @overload
-    def get_text(self, option: Literal["dict"], **kwargs) -> Dict[str, Any]: ...
-
-    @overload
-    def get_text(self, option: Literal["html"], **kwargs) -> str: ...
-
-    def get_text(
-        self, option: str = "text", **kwargs
-    ) -> Union[
-        str, List[Tuple[float, float, float, float, str, int, int]], Dict[str, Any]
-    ]: ...
-
-
-def _parse_html_elements(html_content: str) -> List[Dict[str, Any]]:
-    """
-    Parse HTML content to extract all elements with their positions and styling.
-    Returns a list of elements with their text, styling, and bounding box info.
-    """
+def preprocess_json_structure(json_data: dict) -> list[dict]:
     elements = []
-
-    # Find all p tags with their content and style attributes
-    p_pattern = r'<p\s+style="([^"]*)"[^>]*>(.*?)</p>'
-    p_matches = re.findall(p_pattern, html_content, re.DOTALL)
-
-    for style, content in p_matches:
-        # Extract position from style
-        position = _extract_position_from_style(style)
-        if position:
-            # Parse the content to preserve inner HTML structure
-            cleaned_content = _clean_inner_html(content)
-            if cleaned_content.strip():
-                elements.append(
-                    {
-                        "type": "p",
-                        "content": cleaned_content,
-                        "style": style,
-                        "position": position,
-                        "raw_html": f'<p style="{style}">{content}</p>',
-                    }
-                )
-
+    for block in json_data["blocks"]:
+        # Text blocks (type 0)
+        if block["type"] == 0:
+            for line in block["lines"]:
+                text = "".join(span["text"] for span in line["spans"])
+                # Convert PyMuPDF bbox tuple (x0, y0, x1, y1) to dictionary format
+                bbox_tuple = line["bbox"]
+                bbox_dict = {
+                    "x1": int(bbox_tuple[0]),  # x0 -> x1
+                    "y1": int(bbox_tuple[1]),  # y0 -> y1
+                    "x2": int(bbox_tuple[2]),  # x1 -> x2
+                    "y2": int(bbox_tuple[3])   # y1 -> y2
+                }
+                elements.append({
+                    "text": text.strip(),
+                    "bbox": bbox_dict,
+                    "type": "text"
+                })
     return elements
 
 
-def _extract_position_from_style(style: str) -> Dict[str, float] | None:
-    """Extract top and left positions from CSS style string"""
-    try:
-        position = {}
-
-        # Extract top position
-        top_match = re.search(r"top:\s*([0-9.]+)pt", style)
-        if top_match:
-            position["top"] = float(top_match.group(1))
-
-        # Extract left position
-        left_match = re.search(r"left:\s*([0-9.]+)pt", style)
-        if left_match:
-            position["left"] = float(left_match.group(1))
-
-        # Extract line-height for height estimation
-        height_match = re.search(r"line-height:\s*([0-9.]+)pt", style)
-        if height_match:
-            position["height"] = float(height_match.group(1))
-
-        return position if "top" in position and "left" in position else None
-    except Exception as e:
-        print(f"Error extracting position from style: {e}")
-        return None
-
-
-def _clean_inner_html(content: str) -> str:
-    """Clean inner HTML content while preserving structure"""
-    # Remove excessive whitespace but preserve HTML tags
-    content = re.sub(r"\s+", " ", content)
-    content = content.strip()
-    return content
-
-
-def _normalize_text_for_matching(text: str) -> str:
-    """Normalize text for fuzzy matching"""
-    # Remove HTML tags for comparison
-    text_only = re.sub(r"<[^>]+>", "", text)
-    # Replace multiple whitespace with single space, strip, lowercase
-    normalized = re.sub(r"\s+", " ", text_only.strip().lower())
-    return normalized
-
-
-def _find_matching_html_elements(
-    block_text: str, block_bbox: List[float], html_elements: List[Dict[str, Any]]
-) -> str:
+def match_html_to_json(html_content: str, page_json: dict) -> list[tuple[Tag, dict[str, int]]]:
     """
-    Find HTML elements that match the given text block based on content and position.
-    Returns the combined HTML content for the matching elements.
+    Match HTML elements to JSON elements based on position and text content.
     """
-    x0, y0, x1, y1 = block_bbox
-    normalized_block_text = _normalize_text_for_matching(block_text)
+    json_text_elements = preprocess_json_structure(page_json)
+    
+    soup = BeautifulSoup(html_content, "html.parser")
+    page_div = soup.find("div")
+    matches = []
 
-    matching_elements = []
+    # Ensure we found a div element as expected
+    assert page_div is not None, "Expected to find a div element in PDF-generated HTML, but none was found"
+    assert isinstance(page_div, Tag), "Expected div to be a Tag element"
 
-    for element in html_elements:
-        # Check if element position overlaps with block bbox
-        pos = element["position"]
-        elem_top = pos["top"]
-        elem_left = pos["left"]
-        elem_height = pos.get("height", 12)  # Default height if not specified
+    p_elements = page_div.find_all(["p"])
 
-        # Simple overlap check - element should be within or near the block bounds
-        if (
-            elem_left >= x0 - 5
-            and elem_left <= x1 + 5  # Allow small margin
-            and elem_top >= y0 - 5
-            and elem_top <= y1 + elem_height + 5
-        ):
-            # Also check if text content matches
-            elem_text = _normalize_text_for_matching(element["content"])
+    for element in p_elements:
+        # Ensure we're working with a Tag object
+        if isinstance(element, Tag):
+            text = element.get_text().strip()
+            style_attr = element.get("style")
+            style = str(style_attr) if style_attr is not None else ""
+            y_1_match = re.search(r"top:([\d.]+)pt", style)
+            x_1_match = re.search(r"left:([\d.]+)pt", style)
 
-            # If texts match or one contains the other, it's likely a match
-            if (
-                elem_text in normalized_block_text
-                or normalized_block_text in elem_text
-                or _text_similarity(elem_text, normalized_block_text) > 0.8
-            ):
-                matching_elements.append(element)
+            if not (y_1_match and x_1_match):
+                continue
 
-    if matching_elements:
-        # Sort by position (top, then left) to maintain reading order
-        matching_elements.sort(
-            key=lambda e: (e["position"]["top"], e["position"]["left"])
-        )
+            y_1, x_1 = float(y_1_match.group(1)), float(x_1_match.group(1))
+            
+            # Find matching JSON element
+            for json_elem in json_text_elements:
+                if (
+                    json_elem["type"] == "text" and
+                    json_elem["text"] == text and
+                    abs(json_elem["bbox"]["y1"] - y_1) < 5.0 and
+                    abs(json_elem["bbox"]["x1"] - x_1) < 5.0
+                ):
+                    matches.append((element, json_elem["bbox"]))
+                    break
 
-        # Combine the HTML content
-        combined_html = "".join(elem["raw_html"] for elem in matching_elements)
-        return combined_html
-
-    # No matches found, return escaped plain text
-    return html.escape(block_text)
+    return matches
 
 
-def _text_similarity(text1: str, text2: str) -> float:
-    """Calculate simple text similarity between two strings"""
-    if not text1 or not text2:
-        return 0.0
-
-    # Simple similarity based on common words
-    words1 = set(text1.split())
-    words2 = set(text2.split())
-
-    if not words1 or not words2:
-        return 0.0
-
-    intersection = words1.intersection(words2)
-    union = words1.union(words2)
-
-    return len(intersection) / len(union) if union else 0.0
+def is_contained(html_bbox, target_bbox, margin_of_error=10) -> bool:
+    """Check if html_bbox is fully inside target_bbox (within some margin of error)."""
+    return (
+        html_bbox["x1"] >= target_bbox["x1"] - margin_of_error and
+        html_bbox["y1"] >= target_bbox["y1"] - margin_of_error and
+        html_bbox["x2"] <= target_bbox["x2"] + margin_of_error and
+        html_bbox["y2"] <= target_bbox["y2"] + margin_of_error
+    )
 
 
-def extract_text_blocks_with_styling(
-    pdf_path: str, output_filename: str, temp_dir: str | None = None
-) -> str:
+def extract_text_blocks(
+    content_blocks: list[ContentBlock], pdf_path: str, temp_dir: str | None = None
+) -> list[ContentBlock]:
     """
-    Extract text blocks with bounding boxes and complete HTML styling information from a PDF.
-
-    This version parses the full page HTML and matches elements to text blocks based on
-    position and content, since the clip parameter doesn't work with HTML extraction.
+    For each ContentBlock of a text-like type, extract the HTML elements positioned
+    within its bounding box.
+    
+    1. We must strip out the `span` tags from the text elements, but preserve the
+    `b`, `i`, `u`, `s`, `sup`, `sub` tags.
+    2. If there is more than one text element in the bounding box, we should split
+    into multiple content blocks.
 
     Args:
         pdf_path: Path to the PDF file to process
@@ -203,120 +117,87 @@ def extract_text_blocks_with_styling(
     if not Path(pdf_path).exists():
         raise FileNotFoundError(f"PDF file '{pdf_path}' not found")
 
-    # Use provided temp_dir or create one
-    if temp_dir is None:
-        temp_dir = tempfile.mkdtemp(prefix="pdf_text_blocks_")
-        output_path = os.path.join(temp_dir, output_filename)
-        cleanup_temp = True
-    else:
-        output_path = output_filename  # Use full path as provided
-        cleanup_temp = False
+    # Open the PDF document
+    doc: pymupdf.Document = pymupdf.open(pdf_path)
 
-    try:
-        # Open the PDF document
-        doc: pymupdf.Document = pymupdf.open(pdf_path)
+    # Group blocks by page number for efficient processing
+    blocks_by_page: dict[int, list[ContentBlock]] = defaultdict(list)
+    for block in content_blocks:
+        blocks_by_page[block.positional_data.page_pdf].append(block)
 
-        # Container for all text blocks from all pages
-        all_text_blocks: List[TextBlock] = []
+    # Process each page
+    modified_content_blocks: list[ContentBlock] = []
+    for page_num in range(len(doc)):
+        page: pymupdf.Page = cast(pymupdf.Page, doc[page_num])
+        page_html = page.get_text("html")
+        page_json = page.get_text("dict")
+        p_elements_with_bbox = match_html_to_json(page_html, page_json)
 
-        # Store total pages before processing
-        total_pages = len(doc)
+        # Process each text block and find matching HTML elements
+        for content_block in blocks_by_page[page_num]:
+            # Skip empty blocks and non-text blocks
+            if content_block.block_type in [
+                BlockType.PICTURE, BlockType.PAGE_HEADER, BlockType.PAGE_FOOTER
+            ]:
+                continue
 
-        # Process each page
-        for page_num in range(total_pages):
-            page: Page = cast(Page, doc[page_num])
+            block_bbox: dict[str, int] = content_block.positional_data.bbox
 
-            # Get full page HTML once
-            page_html = page.get_text("html")
+            # Find HTML elements contained in the content block
+            matching_elements = [
+                (element, element_bbox) for element, element_bbox in p_elements_with_bbox
+                if is_contained(element_bbox, block_bbox)
+            ]
 
-            # Parse HTML to extract all elements with positions
-            html_elements = _parse_html_elements(page_html)
+            if not matching_elements:
+                print(f"Warning: No matching elements found for content block on page {page_num}; skipping")
+                print(f"Original text detected by LayoutLM: {content_block.text_content}")
+                continue
 
-            # Get text blocks for semantic grouping
-            blocks: List[Tuple[float, float, float, float, str, int, int]] = (
-                page.get_text("blocks", sort=True)
-            )
+            # For each matching element, we must insert a copy of the content block
+            # with the text content of the matching element.
+            for element, element_bbox in matching_elements:
+                # But first we must strip out the `span` tags, but preserve the
+                # `b`, `i`, `u`, `s`, `sup`, `sub` tags.
+                cleaned_element = copy.deepcopy(element)
+                if isinstance(cleaned_element, Tag):
+                    # Find all span tags and unwrap them (remove tag but keep content)
+                    span_tags = cleaned_element.find_all('span')
+                    for span in span_tags:
+                        if isinstance(span, Tag):
+                            span.unwrap()
 
-            # Process each text block and find matching HTML elements
-            for blk in blocks:
-                x0, y0, x1, y1, block_text, block_no, block_type = blk
-
-                # Skip empty blocks and non-text blocks
-                if not block_text.strip() or block_type != 0:
-                    continue
-
-                # Find HTML elements that match this text block
-                styled_html = _find_matching_html_elements(
-                    block_text.strip(), [x0, y0, x1, y1], html_elements
+                modified_content_blocks.append(
+                    ContentBlock(
+                        positional_data=PositionalData(
+                            page_pdf=content_block.positional_data.page_pdf,
+                            page_logical=content_block.positional_data.page_logical,
+                            # element bbox becomes source of truth
+                            bbox=element_bbox,
+                        ),
+                        block_type=content_block.block_type,
+                        text_content=cleaned_element.get_text().strip(),
+                    )
                 )
 
-                # Create text block using Pydantic model
-                text_block = TextBlock(
-                    page_number=page_num + 1,
-                    text=styled_html,  # Matched HTML with complete styling
-                    plain_text=block_text.strip(),  # Clean plain text from block
-                    bbox=[x0, y0, x1, y1],
-                )
+    # Close the document
+    doc.close()
 
-                all_text_blocks.append(text_block)
-
-        # Close the document
-        doc.close()
-
-        # Create output data structure using Pydantic model
-        output_data = BlocksDocument(
-            pdf_path=pdf_path,
-            total_pages=total_pages,
-            total_blocks=len(all_text_blocks),
-            blocks=cast(List[Block], all_text_blocks),
-        )
-
-        # Write to JSON file
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(output_data.model_dump_json(indent=2, exclude_none=True))
-
-        print(f"Extracted {len(all_text_blocks)} text blocks from {total_pages} pages")
-        print(f"Output saved to: {output_path}")
-
-        return output_path
-
-    except Exception as e:
-        # Clean up temp directory on error only if we created it
-        if cleanup_temp:
-            if os.path.exists(output_path):
-                os.remove(output_path)
-            if os.path.exists(temp_dir):
-                os.rmdir(temp_dir)
-        raise Exception(f"Error processing PDF: {e}")
-
-
-def main():
-    """Example usage of the text block extraction function"""
-    import sys
-
-    if len(sys.argv) < 2:
-        print("Usage: uv run -m transform.extract_text_blocks <pdf_file> [output_filename]")
-        print("Example: uv run -m transform.extract_text_blocks document.pdf")
-        print("Example: uv run -m transform.extract_text_blocks document.pdf my_blocks.json")
-        sys.exit(1)
-
-    pdf_path = sys.argv[1]
-    output_filename = sys.argv[2] if len(sys.argv) > 2 else "text_blocks.json"
-
-    # Create a real temporary directory for testing
-    temp_dir = tempfile.mkdtemp(prefix="text_blocks_test_")
-    output_path = os.path.join(temp_dir, output_filename)
-
-    try:
-        result_path = extract_text_blocks_with_styling(pdf_path, output_path, temp_dir)
-        print("Text blocks extracted successfully!")
-        print(f"Output file: {result_path}")
-        print(f"Temporary directory: {temp_dir}")
-        print(f"Note: Clean up temporary directory when done: rm -rf {temp_dir}")
-    except Exception as e:
-        print(f"Error: {e}")
-        sys.exit(1)
+    return modified_content_blocks
 
 
 if __name__ == "__main__":
-    main()
+    import pickle
+    import os
+    import json
+
+    pdf_path: str = "./artifacts/wkdir/doc_601.pdf"
+    temp_dir: str = "./artifacts"
+
+    with open(os.path.join("artifacts", "content_blocks_with_descriptions.pkl"), "rb") as fr:
+        content_blocks: list[ContentBlock] = pickle.load(fr)
+    print(f"Loaded {len(content_blocks)} content blocks before text extraction")
+    content_blocks_with_text: list[ContentBlock] = extract_text_blocks(content_blocks, pdf_path, temp_dir)
+    print(f"Extracted text for {len(content_blocks_with_text)} content blocks")
+    with open(os.path.join("artifacts", "content_blocks_with_text.json"), "w") as fw:
+        json.dump([block.model_dump() for block in content_blocks_with_text], fw, indent=2)

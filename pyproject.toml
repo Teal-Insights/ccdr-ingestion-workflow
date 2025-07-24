@@ -5,6 +5,7 @@ description = "Complete workflow to transform the World Bank Country and Climate
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "beautifulsoup4>=4.13.4",
     "boto3>=1.39.9",
     "cairosvg>=2.8.2",
     "litellm>=1.72.6.post2",

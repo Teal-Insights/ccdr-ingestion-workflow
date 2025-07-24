@@ -105,14 +105,12 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
         block for block in layout_blocks if block.type not in [BlockType.PAGE_HEADER, BlockType.PAGE_FOOTER]
     ]
     print(f"Added logical page numbers to {len(layout_blocks)} blocks")
-    import pickle
-    with open(os.path.join("artifacts", "filtered_layout_blocks.pkl"), "wb") as f:
-        pickle.dump(filtered_layout_blocks, f)
 
     # 5. Re-label text blocks that are actually images or figures by detecting if there's an image or geometry in the bbox
     content_blocks: list[ContentBlockBase] = asyncio.run(
         reclassify_block_types(filtered_layout_blocks, pdf_path)
     )
+    print(f"Re-labeled {len(content_blocks)} blocks")
 
     # 6. Extract and describe images with a VLM (e.g., Gemini)
     content_blocks_with_images = extract_images_from_pdf(content_blocks, pdf_path, temp_dir, document_id)
@@ -124,14 +122,14 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
     ))
     print("Images described successfully!")
 
-    #8. Mechanically extract text from text boxes using PyMuPDF
+    # 8. Mechanically extract text from text boxes using PyMuPDF
     extracted_text_blocks: str = extract_text_blocks(
         content_blocks_with_descriptions, pdf_path, temp_dir
     )
     print("Text blocks extracted successfully!")
 
-    # TODO: Blocks' text field contains HTML with in-line styles that still need cleaning
-    # Extract unique styles and have an LLM write a transformation rule for each one
+    # TODO: 1. We must send the last text block on each page and the first on the next page
+    # to the LLM to determine if they are part of the same content block.
 
     # 6. Convert the blocks to HTML with ids, plaintext, and no bboxes
     # (This is purely about context length management and id tagging for the next step)

@@ -88,7 +88,7 @@ def add_logical_page_numbers(
     if not extracted_layout_blocks:
         return []
 
-    # 1. Group header/footer text by physical page number. This is from Plan R1.
+    # 1. Group header/footer text by physical page number
     page_contents = defaultdict(list)
     for block in extracted_layout_blocks:
         if block.type in {BlockType.PAGE_HEADER, BlockType.PAGE_FOOTER}:

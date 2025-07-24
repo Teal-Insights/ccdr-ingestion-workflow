@@ -1,3 +1,5 @@
+# TODO: Move text_content into ContentBlockBase and save the original text_content
+
 import pymupdf
 from transform.models import LayoutBlock, BlockType, ContentBlockBase
 from utils.schema import EmbeddingSource, PositionalData
