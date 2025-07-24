@@ -227,6 +227,7 @@ async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> li
                 positional_data=positional_data,
                 block_type=new_block_type,
                 embedding_source=get_embedding_source(new_block_type),
+                text_content=block.text,
             ))
 
     pdf.close()
@@ -245,12 +246,13 @@ async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> li
 
 
 if __name__ == "__main__":
-    import pickle
+    import json
     import asyncio
-    with open(os.path.join("artifacts", "filtered_layout_blocks.pkl"), "rb") as f:
-        layout_blocks = pickle.load(f)
+    with open(os.path.join("artifacts", "doc_601_with_logical_page_numbers.json"), "r") as f:
+        layout_blocks = json.load(f)
+        layout_blocks = [LayoutBlock.model_validate(block) for block in layout_blocks]
     print(f"Loaded {len(layout_blocks)} layout blocks")
     content_blocks = asyncio.run(reclassify_block_types(layout_blocks, "artifacts/wkdir/doc_601.pdf"))
     print(f"Re-classified {len(content_blocks)} content blocks")
-    with open(os.path.join("artifacts", "content_blocks.pkl"), "wb") as f:
-        pickle.dump(content_blocks, f)
+    with open(os.path.join("artifacts", "doc_601_content_blocks.json"), "w") as f:
+        json.dump([block.model_dump() for block in content_blocks], f, indent=2)

@@ -148,10 +148,10 @@ if __name__ == "__main__":
 
     load_dotenv(override=True)
     
-    with open("artifacts/wkdir/doc_472.json", "r") as f:
+    with open("artifacts/wkdir/doc_601.json", "r") as f:
         data = json.load(f)
 
     blocks = [ExtractedLayoutBlock(**block) for block in data]
     blocks = add_logical_page_numbers(blocks, api_key=os.getenv("DEEPSEEK_API_KEY"))
-    with open("artifacts/wkdir/doc_472_with_logical_page_numbers.json", "w") as f:
+    with open("artifacts/doc_601_with_logical_page_numbers.json", "w") as f:
         json.dump([block.model_dump() for block in blocks], f, indent=2)

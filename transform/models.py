@@ -59,16 +59,15 @@ class ContentBlockBase(BaseModel):
     positional_data: PositionalData = Field(description="Positional data for the block")
     block_type: BlockType = Field(description="Type/category of the layout block (e.g., 'Page header', 'Paragraph', etc.)")
     embedding_source: Optional[EmbeddingSource] = Field(default=None, description="Whether to embed text, description, or caption")
+    text_content: Optional[str] = Field(default=None, description="Text content (if a text block)")
 
 
 class ContentBlock(ContentBlockBase):
     """
-    Adds text content or image description and storage location to the
-    base content block. Contains all the information needed to create a
-    database content node.
+    Adds image description and storage location to the base content
+    block. Contains all the information needed to create a database
+    content node.
     """
-    text_content: Optional[str] = Field(default=None, description="Text content (if a text block)")
     storage_url: Optional[str] = Field(default=None, description="URL of the image or other content (if a non-text block)")
     description: Optional[str] = Field(default=None, description="Description of the block (if a non-text block)")
     caption: Optional[str] = Field(default=None, description="Caption associated with the block (if available)")
-    

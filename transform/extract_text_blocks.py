@@ -1,5 +1,8 @@
 # TODO: Ignore text blocks that aren't visible; use playwright's element.is_visible()
 # (Note: this actually doesn't work unless you're working with the SVG version of the page)
+# TODO: See how pymupdf handles tables, and what we need to do to handle them
+# TODO: Investigate "no matching elements found" warnings on about 50% of blocks;
+# should these be picture blocks?
 
 import re
 from typing import cast
@@ -7,12 +10,18 @@ from pathlib import Path
 from collections import defaultdict
 import pymupdf
 from bs4 import BeautifulSoup, Tag
-import copy
 
 from transform.models import ContentBlock, BlockType, PositionalData
+from utils.schema import EmbeddingSource
 
 
 def preprocess_json_structure(json_data: dict) -> list[dict]:
+    """
+    Extract line-level text elements from PyMuPDF JSON structure with rotation awareness.
+    
+    This processes individual lines within text blocks rather than entire blocks,
+    and includes rotation information for proper coordinate matching.
+    """
     elements = []
     for block in json_data["blocks"]:
         # Text blocks (type 0)
@@ -20,24 +29,81 @@ def preprocess_json_structure(json_data: dict) -> list[dict]:
             for line in block["lines"]:
                 text = "".join(span["text"] for span in line["spans"])
                 # Convert PyMuPDF bbox tuple (x0, y0, x1, y1) to dictionary format
-                bbox_tuple = line["bbox"]
+                bbox_tuple = line["bbox"]  # Use line bbox, not block bbox
                 bbox_dict = {
                     "x1": int(bbox_tuple[0]),  # x0 -> x1
                     "y1": int(bbox_tuple[1]),  # y0 -> y1
                     "x2": int(bbox_tuple[2]),  # x1 -> x2
                     "y2": int(bbox_tuple[3])   # y1 -> y2
                 }
+                # Extract rotation information from dir field
+                direction = line.get("dir", [1.0, 0.0])
+                is_rotated = direction != [1.0, 0.0]
+                rotation_angle = get_rotation_angle(direction)
+                
                 elements.append({
                     "text": text.strip(),
                     "bbox": bbox_dict,
-                    "type": "text"
+                    "type": "text",
+                    "spans": line["spans"],  # Include spans for style information
+                    "direction": direction,
+                    "is_rotated": is_rotated,
+                    "rotation_angle": rotation_angle
                 })
     return elements
 
 
+def get_rotation_angle(direction: list[float]) -> float:
+    """Convert direction vector to rotation angle in degrees"""
+    if direction == [1.0, 0.0]:
+        return 0.0      # Normal horizontal text
+    elif direction == [0.0, -1.0]:
+        return 90.0     # Rotated 90° clockwise (vertical, top-to-bottom)
+    elif direction == [-1.0, 0.0]:
+        return 180.0    # Rotated 180°
+    elif direction == [0.0, 1.0]:
+        return 270.0    # Rotated 270° clockwise (bottom-to-top)
+    else:
+        # Calculate angle from direction vector
+        import math
+        return math.degrees(math.atan2(-direction[1], direction[0]))
+
+
+def calculate_rotation_aware_distance(html_x: float, html_y: float, json_elem: dict) -> float:
+    """Calculate distance taking text rotation into account"""
+    bbox = json_elem["bbox"]
+    
+    if not json_elem["is_rotated"]:
+        # Normal text: use top-left corner
+        json_x, json_y = bbox["x1"], bbox["y1"]
+    else:
+        # Rotated text: adjust based on rotation
+        rotation = json_elem["rotation_angle"]
+        
+        if rotation == 90.0:  # [0.0, -1.0] - vertical, top-to-bottom
+            # For 90° rotation, HTML positioning seems to use a different reference point
+            # Use the bottom-left of the bbox (x1, y2) as the reference
+            json_x, json_y = bbox["x1"], bbox["y2"]
+        elif rotation == 180.0:  # [-1.0, 0.0]
+            # For 180° rotation, use bottom-right
+            json_x, json_y = bbox["x2"], bbox["y2"]
+        elif rotation == 270.0:  # [0.0, 1.0]
+            # For 270° rotation, use top-right
+            json_x, json_y = bbox["x2"], bbox["y1"]
+        else:
+            # Default to top-left for unknown rotations
+            json_x, json_y = bbox["x1"], bbox["y1"]
+    
+    # Calculate Euclidean distance
+    return ((json_x - html_x) ** 2 + (json_y - html_y) ** 2) ** 0.5
+
+
 def match_html_to_json(html_content: str, page_json: dict) -> list[tuple[Tag, dict[str, int]]]:
     """
-    Match HTML elements to JSON elements based on position and text content.
+    Match HTML elements to JSON elements based on rotation-aware coordinate distance.
+    
+    This implementation uses coordinate proximity to match HTML p elements to 
+    individual text lines from the PyMuPDF JSON structure, handling text rotation properly.
     """
     json_text_elements = preprocess_json_structure(page_json)
     
@@ -51,10 +117,12 @@ def match_html_to_json(html_content: str, page_json: dict) -> list[tuple[Tag, di
 
     p_elements = page_div.find_all(["p"])
 
+    # Track which JSON elements have been matched to avoid double-matching
+    used_json_indices = set()
+
     for element in p_elements:
         # Ensure we're working with a Tag object
         if isinstance(element, Tag):
-            text = element.get_text().strip()
             style_attr = element.get("style")
             style = str(style_attr) if style_attr is not None else ""
             y_1_match = re.search(r"top:([\d.]+)pt", style)
@@ -65,21 +133,33 @@ def match_html_to_json(html_content: str, page_json: dict) -> list[tuple[Tag, di
 
             y_1, x_1 = float(y_1_match.group(1)), float(x_1_match.group(1))
             
-            # Find matching JSON element
-            for json_elem in json_text_elements:
-                if (
-                    json_elem["type"] == "text" and
-                    json_elem["text"] == text and
-                    abs(json_elem["bbox"]["y1"] - y_1) < 5.0 and
-                    abs(json_elem["bbox"]["x1"] - x_1) < 5.0
-                ):
-                    matches.append((element, json_elem["bbox"]))
-                    break
+            # Find the closest JSON element by rotation-aware distance
+            best_match = None
+            best_distance = float('inf')
+            best_index = -1
+            
+            for j, json_elem in enumerate(json_text_elements):
+                if j in used_json_indices:
+                    continue
+                    
+                if json_elem["type"] == "text":
+                    # Calculate rotation-aware distance
+                    distance = calculate_rotation_aware_distance(x_1, y_1, json_elem)
+                    
+                    if distance < best_distance:
+                        best_distance = distance
+                        best_match = json_elem
+                        best_index = j
+
+            # Accept the closest match if it's within reasonable tolerance
+            if best_match and best_distance < 20.0:  # 20pt tolerance
+                matches.append((element, best_match["bbox"]))
+                used_json_indices.add(best_index)
 
     return matches
 
 
-def is_contained(html_bbox, target_bbox, margin_of_error=10) -> bool:
+def is_contained(html_bbox, target_bbox, margin_of_error=20) -> bool:
     """Check if html_bbox is fully inside target_bbox (within some margin of error)."""
     return (
         html_bbox["x1"] >= target_bbox["x1"] - margin_of_error and
@@ -135,10 +215,15 @@ def extract_text_blocks(
 
         # Process each text block and find matching HTML elements
         for content_block in blocks_by_page[page_num]:
-            # Skip empty blocks and non-text blocks
+            # Append image blocks without changes
             if content_block.block_type in [
-                BlockType.PICTURE, BlockType.PAGE_HEADER, BlockType.PAGE_FOOTER
+                BlockType.PICTURE
             ]:
+                modified_content_blocks.append(content_block)
+                continue
+
+            # Discard header/footer block
+            if content_block.block_type in [BlockType.PAGE_HEADER, BlockType.PAGE_FOOTER]:
                 continue
 
             block_bbox: dict[str, int] = content_block.positional_data.bbox
@@ -154,31 +239,32 @@ def extract_text_blocks(
                 print(f"Original text detected by LayoutLM: {content_block.text_content}")
                 continue
 
-            # For each matching element, we must insert a copy of the content block
-            # with the text content of the matching element.
-            for element, element_bbox in matching_elements:
-                # But first we must strip out the `span` tags, but preserve the
-                # `b`, `i`, `u`, `s`, `sup`, `sub` tags.
-                cleaned_element = copy.deepcopy(element)
-                if isinstance(cleaned_element, Tag):
+            # For each matching element, we will concatenate the text content with <br/> and add it to the block
+            text_contents: list[str] = []
+            for element, _ in matching_elements:
+                # Strip out the `span` tags, but preserve the `b`, `i`, `u`, `s`, `sup`, `sub` tags.
+                if isinstance(element, Tag):
                     # Find all span tags and unwrap them (remove tag but keep content)
-                    span_tags = cleaned_element.find_all('span')
+                    span_tags = element.find_all('span')
                     for span in span_tags:
                         if isinstance(span, Tag):
                             span.unwrap()
+                text_contents.append(element.get_text().strip())
 
-                modified_content_blocks.append(
-                    ContentBlock(
-                        positional_data=PositionalData(
-                            page_pdf=content_block.positional_data.page_pdf,
-                            page_logical=content_block.positional_data.page_logical,
-                            # element bbox becomes source of truth
-                            bbox=element_bbox,
-                        ),
-                        block_type=content_block.block_type,
-                        text_content=cleaned_element.get_text().strip(),
-                    )
+            text_content = "<br/>".join(text_contents)
+
+            modified_content_blocks.append(
+                ContentBlock(
+                    positional_data=PositionalData(
+                        page_pdf=content_block.positional_data.page_pdf,
+                        page_logical=content_block.positional_data.page_logical,
+                        bbox=content_block.positional_data.bbox,
+                    ),
+                    block_type=content_block.block_type,
+                    text_content=text_content,
+                    embedding_source=EmbeddingSource.TEXT_CONTENT,
                 )
+            )
 
     # Close the document
     doc.close()
@@ -187,17 +273,17 @@ def extract_text_blocks(
 
 
 if __name__ == "__main__":
-    import pickle
     import os
     import json
 
     pdf_path: str = "./artifacts/wkdir/doc_601.pdf"
     temp_dir: str = "./artifacts"
 
-    with open(os.path.join("artifacts", "content_blocks_with_descriptions.pkl"), "rb") as fr:
-        content_blocks: list[ContentBlock] = pickle.load(fr)
+    with open(os.path.join("artifacts", "doc_601_content_blocks_with_descriptions.json"), "r") as fr:
+        content_blocks: list[ContentBlock] = json.load(fr)
+        content_blocks = [ContentBlock.model_validate(block) for block in content_blocks]
     print(f"Loaded {len(content_blocks)} content blocks before text extraction")
     content_blocks_with_text: list[ContentBlock] = extract_text_blocks(content_blocks, pdf_path, temp_dir)
     print(f"Extracted text for {len(content_blocks_with_text)} content blocks")
-    with open(os.path.join("artifacts", "content_blocks_with_text.json"), "w") as fw:
+    with open(os.path.join("artifacts", "doc_601_content_blocks_with_text.json"), "w") as fw:
         json.dump([block.model_dump() for block in content_blocks_with_text], fw, indent=2)

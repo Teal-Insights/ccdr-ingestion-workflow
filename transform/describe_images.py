@@ -169,7 +169,7 @@ async def _process_single_image_with_semaphore(
 
 
 if __name__ == "__main__":
-    import pickle
+    import json
     import dotenv
     dotenv.load_dotenv(override=True)
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
@@ -177,11 +177,12 @@ if __name__ == "__main__":
     temp_dir: str = "./artifacts"
     document_id: int = 601
 
-    with open(os.path.join("artifacts", "content_blocks_with_images.pkl"), "rb") as fr:
-        content_blocks_with_images = pickle.load(fr)
+    with open(os.path.join("artifacts", "doc_601_content_blocks_with_images.json"), "r") as fr:
+        content_blocks_with_images = json.load(fr)
+        content_blocks_with_images = [ContentBlock.model_validate(block) for block in content_blocks_with_images]
     content_blocks_with_descriptions = asyncio.run(describe_images_with_vlm(
         content_blocks_with_images, gemini_api_key, temp_dir, document_id
     ))
     print("Images described successfully!")
-    with open(os.path.join("artifacts", "content_blocks_with_descriptions.pkl"), "wb") as fw:
-        pickle.dump(content_blocks_with_descriptions, fw)
+    with open(os.path.join("artifacts", "doc_601_content_blocks_with_descriptions.json"), "w") as fw:
+        json.dump([block.model_dump() for block in content_blocks_with_descriptions], fw, indent=2)

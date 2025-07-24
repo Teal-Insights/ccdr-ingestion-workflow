@@ -24,3 +24,9 @@ def extract_layout(pdf_path: str, output_path: str) -> str:
 
     logger.info(f"Extracted layout for {pdf_path}")
     return output_path
+
+
+if __name__ == "__main__":
+    pdf_path = "artifacts/wkdir/doc_601.pdf"
+    output_path = "artifacts/wkdir/doc_601.json"
+    extract_layout(pdf_path, output_path)

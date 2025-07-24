@@ -49,11 +49,12 @@ def extract_images_from_pdf(
     return content_blocks_with_images
 
 if __name__ == "__main__":
-    import pickle
-    with open(os.path.join("artifacts", "content_blocks.pkl"), "rb") as f:
-        content_blocks = pickle.load(f)
+    import json
+    with open(os.path.join("artifacts", "doc_601_content_blocks.json"), "r") as f:
+        content_blocks = json.load(f)
+        content_blocks = [ContentBlock.model_validate(block) for block in content_blocks]
     print(f"Loaded {len(content_blocks)} content blocks, of which {len([block for block in content_blocks if block.block_type == BlockType.PICTURE])} are pictures")
     content_blocks_with_images = extract_images_from_pdf(content_blocks, "artifacts/wkdir/doc_601.pdf", "artifacts", 242, 601)
-    with open(os.path.join("artifacts", "content_blocks_with_images.pkl"), "wb") as f:
-        pickle.dump(content_blocks_with_images, f)
+    with open(os.path.join("artifacts", "doc_601_content_blocks_with_images.json"), "w") as f:
+        json.dump([block.model_dump() for block in content_blocks_with_images], f, indent=2)
     print("Images extracted successfully!")
