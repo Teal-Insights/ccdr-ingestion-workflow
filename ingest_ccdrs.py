@@ -126,6 +126,7 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
     # TODO: Possibly instead of re-extracting text, we should just find substrings
     # in the pymupdf HTML that are wrapped in `i`, `b`, etc. and do a substring
     # match with the LayoutLM-detected text content to add style information thereto
+    # TODO: Need to deal with the fact that picture blocks sometimes have text content
     extracted_text_blocks: str = extract_text_blocks(
         content_blocks_with_descriptions, pdf_path, temp_dir
     )

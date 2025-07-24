@@ -283,6 +283,7 @@ if __name__ == "__main__":
         content_blocks: list[ContentBlock] = json.load(fr)
         content_blocks = [ContentBlock.model_validate(block) for block in content_blocks]
     print(f"Loaded {len(content_blocks)} content blocks before text extraction")
+    print(f"Headers and footers: {len([block for block in content_blocks if block.block_type in [BlockType.PAGE_HEADER, BlockType.PAGE_FOOTER]])}")
     content_blocks_with_text: list[ContentBlock] = extract_text_blocks(content_blocks, pdf_path, temp_dir)
     print(f"Extracted text for {len(content_blocks_with_text)} content blocks")
     with open(os.path.join("artifacts", "doc_601_content_blocks_with_text.json"), "w") as fw:
