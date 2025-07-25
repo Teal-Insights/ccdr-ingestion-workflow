@@ -6,9 +6,10 @@
 5. Many boxes are mislabeled as text; use heuristics to re-label them as images or figures
 6. Extract images from the PDF and save them to S3
 7. Describe the images with a VLM (e.g., Gemini)
-8. Mechanically extract text from text boxes using PyMuPDF
-9. Convert text to my HTML spec
-10. Convert HTML to graph and ingest into the database
+8. Style the text blocks with the descriptions of the images
+9. Preliminary HTML conversion, 1 p or img tag per block
+10. Recursively detect the structure of the document
+11. Convert HTML to graph and ingest into the database
 """
 
 import dotenv
@@ -24,7 +25,9 @@ from transform.reclassify_blocks import reclassify_block_types
 from transform.models import ExtractedLayoutBlock, BlockType, LayoutBlock, ContentBlockBase
 from transform.extract_images import extract_images_from_pdf
 from transform.describe_images import describe_images_with_vlm
-from transform.extract_text_blocks import extract_text_blocks
+# from transform.extract_text_blocks import extract_text_blocks
+from transform.style_text_blocks import style_text_blocks
+from transform.convert_to_html import convert_blocks_to_html
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
 from utils.aws import download_pdf_from_s3, upload_json_to_s3, verify_environment_variables
@@ -122,74 +125,34 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
     ))
     print("Images described successfully!")
 
-    # 8. Mechanically extract text from text boxes using PyMuPDF
-    # TODO: Possibly instead of re-extracting text, we should just find substrings
-    # in the pymupdf HTML that are wrapped in `i`, `b`, etc. and do a substring
-    # match with the LayoutLM-detected text content to add style information thereto
-    # TODO: Need to deal with the fact that picture blocks sometimes have text content
-    extracted_text_blocks: str = extract_text_blocks(
+    # 8. For spans in the pymupdf dict that have formatting flags, substring match to
+    # the LayoutLM-detected text content and add style tags to the matched substrings
+    styled_text_blocks: str = style_text_blocks(
         content_blocks_with_descriptions, pdf_path, temp_dir
     )
-    print("Text blocks extracted successfully!")
 
-    # TODO: 1. We must send the last text block on each page and the first on the next page
+    # 9. Convert the blocks to preliminary HTML with bboxes
+    html_representation: str = convert_blocks_to_html(
+        styled_text_blocks,
+        bboxes=True,
+    )
+    print("HTML created successfully!")
+
+    # 10. Recursively detect the structure of the document
+    structure_output_dir: str = os.path.join(temp_dir, "structure")
+    structure_paths: list[tuple[Literal["header", "main", "footer"], str]] = asyncio.run(
+        detect_structure(
+            html_path, combined_blocks_path, structure_output_dir, api_key=gemini_api_key
+        )
+    )
+    print("Structure detected successfully!")
+
+    # TODO: We must send the last text block on each page and the first on the next page
     # to the LLM to determine if they are part of the same content block.
-
-    # 6. Convert the blocks to HTML with ids, plaintext, and no bboxes
-    # (This is purely about context length management and id tagging for the next step)
-    # html_output_file_path: str = os.path.join(temp_dir, "html.html")
-    # html_path: str = convert_blocks_to_html(
-    #     combined_blocks_path,
-    #     html_output_file_path,
-    #     rich_text=False,
-    #     bboxes=False,
-    #     include_ids=True,
-    # )
-    # print("HTML created successfully!")
-
-    # 7. Detect the structure of the document and return paths to JSON blocksdocs for each section
-    # (This is purely about content length management for the next step, since outputs can be max 8k tokens)
-    # structure_output_dir: str = os.path.join(temp_dir, "structure")
-    # structure_paths: list[tuple[Literal["header", "main", "footer"], str]] = asyncio.run(
-    #     detect_structure(
-    #         html_path, combined_blocks_path, structure_output_dir, api_key=gemini_api_key
-    #     )
-    # )
-    # print("Structure detected successfully!")
-
-    # 8. Convert the blocks to HTML with rich text and bboxes
-    # (reuse the function from step 5 with different parameters)
-    # rich_html_output_paths: list[tuple[Literal["header", "main", "footer"], str]] = []
-    # for section_name, section_path in structure_paths:
-    #     rich_html_output_file_path: str = os.path.join(temp_dir, f"{section_name}.html")
-    #     rich_html_output_paths.append(
-    #         (
-    #             section_name,
-    #             convert_blocks_to_html(
-    #                 section_path,
-    #                 rich_html_output_file_path,
-    #                 rich_text=True,
-    #                 bboxes=True,
-    #                 include_ids=True,
-    #             ),
-    #         )
-    #     )
-    #     print(f"Rich HTML created successfully for {section_name}!")
-
-    # 9. Have an LLM clean and conform the HTML to our spec
-    # cleaned_html_path: str = asyncio.run(
-    #     process_html_inputs_concurrently(
-    #         rich_html_output_paths,
-    #         os.path.join(temp_dir, "cleaned_document.html"),
-    #         api_key=deepseek_api_key,
-    #         max_concurrent_calls=3,
-    #     )
-    # )
-    # print("HTML cleaned and assembled successfully!")
 
     # 10. Transform the cleaned HTML document into a graph matching our schema and ingest it into our database
 
 
-    # 11. Enrich the database records by generating relations from anchor tags
+    # TODO: 11. Enrich the database records by generating relations from anchor tags
 
 print(f"Pipeline completed! All outputs in: {temp_dir}")
