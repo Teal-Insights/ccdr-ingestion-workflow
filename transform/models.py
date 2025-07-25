@@ -71,3 +71,97 @@ class ContentBlock(ContentBlockBase):
     storage_url: Optional[str] = Field(default=None, description="URL of the image or other content (if a non-text block)")
     description: Optional[str] = Field(default=None, description="Description of the block (if a non-text block)")
     caption: Optional[str] = Field(default=None, description="Caption associated with the block (if available)")
+
+    def to_html(self, bboxes: bool = False, block_id: int = None) -> str:
+        """
+        Convert the content block to an HTML string.
+        """
+        if self.block_type == BlockType.PICTURE:
+            return create_image_block_html(self, bboxes=bboxes, block_id=block_id)
+        else:
+            return create_text_block_html(self, bboxes=bboxes, block_id=block_id)
+
+
+def create_image_block_html(block: ContentBlock, bboxes: bool = False, block_id: int = None) -> str:
+    """
+    Create an img element for a picture block.
+    
+    Args:
+        block: ContentBlock of type PICTURE
+        bboxes: If True, include bbox coordinates as data attributes
+        block_id: Optional block ID for the element
+        
+    Returns:
+        HTML img element as string
+    """
+    img_attrs = []
+    
+    # Add id if provided
+    if block_id is not None:
+        img_attrs.append(f'id="{block_id}"')
+    
+    # Add page data attribute
+    img_attrs.append(f'data-page="{block.positional_data.page_pdf}"')
+    
+    # Add src attribute if storage_url is available
+    if block.storage_url:
+        img_attrs.append(f'src="{block.storage_url}"')
+    
+    # Add alt text from description or text_content
+    alt_text = block.description or block.text_content or "Image"
+    img_attrs.append(f'alt="{alt_text}"')
+    
+    # Add bbox data attribute if requested
+    if bboxes and block.positional_data.bbox:
+        bbox_values = [
+            block.positional_data.bbox["x1"],
+            block.positional_data.bbox["y1"], 
+            block.positional_data.bbox["x2"],
+            block.positional_data.bbox["y2"]
+        ]
+        bbox_str = ",".join(str(int(coord)) for coord in bbox_values)
+        img_attrs.append(f'data-bbox="{bbox_str}"')
+    
+    attrs_str = " ".join(img_attrs)
+    return f"<img {attrs_str} />"
+
+
+def create_text_block_html(block: ContentBlock, bboxes: bool = False, block_id: int = None) -> str:
+    """
+    Create a p element for a text block.
+    
+    Args:
+        block: ContentBlock with text content
+        bboxes: If True, include bbox coordinates as data attributes
+        block_id: Optional block ID for the element
+        
+    Returns:
+        HTML p element as string
+    """
+    p_attrs = []
+    
+    # Add id if provided
+    if block_id is not None:
+        p_attrs.append(f'id="{block_id}"')
+    
+    # Add page data attribute
+    p_attrs.append(f'data-page="{block.positional_data.page_pdf}"')
+    
+    # Add bbox data attribute if requested
+    if bboxes and block.positional_data.bbox:
+        bbox_values = [
+            block.positional_data.bbox["x1"],
+            block.positional_data.bbox["y1"],
+            block.positional_data.bbox["x2"], 
+            block.positional_data.bbox["y2"]
+        ]
+        bbox_str = ",".join(str(int(coord)) for coord in bbox_values)
+        p_attrs.append(f'data-bbox="{bbox_str}"')
+    
+    attrs_str = " ".join(p_attrs)
+    attrs_part = f" {attrs_str}" if attrs_str else ""
+    
+    # Use text_content or fallback to empty string
+    text_content = block.text_content or ""
+    
+    return f"<p{attrs_part}>{text_content}</p>"

@@ -8,8 +8,9 @@
 7. Describe the images with a VLM (e.g., Gemini)
 8. Style the text blocks with the descriptions of the images
 9. Preliminary HTML conversion, 1 p or img tag per block
-10. Recursively detect the structure of the document
-11. Convert HTML to graph and ingest into the database
+10. Detect the top-level structure of the document
+11. Recursively detect the nested structure of the document
+12. Convert HTML to graph and ingest into the database
 """
 
 import dotenv
@@ -22,14 +23,15 @@ from sqlmodel import Session, select
 from transform.extract_layout import extract_layout
 from transform.map_page_numbers import add_logical_page_numbers
 from transform.reclassify_blocks import reclassify_block_types
-from transform.models import ExtractedLayoutBlock, BlockType, LayoutBlock, ContentBlockBase
+from transform.models import ExtractedLayoutBlock, BlockType, LayoutBlock, ContentBlockBase, ContentBlock
 from transform.extract_images import extract_images_from_pdf
 from transform.describe_images import describe_images_with_vlm
 # from transform.extract_text_blocks import extract_text_blocks
 from transform.style_text_blocks import style_text_blocks
-from transform.convert_to_html import convert_blocks_to_html
+from transform.detect_top_level_structure import detect_top_level_structure
+from transform.detect_nested_structure import detect_nested_structure
 from utils.db import engine, check_schema_sync
-from utils.schema import Document, Node
+from utils.schema import Document, Node, TagName
 from utils.aws import download_pdf_from_s3, upload_json_to_s3, verify_environment_variables
 
 dotenv.load_dotenv(override=True)
@@ -116,43 +118,41 @@ for document_id, publication_id, storage_url, download_url in unproc_document_id
     print(f"Re-labeled {len(content_blocks)} blocks")
 
     # 6. Extract and describe images with a VLM (e.g., Gemini)
-    content_blocks_with_images = extract_images_from_pdf(content_blocks, pdf_path, temp_dir, document_id)
+    content_blocks_with_images: list[ContentBlock] = extract_images_from_pdf(content_blocks, pdf_path, temp_dir, document_id)
     print("Images extracted successfully!")
 
     # 7. Describe the images with a VLM (e.g., Gemini)
-    content_blocks_with_descriptions = asyncio.run(describe_images_with_vlm(
+    content_blocks_with_descriptions: list[ContentBlock] = asyncio.run(describe_images_with_vlm(
         content_blocks_with_images, gemini_api_key, temp_dir, document_id
     ))
     print("Images described successfully!")
 
     # 8. For spans in the pymupdf dict that have formatting flags, substring match to
     # the LayoutLM-detected text content and add style tags to the matched substrings
-    styled_text_blocks: str = style_text_blocks(
+    styled_text_blocks: list[ContentBlock] = style_text_blocks(
         content_blocks_with_descriptions, pdf_path, temp_dir
     )
 
-    # 9. Convert the blocks to preliminary HTML with bboxes
-    html_representation: str = convert_blocks_to_html(
-        styled_text_blocks,
-        bboxes=True,
-    )
-    print("HTML created successfully!")
-
-    # 10. Recursively detect the structure of the document
-    structure_output_dir: str = os.path.join(temp_dir, "structure")
-    structure_paths: list[tuple[Literal["header", "main", "footer"], str]] = asyncio.run(
-        detect_structure(
-            html_path, combined_blocks_path, structure_output_dir, api_key=gemini_api_key
+    # 9. Detect the top-level structure of the document
+    top_level_structure: list[tuple[TagName, list[ContentBlock]]] = asyncio.run(
+        detect_top_level_structure(
+            styled_text_blocks, api_key=gemini_api_key
         )
     )
     print("Structure detected successfully!")
 
-    # TODO: We must send the last text block on each page and the first on the next page
-    # to the LLM to determine if they are part of the same content block.
+    # 10. Recursively detect the nested structure of the document
+    nested_structure: list[tuple[TagName, list[ContentBlock] | list[tuple]]] = asyncio.run(
+        detect_nested_structure(
+            top_level_structure, api_key=gemini_api_key
+        )
+    )
+    print("Nested structure detected successfully!")
 
-    # 10. Transform the cleaned HTML document into a graph matching our schema and ingest it into our database
+    # 11. Transform the cleaned HTML document into a graph matching our schema and ingest it into our database
+    
 
 
-    # TODO: 11. Enrich the database records by generating relations from anchor tags
+    # TODO: 12. Enrich the database records by generating relations from anchor tags
 
 print(f"Pipeline completed! All outputs in: {temp_dir}")
