@@ -106,10 +106,11 @@ def create_image_block_html(block: ContentBlock, bboxes: bool = False, block_id:
     # Add src attribute if storage_url is available
     if block.storage_url:
         img_attrs.append(f'src="{block.storage_url}"')
-    
-    # Add alt text from description or text_content
-    alt_text = block.description or block.text_content or "Image"
-    img_attrs.append(f'alt="{alt_text}"')
+
+    # Add alt text from description or text_content if available
+    alt_text = block.description or block.text_content or None
+    if alt_text is not None:
+        img_attrs.append(f'alt="{alt_text}"')
     
     # Add bbox data attribute if requested
     if bboxes and block.positional_data.bbox:

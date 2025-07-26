@@ -12,13 +12,13 @@ from utils.schema import TagName
 class TopLevelStructure(pydantic.BaseModel):
     """Pydantic model for document structure detection response"""
 
-    HEADER: str = pydantic.Field(
+    header: str = pydantic.Field(
         description="Comma-separated ranges for header blocks (e.g., '1-3,5,7-9')"
     )
-    MAIN: str = pydantic.Field(
+    main: str = pydantic.Field(
         description="Comma-separated ranges for main content blocks (e.g., '4,6,10-12')"
     )
-    FOOTER: str = pydantic.Field(
+    footer: str = pydantic.Field(
         description="Comma-separated ranges for footer blocks (e.g., '13-15')"
     )
 
@@ -188,7 +188,7 @@ def detect_top_level_structure(
     main_blocks = filter_blocks_by_numbers(content_blocks, main_ids)
     footer_blocks = filter_blocks_by_numbers(content_blocks, footer_ids)
 
-    return [(TagName.HEADER, header_blocks), (TagName.MAIN, main_blocks), (TagName.FOOTER, footer_blocks)]
+    return [(TagName.HEADER.value, header_blocks), (TagName.MAIN.value, main_blocks), (TagName.FOOTER.value, footer_blocks)]
 
 
 if __name__ == "__main__":
@@ -204,4 +204,10 @@ if __name__ == "__main__":
 
     top_level_structure = detect_top_level_structure(content_blocks, api_key=os.getenv("GEMINI_API_KEY"))
     with open(os.path.join("artifacts", "doc_601_top_level_structure.json"), "w") as fw:
-        json.dump({key: [block.model_dump() for block in blocks] for key, blocks in top_level_structure.items()}, fw, indent=2)
+        json.dump(
+            [
+                (tag_name, [block.model_dump() for block in blocks])
+                for tag_name, blocks in top_level_structure
+            ],
+            fw,
+            indent=2)
