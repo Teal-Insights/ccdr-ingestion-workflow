@@ -62,7 +62,7 @@ def parse_range_string(range_str: str) -> List[int]:
     if not range_str.strip():
         return []
 
-    ids = []
+    ids: list[int] = []
     parts = range_str.split(",")
 
     for part in parts:
@@ -99,7 +99,7 @@ def validate_tag_coverage(
         ValueError: If ids are missing, duplicated, or out of range
     """
     all_assigned_ids = set(header_ids + main_ids + footer_ids)
-    expected_ids = set(range(0, total_ids))
+    expected_ids = set(range(total_ids))  # Fixed: HTML ids start from 0
 
     assert len(all_assigned_ids) == len(header_ids) + len(main_ids) + len(footer_ids)
     assert all_assigned_ids == expected_ids    
@@ -138,7 +138,7 @@ def detect_top_level_structure(
         api_key: Gemini API key
 
     Returns:
-        DocumentStructure with header, main, footer block ranges
+        List of tuples with (TagName, blocks) for each non-empty section
     """
     prompt = TOP_LEVEL_PROMPT.format(
         html_content="\n".join([block.to_html(bboxes=True, block_id=i) for i, block in enumerate(content_blocks)]),
@@ -173,9 +173,10 @@ def detect_top_level_structure(
     if not top_level_structure:
         raise Exception("No valid response from Gemini")
 
-    header_ids = parse_range_string(top_level_structure.HEADER)
-    main_ids = parse_range_string(top_level_structure.MAIN)
-    footer_ids = parse_range_string(top_level_structure.FOOTER)
+    # Fixed: Use correct attribute names (header, main, footer) instead of enum values
+    header_ids = parse_range_string(top_level_structure.header)
+    main_ids = parse_range_string(top_level_structure.main)
+    footer_ids = parse_range_string(top_level_structure.footer)
 
     validate_tag_coverage(
         header_ids=header_ids,
@@ -184,11 +185,22 @@ def detect_top_level_structure(
         total_ids=len(content_blocks),
     )
 
-    header_blocks = filter_blocks_by_numbers(content_blocks, header_ids)
-    main_blocks = filter_blocks_by_numbers(content_blocks, main_ids)
-    footer_blocks = filter_blocks_by_numbers(content_blocks, footer_ids)
+    # Build result list, only including sections that have content
+    result = []
+    
+    if header_ids:
+        header_blocks = filter_blocks_by_numbers(content_blocks, header_ids)
+        result.append((TagName.HEADER, header_blocks))
+    
+    if main_ids:
+        main_blocks = filter_blocks_by_numbers(content_blocks, main_ids)
+        result.append((TagName.MAIN, main_blocks))
+    
+    if footer_ids:
+        footer_blocks = filter_blocks_by_numbers(content_blocks, footer_ids)
+        result.append((TagName.FOOTER, footer_blocks))
 
-    return [(TagName.HEADER.value, header_blocks), (TagName.MAIN.value, main_blocks), (TagName.FOOTER.value, footer_blocks)]
+    return result
 
 
 if __name__ == "__main__":
