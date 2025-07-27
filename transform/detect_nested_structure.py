@@ -1,4 +1,4 @@
-# TODO: For validation errors in the response parsing, append a user message to messages explaining the error and retry
+# TODO: For validation errors in the response parsing, append a user message to messages: explain the error and retry
 # TODO: Add some validation, e.g.,
 #  1. that the children and sources lists are disjoint
 #  2. that all original ids are present in the children and sources lists
@@ -75,6 +75,23 @@ ALLOWED_TAGS: str = ", ".join(
     repr(tag.value) for tag in TagName
     if tag not in [TagName.HEADER, TagName.MAIN, TagName.FOOTER]
 )
+
+
+def _create_nodes_from_blocks(blocks: list[ContentBlock]) -> list[StructuredNode]:
+    """Fallback helper to create leaf StructuredNodes from a list of ContentBlocks
+    when the LLM fails to propose a valid response or maximum depth is reached."""
+    leaf_nodes: list[StructuredNode] = []
+    for block in blocks:
+        tag = TagName.IMG if block.block_type == BlockType.PICTURE else TagName.P
+        leaf_nodes.append(
+            StructuredNode(
+                tag=tag,
+                children=[],
+                text=block.text_content,
+                positional_data=[block.positional_data],
+            )
+        )
+    return leaf_nodes
 
 
 async def _process_single_input_with_semaphore(
@@ -173,37 +190,18 @@ async def detect_nested_structure(
     Returns:
         List of `StructuredNode` objects that represent the structured HTML representation of the node.
     """
-    # Base case: stop recursion if depth limit is reached
+    # Stop recursion if depth limit is reached
     if depth >= max_depth:
-        leaf_nodes: list[StructuredNode] = []
-        for block in blocks:
-            tag = TagName.IMG if block.block_type == BlockType.PICTURE else TagName.P
-            leaf_nodes.append(
-                StructuredNode(
-                    tag=tag,
-                    children=[],
-                    text=block.text_content,
-                    positional_data=[block.positional_data],
-                )
-            )
-        return leaf_nodes
+        # Fall back to creating leaf nodes from the ContentBlocks
+        return _create_nodes_from_blocks(blocks)
 
+    # Process the input with the LLM
     response: ParsedHTMLPartial | None = await _process_single_input_with_semaphore(blocks, context, semaphore, api_key)
     nodes = []
+    # Stop recursion if LLM response is invalid
     if response is None:
-        # Use ContentBlock objects directly as leaves
-        # TODO: Create helper for this to de-dupe?
-        for block in blocks:
-            if block.block_type == BlockType.PICTURE:
-                tag = TagName.IMG
-            else:
-                tag = TagName.P
-            nodes.append(StructuredNode(
-                tag=tag,
-                children=[],
-                text=block.text_content,
-                positional_data=[block.positional_data]
-            ))
+        # Fall back to creating leaf nodes from the ContentBlocks
+        return _create_nodes_from_blocks(blocks)
     else:
         html_response: ParsedHTMLPartial = response
 
