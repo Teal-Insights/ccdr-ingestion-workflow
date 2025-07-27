@@ -209,12 +209,15 @@ if __name__ == "__main__":
     import dotenv
 
     dotenv.load_dotenv()
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    assert api_key, "GEMINI_API_KEY is not set"
     
     with open(os.path.join("artifacts", "doc_601_content_blocks_with_styles.json"), "r") as fr:
         content_blocks: list[ContentBlock] = json.load(fr)
         content_blocks = [ContentBlock.model_validate(block) for block in content_blocks]
 
-    top_level_structure = detect_top_level_structure(content_blocks, api_key=os.getenv("GEMINI_API_KEY"))
+    top_level_structure = detect_top_level_structure(content_blocks, api_key=api_key)
     with open(os.path.join("artifacts", "doc_601_top_level_structure.json"), "w") as fw:
         json.dump(
             [

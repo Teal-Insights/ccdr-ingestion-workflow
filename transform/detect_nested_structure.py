@@ -1,3 +1,4 @@
+# TODO: For validation errors in the response parsing, append a user message to messages explaining the error and retry
 # TODO: Add some validation, e.g.,
 #  1. that the children and sources lists are disjoint
 #  2. that all original ids are present in the children and sources lists
@@ -34,6 +35,17 @@ class HTMLPartial(BaseModel):
     proposed_nodes: list[ProposedNode] = Field(description="Proposed nodes for the HTML partial")
 
 
+class ParsedProposedNode(BaseModel):
+    tag: TagName = Field(description="HTML tag name")
+    children: list[int] = Field(default_factory=list, description="Ids of nodes that will become children of this node")
+    sources: list[int] = Field(default_factory=list, description="Ids of nodes being merged into or replaced by this node, or from which this node is being split")
+    text: Optional[str] = Field(default=None, description="Text content (should only be present for leaf nodes, may contain `b`, `i`, `u`, `s`, `sup`, `sub` tags)")
+
+
+class ParsedHTMLPartial(BaseModel):
+    proposed_nodes: list[ParsedProposedNode] = Field(description="Proposed nodes for the HTML partial")
+
+
 PROMPT = """You are an expert in HTML and document structure.
 You are given a list of HTML blocks that represent the content of an HTML node.
 Your task is to propose a better structured HTML representation of the content.
@@ -66,9 +78,23 @@ ALLOWED_TAGS: str = ", ".join(
 
 
 async def _process_single_input_with_semaphore(
-    semaphore: asyncio.Semaphore, message: list, response_model: type[BaseModel], api_key: str
-) -> BaseModel | None:
+    blocks: list[ContentBlock], context: Context, semaphore: asyncio.Semaphore, api_key: str
+) -> ParsedHTMLPartial | None:
     """Process a single input with semaphore control."""
+    html_representation = "".join([block.to_html(block_id=i) for i, block in enumerate(blocks)])
+    message = [
+        {
+            "role": "user",
+            "content": PROMPT.format(
+                html_representation=html_representation,
+                parent_tags=" -> ".join([f"{tag}" for tag in context.parent_tags]),
+                parent_heading=context.parent_heading or "None",
+                allowed_tags=ALLOWED_TAGS,
+                response_schema=HTMLPartial.model_json_schema()
+            )
+        }
+    ]
+    
     async with semaphore:
         try:
             response = await acompletion(
@@ -77,7 +103,7 @@ async def _process_single_input_with_semaphore(
                 temperature=0.0,
                 response_format={
                     "type": "json_object",
-                    "response_schema": response_model.model_json_schema(),
+                    "response_schema": HTMLPartial.model_json_schema(),
                 },
                 api_key=api_key
             )
@@ -90,9 +116,31 @@ async def _process_single_input_with_semaphore(
             ):
                 cost = completion_cost(completion_response=response)
                 print(f"${float(cost):.10f}")
-                return response_model.model_validate_json(
+                html_partial = HTMLPartial.model_validate_json(
                     response.choices[0].message.content
                 )
+                parsed_html_partial = ParsedHTMLPartial(
+                    proposed_nodes=[
+                        ParsedProposedNode(
+                            tag=proposed.tag,
+                            children=parse_range_string(proposed.children) if proposed.children else [],
+                            sources=parse_range_string(proposed.sources) if proposed.sources else [],
+                            text=proposed.text,
+                        ) for proposed in html_partial.proposed_nodes
+                    ]
+                )
+                # Validate that the children and sources lists are valid to prevent breaking index errors
+                assert all(
+                    id_num in range(len(blocks)) 
+                    for node in parsed_html_partial.proposed_nodes 
+                    for id_num in node.children
+                )
+                assert all(
+                    id_num in range(len(blocks)) 
+                    for node in parsed_html_partial.proposed_nodes 
+                    for id_num in node.sources
+                )
+                return parsed_html_partial
             else:
                 print("Warning: No valid response from Gemini")
                 return None
@@ -140,20 +188,7 @@ async def detect_nested_structure(
             )
         return leaf_nodes
 
-    html_representation = "".join([block.to_html(block_id=i) for i, block in enumerate(blocks)])
-    message = [
-        {
-            "role": "user",
-            "content": PROMPT.format(
-                html_representation=html_representation,
-                parent_tags=" -> ".join([f"{tag}" for tag in context.parent_tags]),
-                parent_heading=context.parent_heading or "None",
-                allowed_tags=ALLOWED_TAGS,
-                response_schema=HTMLPartial.model_json_schema()
-            )
-        }
-    ]
-    response: BaseModel | None = await _process_single_input_with_semaphore(semaphore, message, HTMLPartial, api_key)
+    response: ParsedHTMLPartial | None = await _process_single_input_with_semaphore(blocks, context, semaphore, api_key)
     nodes = []
     if response is None:
         # Use ContentBlock objects directly as leaves
@@ -170,26 +205,12 @@ async def detect_nested_structure(
                 positional_data=[block.positional_data]
             ))
     else:
-        assert isinstance(response, HTMLPartial)
-        html_response: HTMLPartial = response
+        html_response: ParsedHTMLPartial = response
 
         # 1. Launch recursive tasks for each child-bearing proposed node
         child_tasks: dict[int, asyncio.Task[list[StructuredNode]]] = {}
         for i, proposed in enumerate(html_response.proposed_nodes):
-            if proposed.children:
-                # TODO: Maybe validate earlier, above, and retry if any indices are invalid?
-                # Note: invalid indices may indicate that the LLM has an off-by-one error for all indices in the response
-                # Validate indices before accessing blocks
-                child_indices = parse_range_string(proposed.children)
-                valid_indices = [j for j in child_indices if 0 <= j < len(blocks)]
-                
-                if len(valid_indices) != len(child_indices):
-                    print(f"Warning: {len(child_indices) - len(valid_indices)} invalid indices in range string")
-                
-                # Only proceed if we have valid blocks
-                if valid_indices:
-                    child_blocks = [blocks[j] for j in valid_indices]
-                
+            if proposed.children:               
                 # Determine heading context for this branch
                 parent_heading: TagName | None = next(
                     (
@@ -206,7 +227,7 @@ async def detect_nested_structure(
 
                 child_tasks[i] = asyncio.create_task(
                     detect_nested_structure(
-                        child_blocks,
+                        [blocks[j] for j in proposed.children],
                         context=child_context,
                         api_key=api_key,
                         semaphore=semaphore,
@@ -233,7 +254,7 @@ async def detect_nested_structure(
                     children=children,
                     text=proposed.text,
                     # TODO: introduce a helper to merge same-page bboxes; also use children's positional data
-                    positional_data=[blocks[j].positional_data for j in parse_range_string(proposed.sources)],
+                    positional_data=[blocks[j].positional_data for j in proposed.sources],
                 )
             )
     # Base case: all nodes are leaves or all children have been processed
