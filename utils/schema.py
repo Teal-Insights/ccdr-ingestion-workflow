@@ -24,6 +24,7 @@ class NodeType(str, Enum):
     ELEMENT_NODE = "ELEMENT_NODE"
 
 
+# TODO: Create helper methods to return tags of a given type, e.g., top-level, structural, headings, etc.
 class TagName(str, Enum):
     # Only structural elements
     HEADER = "header"

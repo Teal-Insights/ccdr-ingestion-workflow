@@ -1,7 +1,8 @@
 from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 from typing import Optional
-from utils.schema import PositionalData, EmbeddingSource
+import html
+from utils.schema import PositionalData, EmbeddingSource, TagName, SectionType
 
 class BlockType(str, Enum):
     """
@@ -72,7 +73,7 @@ class ContentBlock(ContentBlockBase):
     description: Optional[str] = Field(default=None, description="Description of the block (if a non-text block)")
     caption: Optional[str] = Field(default=None, description="Caption associated with the block (if available)")
 
-    def to_html(self, bboxes: bool = False, block_id: int = None) -> str:
+    def to_html(self, bboxes: bool = False, block_id: Optional[int] = None) -> str:
         """
         Convert the content block to an HTML string.
         """
@@ -82,7 +83,29 @@ class ContentBlock(ContentBlockBase):
             return create_text_block_html(self, bboxes=bboxes, block_id=block_id)
 
 
-def create_image_block_html(block: ContentBlock, bboxes: bool = False, block_id: int = None) -> str:
+class StructuredNode(BaseModel):
+    tag: TagName = Field(description="HTML tag name")
+    attributes: dict[str, str] = Field(default_factory=dict, description="HTML attributes")
+    children: list["StructuredNode"] = Field(default_factory=list, description="Child nodes")
+    text: Optional[str] = Field(default=None, description="Text content")
+    section_type: Optional[SectionType] = Field(default=None, description="Section type")
+    positional_data: list[PositionalData] = Field(default_factory=list, description="Aggregate positional data")
+
+    def to_html(self) -> str:
+        attrs = " ".join(f'{k}="{v}"' for k, v in self.attributes.items())
+        attrs_part = f" {attrs}" if attrs else ""
+        children_html = "".join(child.to_html() for child in self.children)
+        
+        if self.tag == "img":
+            return f"<img{attrs_part} />"
+        elif self.text:
+            escaped_text = html.escape(self.text)
+            return f"<{self.tag}{attrs_part}>{escaped_text}</{self.tag}>"
+        else:
+            return f"<{self.tag}{attrs_part}>{children_html}</{self.tag}>"
+
+
+def create_image_block_html(block: ContentBlock, bboxes: bool = False, block_id: Optional[int] = None) -> str:
     """
     Create an img element for a picture block.
     
@@ -110,7 +133,8 @@ def create_image_block_html(block: ContentBlock, bboxes: bool = False, block_id:
     # Add alt text from description or text_content if available
     alt_text = block.description or block.text_content or None
     if alt_text is not None:
-        img_attrs.append(f'alt="{alt_text}"')
+        escaped_alt_text = html.escape(alt_text, quote=True)
+        img_attrs.append(f'alt="{escaped_alt_text}"')
     
     # Add bbox data attribute if requested
     if bboxes and block.positional_data.bbox:
@@ -127,7 +151,7 @@ def create_image_block_html(block: ContentBlock, bboxes: bool = False, block_id:
     return f"<img {attrs_str} />"
 
 
-def create_text_block_html(block: ContentBlock, bboxes: bool = False, block_id: int = None) -> str:
+def create_text_block_html(block: ContentBlock, bboxes: bool = False, block_id: Optional[int] = None) -> str:
     """
     Create a p element for a text block.
     
@@ -164,5 +188,6 @@ def create_text_block_html(block: ContentBlock, bboxes: bool = False, block_id: 
     
     # Use text_content or fallback to empty string
     text_content = block.text_content or ""
+    escaped_text_content = html.escape(text_content)
     
-    return f"<p{attrs_part}>{text_content}</p>"
+    return f"<p{attrs_part}>{escaped_text_content}</p>"

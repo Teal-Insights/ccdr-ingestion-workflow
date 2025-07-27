@@ -1,0 +1,293 @@
+# TODO: Use range strings, as in transform/detect_top_level_structure.py, instead of lists of ids?
+# TODO: Add some validation, e.g.,
+#  1. that the children and sources lists are disjoint
+#  2. that all original ids are present in the children and sources lists
+#  3. that list items have a list container parent
+#  4. that table components have a table container parent
+#  5. that the LLM doesn't propose a single wrapper node that contains all the content
+
+import asyncio
+from tenacity import retry, stop_after_attempt, wait_exponential
+from litellm import acompletion, completion_cost
+from litellm.files.main import ModelResponse
+from litellm.types.utils import Choices
+from typing import Optional
+from pydantic import BaseModel, Field
+
+from transform.models import ContentBlock, StructuredNode, BlockType
+from utils.schema import TagName, PositionalData
+
+
+class Context(BaseModel):
+    parent_tags: list[TagName] = Field(default_factory=list, description="Parent tags of the current node")
+    parent_heading: Optional[TagName] = Field(default=None, description="Parent heading of the current node")
+
+
+class ProposedNode(BaseModel):
+    tag: TagName = Field(description="HTML tag name")
+    children: list[int] = Field(default_factory=list, description="Ids of nodes that will become children of this node")
+    sources: list[int] = Field(default_factory=list, description="Ids of nodes being merged into or replaced by this node, or from which this node is being split")
+    text: Optional[str] = Field(default=None, description="Text content (should only be present for leaf nodes, may contain `b`, `i`, `u`, `s`, `sup`, `sub` tags)")
+
+
+class HTMLPartial(BaseModel):
+    proposed_nodes: list[ProposedNode] = Field(description="Proposed nodes for the HTML partial")
+
+
+PROMPT = """You are an expert in HTML and document structure.
+You are given a list of HTML blocks that represent the content of an HTML node.
+Your task is to propose a better structured HTML representation of the content.
+You may only use the following tags: {allowed_tags}.
+
+Return your response in the following JSON format:
+
+{response_schema}
+
+Note that you may either wrap elements in a structural container or mutate them by splitting/merging/replacing; don't do both things to the same element.
+Elements you wrap in a structural container will be further processed by a subagent.
+Every node should be mapped by id to either `children` or `sources`.
+Leaves with `sources` are leaf nodes and should usually (except for images) have `text` content.
+For purposes of this exercise, in-line styling tags like `b`, `i`, `u`, `s`, `sup`, and `sub` are considered text content.
+Clean up whitespace problems and mis-encoded character entities like `&amp;`, but otherwise remain faithful to the original text.
+
+Below is the HTML content you are to transform.
+The parent nodes of this content are: {parent_tags}.
+The parent heading level, if any, is: {parent_heading}.
+
+Content:
+
+{html_representation}
+"""
+
+ALLOWED_TAGS: str = ", ".join(
+    repr(tag.value) for tag in TagName
+    if tag not in [TagName.HEADER, TagName.MAIN, TagName.FOOTER]
+)
+
+
+async def _process_single_input_with_semaphore(
+    semaphore: asyncio.Semaphore, message: list, response_model: type[BaseModel], api_key: str
+) -> BaseModel | None:
+    """Process a single input with semaphore control."""
+    async with semaphore:
+        try:
+            response = await acompletion(
+                model="gemini/gemini-2.5-flash",
+                messages=message,
+                temperature=0.0,
+                response_format={
+                    "type": "json_object",
+                    "response_schema": response_model.model_json_schema(),
+                },
+                api_key=api_key
+            )
+
+            if (
+                response
+                and isinstance(response, ModelResponse)
+                and isinstance(response.choices[0], Choices)
+                and response.choices[0].message.content
+            ):
+                cost = completion_cost(completion_response=response)
+                print(f"${float(cost):.10f}")
+                return response_model.model_validate_json(
+                    response.choices[0].message.content
+                )
+            else:
+                print("Warning: No valid response from Gemini")
+                return None
+        except Exception as e:
+            print(f"Error processing input: {e}")
+            return None
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+async def detect_nested_structure(
+    blocks: list[ContentBlock],
+    context: Context,
+    api_key: str,
+    semaphore: asyncio.Semaphore,
+    depth: int = 0,
+    max_depth: int = 5,
+) -> list[StructuredNode]:
+    """Given a list of `ContentBlock` objects that represent the content of an HTML node,
+    convert them to naive HTML, and call an LLM to propose a better structured HTML
+    representation. Continue this process recursively until leaf nodes are reached.
+
+    Args:
+        blocks: List of `ContentBlock` objects that represent the content of an HTML node.
+        context: Context for the LLM, including the parent headings and tags.
+        api_key: API key for the LLM.
+        semaphore: Semaphore for rate limiting.
+        depth: Current depth of recursion.
+        max_depth: Maximum depth to recurse.
+
+    Returns:
+        List of `StructuredNode` objects that represent the structured HTML representation of the node.
+    """
+    # Base case: stop recursion if depth limit is reached
+    if depth >= max_depth:
+        leaf_nodes: list[StructuredNode] = []
+        for block in blocks:
+            tag = TagName.IMG if block.block_type == BlockType.PICTURE else TagName.P
+            leaf_nodes.append(
+                StructuredNode(
+                    tag=tag,
+                    children=[],
+                    text=block.text_content,
+                    positional_data=[block.positional_data],
+                )
+            )
+        return leaf_nodes
+
+    html_representation = "".join([block.to_html(block_id=i) for i, block in enumerate(blocks)])
+    message = [
+        {
+            "role": "user",
+            "content": PROMPT.format(
+                html_representation=html_representation,
+                parent_tags=" -> ".join([f"{tag}" for tag in context.parent_tags]),
+                parent_heading=context.parent_heading or "None",
+                allowed_tags=ALLOWED_TAGS,
+                response_schema=HTMLPartial.model_json_schema()
+            )
+        }
+    ]
+    response: BaseModel | None = await _process_single_input_with_semaphore(semaphore, message, HTMLPartial, api_key)
+    nodes = []
+    if response is None:
+        # Use ContentBlock objects directly as leaves
+        for block in blocks:
+            if block.block_type == BlockType.PICTURE:
+                tag = TagName.IMG
+            else:
+                tag = TagName.P
+            nodes.append(StructuredNode(
+                tag=tag,
+                children=[],
+                text=block.text_content,
+                positional_data=[block.positional_data]
+            ))
+    else:
+        assert isinstance(response, HTMLPartial)
+        html_response: HTMLPartial = response
+
+        # 1. Launch recursive tasks for each child-bearing proposed node
+        child_tasks: dict[int, asyncio.Task[list[StructuredNode]]] = {}
+        for i, proposed in enumerate(html_response.proposed_nodes):
+            if proposed.children:
+                # Determine heading context for this branch
+                parent_heading: TagName | None = next(
+                    (
+                        n.tag for n in html_response.proposed_nodes[:i]
+                        if n.tag in {TagName.H1, TagName.H2, TagName.H3, TagName.H4, TagName.H5, TagName.H6}
+                    ),
+                    None
+                )
+
+                child_context = Context(
+                    parent_tags=context.parent_tags + [proposed.tag],
+                    parent_heading=parent_heading or context.parent_heading,
+                )
+
+                child_tasks[i] = asyncio.create_task(
+                    detect_nested_structure(
+                        [blocks[j] for j in proposed.children],
+                        context=child_context,
+                        api_key=api_key,
+                        semaphore=semaphore,
+                        depth=depth + 1,
+                        max_depth=max_depth,
+                    )
+                )
+
+        # 2. Await all child tasks in parallel (bounded by the shared semaphore)
+        if child_tasks:
+            resolved_lists = await asyncio.gather(*child_tasks.values())
+            children_results = {
+                idx: child_list for idx, child_list in zip(child_tasks.keys(), resolved_lists)
+            }
+        else:
+            children_results = {}
+
+        # 3. Assemble StructuredNodes in original order, inserting resolved children
+        for idx, proposed in enumerate(html_response.proposed_nodes):
+            children = children_results.get(idx, [])
+            nodes.append(
+                StructuredNode(
+                    tag=proposed.tag,
+                    children=children,
+                    text=proposed.text,
+                    # TODO: introduce a helper to merge same-page bboxes; also use children's positional data
+                    positional_data=[blocks[j].positional_data for j in proposed.sources],
+                )
+            )
+    # Base case: all nodes are leaves or all children have been processed
+    return nodes
+
+
+if __name__ == "__main__":
+    import os
+    import json
+    import time
+    import dotenv
+    import pymupdf
+
+    dotenv.load_dotenv()
+
+    async def _test_main() -> None:
+        """Ad-hoc harness for manual testing; not used by production code."""
+
+        semaphore = asyncio.Semaphore(2)  # rate-limit concurrent Gemini calls
+
+        api_key = os.getenv("GEMINI_API_KEY")
+        assert api_key, "GEMINI_API_KEY is not set"
+
+        doc = pymupdf.open(os.path.join("artifacts", "wkdir", "doc_601.pdf"))
+        page_dimensions = {
+            page.number: {"x1": 0, "y1": 0, "x2": page.rect.width, "y2": page.rect.height}
+            for page in doc
+        }
+
+        with open(os.path.join("artifacts", "doc_601_top_level_structure.json"), "r") as fr:
+            top_level_structure: list[tuple[TagName, list[ContentBlock]]] = [
+                (TagName(tag_name), [ContentBlock.model_validate(block) for block in blocks])  # type: ignore[arg-type]
+                for tag_name, blocks in json.load(fr)
+            ]
+
+        tasks = [
+            detect_nested_structure(
+                blocks,
+                context=Context(parent_tags=[tag_name], parent_heading=None),
+                api_key=api_key,
+                semaphore=semaphore,
+                max_depth=7,
+            )
+            for tag_name, blocks in top_level_structure
+        ]
+
+        children_lists = await asyncio.gather(*tasks)
+
+        nested_structure: list[StructuredNode] = []
+        for (tag_name, blocks), children_list in zip(top_level_structure, children_lists):
+            nested_structure.append(
+                StructuredNode(
+                    tag=tag_name,
+                    children=children_list,
+                    positional_data=[
+                        PositionalData(
+                            page_pdf=page_number,
+                            bbox=page_dimensions[page_number],
+                        )
+                        for page_number in {block.positional_data.page_pdf for block in blocks}
+                    ],
+                )
+            )
+
+        with open(os.path.join("artifacts", "doc_601_nested_structure.json"), "w") as fw:
+            json.dump([node.model_dump() for node in nested_structure], fw, indent=2)
+
+    start_time = time.time()
+    asyncio.run(_test_main())
+    end_time = time.time()
+    print(f"Time taken: {end_time - start_time} seconds")
