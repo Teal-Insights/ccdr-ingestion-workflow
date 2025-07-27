@@ -1,10 +1,10 @@
 # TODO: For validation errors in the response parsing, append a user message to messages: explain the error and retry
-# TODO: Add some validation, e.g.,
-#  1. that the children and sources lists are disjoint
-#  2. that all original ids are present in the children and sources lists
-#  3. that list items have a list container parent
-#  4. that table components have a table container parent
-#  5. that the LLM doesn't propose a single wrapper node that contains all the content
+# TODOs:
+#  1. Validate that the children and sources lists are disjoint
+#  2. Validate that all original ids are present in the children and sources lists
+#  3. Validate that list items have a list container parent
+#  4. Validate that table components have a table container parent
+#  5. Validate that the LLM doesn't propose a single wrapper node that has all the indices as its children
 
 import asyncio
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -12,7 +12,7 @@ from litellm import acompletion, completion_cost
 from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from transform.detect_top_level_structure import parse_range_string
 from transform.models import ContentBlock, StructuredNode, BlockType
@@ -99,7 +99,7 @@ async def _process_single_input_with_semaphore(
 ) -> ParsedHTMLPartial | None:
     """Process a single input with semaphore control."""
     html_representation = "".join([block.to_html(block_id=i) for i, block in enumerate(blocks)])
-    message = [
+    messages = [
         {
             "role": "user",
             "content": PROMPT.format(
@@ -113,57 +113,78 @@ async def _process_single_input_with_semaphore(
     ]
     
     async with semaphore:
-        try:
-            response = await acompletion(
-                model="gemini/gemini-2.5-flash",
-                messages=message,
-                temperature=0.0,
-                response_format={
-                    "type": "json_object",
-                    "response_schema": HTMLPartial.model_json_schema(),
-                },
-                api_key=api_key
-            )
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                response = await acompletion(
+                    model="gemini/gemini-2.5-flash",
+                    messages=messages,
+                    temperature=0.0,
+                    response_format={
+                        "type": "json_object",
+                        "response_schema": HTMLPartial.model_json_schema(),
+                    },
+                    api_key=api_key
+                )
 
-            if (
-                response
-                and isinstance(response, ModelResponse)
-                and isinstance(response.choices[0], Choices)
-                and response.choices[0].message.content
-            ):
-                cost = completion_cost(completion_response=response)
-                print(f"${float(cost):.10f}")
-                html_partial = HTMLPartial.model_validate_json(
-                    response.choices[0].message.content
-                )
-                parsed_html_partial = ParsedHTMLPartial(
-                    proposed_nodes=[
-                        ParsedProposedNode(
-                            tag=proposed.tag,
-                            children=parse_range_string(proposed.children) if proposed.children else [],
-                            sources=parse_range_string(proposed.sources) if proposed.sources else [],
-                            text=proposed.text,
-                        ) for proposed in html_partial.proposed_nodes
-                    ]
-                )
-                # Validate that the children and sources lists are valid to prevent breaking index errors
-                assert all(
-                    id_num in range(len(blocks)) 
-                    for node in parsed_html_partial.proposed_nodes 
-                    for id_num in node.children
-                )
-                assert all(
-                    id_num in range(len(blocks)) 
-                    for node in parsed_html_partial.proposed_nodes 
-                    for id_num in node.sources
-                )
-                return parsed_html_partial
-            else:
-                print("Warning: No valid response from Gemini")
+                if (
+                    response
+                    and isinstance(response, ModelResponse)
+                    and isinstance(response.choices[0], Choices)
+                    and response.choices[0].message.content
+                ):
+                    cost = completion_cost(completion_response=response)
+                    print(f"${float(cost):.10f}")
+                    html_partial = HTMLPartial.model_validate_json(
+                        response.choices[0].message.content
+                    )
+                    parsed_html_partial = ParsedHTMLPartial(
+                        proposed_nodes=[
+                            ParsedProposedNode(
+                                tag=proposed.tag,
+                                children=parse_range_string(proposed.children) if proposed.children else [],
+                                sources=parse_range_string(proposed.sources) if proposed.sources else [],
+                                text=proposed.text,
+                            ) for proposed in html_partial.proposed_nodes
+                        ]
+                    )
+                    # Validate that the children and sources lists are valid to prevent breaking index errors
+                    invalid_child_id = next(
+                        (id_num 
+                        for node in parsed_html_partial.proposed_nodes 
+                        for id_num in node.children
+                        if id_num not in range(len(blocks))
+                    ), default=None)
+                    if invalid_child_id is not None:
+                        raise ValueError(f"Your response included an out of bounds child index: {invalid_child_id} (valid range: 0-{len(blocks)-1})")
+                    invalid_source_id = next(
+                        (id_num 
+                        for node in parsed_html_partial.proposed_nodes 
+                        for id_num in node.sources
+                        if id_num not in range(len(blocks))
+                    ), default=None)
+                    if invalid_source_id is not None:
+                        raise ValueError(f"Your response included an out of bounds source index: {invalid_source_id} (valid range: 0-{len(blocks)-1})")
+                    return parsed_html_partial
+                else:
+                    print("Warning: No valid response from Gemini")
+                    return None
+            except (ValidationError, AssertionError) as e:
+                if attempt < max_attempts - 1:
+                    print(f"Validation error (attempt {attempt+1}/{max_attempts}): {e}")
+                    # Append error message and retry
+                    messages.append({
+                        "role": "user",
+                        "content": f"Your previous response had a validation error: {str(e)}. "
+                                   "Please correct your response to match the required schema and constraints."
+                    })
+                else:
+                    print(f"Validation error on final attempt: {e}")
+                    return None
+            except Exception as e:
+                print(f"Error processing input: {e}")
                 return None
-        except Exception as e:
-            print(f"Error processing input: {e}")
-            return None
+        return None
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
