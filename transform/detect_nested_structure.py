@@ -1,4 +1,3 @@
-# TODO: Use range strings, as in transform/detect_top_level_structure.py, instead of lists of ids?
 # TODO: Add some validation, e.g.,
 #  1. that the children and sources lists are disjoint
 #  2. that all original ids are present in the children and sources lists
@@ -14,6 +13,7 @@ from litellm.types.utils import Choices
 from typing import Optional
 from pydantic import BaseModel, Field
 
+from transform.detect_top_level_structure import parse_range_string
 from transform.models import ContentBlock, StructuredNode, BlockType
 from utils.schema import TagName, PositionalData
 
@@ -25,8 +25,8 @@ class Context(BaseModel):
 
 class ProposedNode(BaseModel):
     tag: TagName = Field(description="HTML tag name")
-    children: list[int] = Field(default_factory=list, description="Ids of nodes that will become children of this node")
-    sources: list[int] = Field(default_factory=list, description="Ids of nodes being merged into or replaced by this node, or from which this node is being split")
+    children: Optional[str] = Field(default=None, description="Comma-separated ranges for ids of elements that will become children of this node (e.g., '1-3,5,7-9')")
+    sources: Optional[str] = Field(default=None, description="Comma-separated ranges for ids of elements being merged into or replaced by this node, or from which this node is being split (e.g., '4,6,10-12')")
     text: Optional[str] = Field(default=None, description="Text content (should only be present for leaf nodes, may contain `b`, `i`, `u`, `s`, `sup`, `sub` tags)")
 
 
@@ -192,7 +192,7 @@ async def detect_nested_structure(
 
                 child_tasks[i] = asyncio.create_task(
                     detect_nested_structure(
-                        [blocks[j] for j in proposed.children],
+                        [blocks[j] for j in parse_range_string(proposed.children)],
                         context=child_context,
                         api_key=api_key,
                         semaphore=semaphore,
@@ -219,7 +219,7 @@ async def detect_nested_structure(
                     children=children,
                     text=proposed.text,
                     # TODO: introduce a helper to merge same-page bboxes; also use children's positional data
-                    positional_data=[blocks[j].positional_data for j in proposed.sources],
+                    positional_data=[blocks[j].positional_data for j in parse_range_string(proposed.sources)],
                 )
             )
     # Base case: all nodes are leaves or all children have been processed
