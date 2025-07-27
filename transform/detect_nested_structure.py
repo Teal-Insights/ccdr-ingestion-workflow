@@ -157,6 +157,7 @@ async def detect_nested_structure(
     nodes = []
     if response is None:
         # Use ContentBlock objects directly as leaves
+        # TODO: Create helper for this to de-dupe?
         for block in blocks:
             if block.block_type == BlockType.PICTURE:
                 tag = TagName.IMG
@@ -176,6 +177,19 @@ async def detect_nested_structure(
         child_tasks: dict[int, asyncio.Task[list[StructuredNode]]] = {}
         for i, proposed in enumerate(html_response.proposed_nodes):
             if proposed.children:
+                # TODO: Maybe validate earlier, above, and retry if any indices are invalid?
+                # Note: invalid indices may indicate that the LLM has an off-by-one error for all indices in the response
+                # Validate indices before accessing blocks
+                child_indices = parse_range_string(proposed.children)
+                valid_indices = [j for j in child_indices if 0 <= j < len(blocks)]
+                
+                if len(valid_indices) != len(child_indices):
+                    print(f"Warning: {len(child_indices) - len(valid_indices)} invalid indices in range string")
+                
+                # Only proceed if we have valid blocks
+                if valid_indices:
+                    child_blocks = [blocks[j] for j in valid_indices]
+                
                 # Determine heading context for this branch
                 parent_heading: TagName | None = next(
                     (
@@ -192,7 +206,7 @@ async def detect_nested_structure(
 
                 child_tasks[i] = asyncio.create_task(
                     detect_nested_structure(
-                        [blocks[j] for j in parse_range_string(proposed.children)],
+                        child_blocks,
                         context=child_context,
                         api_key=api_key,
                         semaphore=semaphore,
