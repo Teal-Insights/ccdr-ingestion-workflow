@@ -4,9 +4,15 @@
 #  3. Validate that list items have a list container parent
 #  4. Validate that table components have a table container parent
 #  5. Validate that the LLM doesn't propose a single wrapper node that has all the indices as its children
-#  6. Accumulate cost of all calls to the LLM and print the total cost at the end
+#  6. Accumulate cost of all calls to the LLM and log the total cost at the end
+#  7. Add a "smart" model group to the router for fallback on validation errors
+#  8. Add some examples to the prompt, maybe even use cosine similarity to find the most similar example
 
+import logging
 import asyncio
+import json
+import os
+from datetime import datetime
 from litellm import Router, completion_cost
 from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
@@ -16,6 +22,39 @@ from pydantic import BaseModel, Field, ValidationError
 from transform.detect_top_level_structure import parse_range_string
 from transform.models import ContentBlock, StructuredNode, BlockType
 from utils.schema import TagName, PositionalData
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# Create specialized file logger for validated responses
+def create_response_logger():
+    """Create a file logger specifically for dumping validated LLM responses."""
+    response_logger = logging.getLogger(f"{__name__}.responses")
+    response_logger.setLevel(logging.INFO)
+
+    # Prevent propagation to avoid duplicate logs in main logger
+    response_logger.propagate = False
+
+    # Create artifacts directory if it doesn't exist
+    os.makedirs("artifacts", exist_ok=True)
+
+    # Create file handler with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = f"artifacts/validated_responses_{timestamp}.jsonl"
+
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.INFO)
+
+    # Use a simple formatter that just outputs the message (since we'll log JSON)
+    formatter = logging.Formatter('%(message)s')
+    file_handler.setFormatter(formatter)
+    
+    response_logger.addHandler(file_handler)
+    
+    return response_logger
+
+# Create the response logger instance
+response_logger = create_response_logger()
 
 
 class Context(BaseModel):
@@ -81,7 +120,8 @@ ALLOWED_TAGS: str = ", ".join(
 def create_router(
     gemini_api_key: str, 
     openai_api_key: str, 
-    deepseek_api_key: str
+    deepseek_api_key: str,
+    openrouter_api_key: str,
 ) -> Router:
     """Create a LiteLLM Router with advanced load balancing and fallback configuration."""
     model_list = [
@@ -90,10 +130,37 @@ def create_router(
             "litellm_params": {
                 "model": "gemini/gemini-2.5-flash",
                 "api_key": gemini_api_key,
-                "tpm": 120000,  # tokens per minute
-                "rpm": 2000,    # requests per minute
-                "max_parallel_requests": 20,  # concurrent requests to this deployment
-                "weight": 3,    # Prefer Gemini (3x more likely to be chosen)
+                "tpm": 250000,  # tokens per minute
+                "rpm": 10,    # requests per minute
+                "max_parallel_requests": 2,
+                "weight": 3,
+            }
+        },
+        {
+            "model_name": "html-parser",  # Using a common model_name for load balancing
+            "litellm_params": {
+                "model": "openrouter/google/gemini-2.5-flash",
+                "api_key": openrouter_api_key,
+                "max_parallel_requests": 5,
+                "weight": 3,
+            }
+        },
+        {
+            "model_name": "html-parser",
+            "litellm_params": {
+                "model": "qwen/qwen3-coder:free",
+                "api_key": openrouter_api_key,
+                "max_parallel_requests": 5,
+                "weight": 3,
+            }
+        },
+        {
+            "model_name": "html-parser",
+            "litellm_params": {
+                "model": "openrouter/x-ai/grok-3-mini",
+                "api_key": openrouter_api_key,
+                "max_parallel_requests": 5,
+                "weight": 3,
             }
         },
         {
@@ -101,8 +168,6 @@ def create_router(
             "litellm_params": {
                 "model": "deepseek/deepseek-chat", 
                 "api_key": deepseek_api_key,
-                "tpm": 100000,
-                "rpm": 1000,
                 "max_parallel_requests": 15,
                 "weight": 2,    # Secondary preference
             }
@@ -112,23 +177,22 @@ def create_router(
             "litellm_params": {
                 "model": "gpt-4o-mini",
                 "api_key": openai_api_key,
-                "tpm": 150000,
-                "rpm": 1000,
+                "tpm": 200000,
+                "rpm": 500,
                 "max_parallel_requests": 15,
                 "weight": 1,    # Fallback option
             }
         }
     ]
     
-    # Router configuration without Redis
+    # Router configuration
     return Router(
         model_list=model_list,
-        routing_strategy="simple-shuffle",  # Weighted random selection without Redis
+        routing_strategy="simple-shuffle",  # Weighted random selection
         fallbacks=[{"html-parser": ["html-parser"]}],  # Falls back within the same group
         num_retries=2,
-        request_timeout=45,
-        allowed_fails=5,  # More lenient - allow more fails before cooldown
-        cooldown_time=30,  # Shorter cooldown time
+        allowed_fails=5,
+        cooldown_time=30,
         enable_pre_call_checks=True,  # Enable context window and rate limit checks
         default_max_parallel_requests=50,  # Global default
         set_verbose=False,  # Set to True for debugging
@@ -152,13 +216,13 @@ def _create_nodes_from_blocks(blocks: list[ContentBlock]) -> list[StructuredNode
     return leaf_nodes
 
 
-async def _process_single_input_with_semaphore(
+async def _process_single_input(
     blocks: list[ContentBlock], 
     context: Context, 
-    semaphore: asyncio.Semaphore, 
-    router: Router
+    router: Router,
+    depth: int = 0
 ) -> ParsedHTMLPartial | None:
-    """Process a single input with semaphore control using LiteLLM Router with fallbacks."""
+    """Process a single input using LiteLLM Router with built-in concurrency control and fallbacks."""
     html_representation = "".join([block.to_html(block_id=i) for i, block in enumerate(blocks)])
     messages = [
         {
@@ -173,93 +237,107 @@ async def _process_single_input_with_semaphore(
         }
     ]
     
-    async with semaphore:
-        # Simplified - let LiteLLM handle retries and fallbacks
-        # Only retry on validation errors, not API failures
-        max_validation_attempts = 3
-        for attempt in range(max_validation_attempts):
-            try:
-                # Use the router - it handles retries and fallbacks automatically
-                response = await router.acompletion(
-                    model="html-parser",  # Use the common model name for load balancing
-                    messages=messages,
-                    temperature=0.0,
-                    response_format={
-                        "type": "json_object",
-                        "response_schema": HTMLPartial.model_json_schema(),
-                    }
-                )
+    # Router handles concurrency, retries, and fallbacks automatically
+    # Only retry on validation errors, not API failures
+    max_validation_attempts = 3
+    for attempt in range(max_validation_attempts):
+        try:
+            # Use the router - it handles retries, fallbacks, and concurrency automatically
+            response = await router.acompletion(
+                model="html-parser",  # Use the common model name for load balancing
+                messages=messages,  # type: ignore[arg-type]
+                temperature=0.0,
+                response_format={
+                    "type": "json_object",
+                    "response_schema": HTMLPartial.model_json_schema(),
+                }
+            )
 
-                if (
-                    response
-                    and isinstance(response, ModelResponse)
-                    and isinstance(response.choices[0], Choices)
-                    and response.choices[0].message.content
-                ):
-                    cost = completion_cost(completion_response=response)
-                    # Get actual model used from response
-                    actual_model = getattr(response, 'model', 'unknown')
-                    print(f"${float(cost):.10f} (using {actual_model})")
-                    
-                    html_partial = HTMLPartial.model_validate_json(
-                        response.choices[0].message.content
-                    )
-                    parsed_html_partial = ParsedHTMLPartial(
-                        proposed_nodes=[
-                            ParsedProposedNode(
-                                tag=proposed.tag,
-                                children=parse_range_string(proposed.children) if proposed.children else [],
-                                sources=parse_range_string(proposed.sources) if proposed.sources else [],
-                                text=proposed.text,
-                            ) for proposed in html_partial.proposed_nodes
-                        ]
-                    )
-                    # Validate that the children and sources lists are valid to prevent breaking index errors
-                    invalid_child_id = next(
-                        (id_num 
-                        for node in parsed_html_partial.proposed_nodes 
-                        for id_num in node.children
-                        if id_num not in range(len(blocks))
-                    ), -1)
-                    if invalid_child_id != -1:
-                        raise ValueError(f"Your response included an out of bounds child index: {invalid_child_id} (valid range: 0-{len(blocks)-1})")
-                    invalid_source_id = next(
-                        (id_num 
-                        for node in parsed_html_partial.proposed_nodes 
-                        for id_num in node.sources
-                        if id_num not in range(len(blocks))
-                    ), -1)
-                    if invalid_source_id != -1:
-                        hint = " Remember to use *inclusive* ranges. E.g., 0-2 encompasses 0, 1, and 2. The last index is included in the range!"
-                        raise ValueError(f"Your response included an out of bounds source index: {invalid_source_id} (valid range: 0-{len(blocks)-1}){hint if invalid_source_id + 1 == len(blocks) else ''}")
-                    return parsed_html_partial
-                else:
-                    print("Warning: No valid response from LLM")
-                    return None
-            except (ValidationError, ValueError) as e:
-                if attempt < max_validation_attempts - 1:
-                    print(f"Validation error (attempt {attempt+1}/{max_validation_attempts}): {e}")
-                    # Append error message and retry
-                    messages.append({
-                        "role": "user",
-                        "content": f"Your previous response had a validation error: {str(e)}. "
-                                   "Please correct your response to match the required schema and constraints."
-                    })
-                else:
-                    print(f"Validation error on final attempt: {e}")
-                    return None
-            except Exception as e:
-                # LiteLLM Router already handled retries and fallbacks for API errors
-                print(f"Error processing input after all retries and fallbacks: {e}")
+            if (
+                response
+                and isinstance(response, ModelResponse)
+                and isinstance(response.choices[0], Choices)
+                and response.choices[0].message.content
+            ):
+                cost = completion_cost(completion_response=response)
+                # Get actual model used from response
+                actual_model = getattr(response, 'model', 'unknown')
+                logger.debug(f"${float(cost):.10f} (using {actual_model})")
+                
+                html_partial = HTMLPartial.model_validate_json(
+                    response.choices[0].message.content
+                )
+                parsed_html_partial = ParsedHTMLPartial(
+                    proposed_nodes=[
+                        ParsedProposedNode(
+                            tag=proposed.tag,
+                            children=parse_range_string(proposed.children) if proposed.children else [],
+                            sources=parse_range_string(proposed.sources) if proposed.sources else [],
+                            text=proposed.text,
+                        ) for proposed in html_partial.proposed_nodes
+                    ]
+                )
+                # Validate that the children and sources lists are valid to prevent breaking index errors
+                invalid_child_id = next(
+                    (id_num 
+                    for node in parsed_html_partial.proposed_nodes 
+                    for id_num in node.children
+                    if id_num not in range(len(blocks))
+                ), -1)
+                if invalid_child_id != -1:
+                    raise ValueError(f"Your response included an out of bounds child index: {invalid_child_id} (valid range: 0-{len(blocks)-1})")
+                invalid_source_id = next(
+                    (id_num 
+                    for node in parsed_html_partial.proposed_nodes 
+                    for id_num in node.sources
+                    if id_num not in range(len(blocks))
+                ), -1)
+                if invalid_source_id != -1:
+                    hint = " Remember to use *inclusive* ranges. E.g., 0-2 encompasses 0, 1, and 2. The last index is included in the range!"
+                    raise ValueError(f"Your response included an out of bounds source index: {invalid_source_id} (valid range: 0-{len(blocks)-1}){hint if invalid_source_id + 1 == len(blocks) else ''}")
+                
+                # Log the validated response for review and fine-tuning
+                log_entry = {
+                    "timestamp": datetime.now().isoformat(),
+                    "model": actual_model,
+                    "cost": float(cost),
+                    "depth": depth,
+                    "context": context.model_dump(),
+                    "input_blocks_count": len(blocks),
+                    "messages": messages,
+                    "raw_response": response.choices[0].message.content,
+                    "parsed_response": parsed_html_partial.model_dump(),
+                    "validation_attempt": attempt + 1
+                }
+                response_logger.info(json.dumps(log_entry, ensure_ascii=False))
+                
+                return parsed_html_partial
+            else:
+                logger.warning("No valid response from LLM")
                 return None
-        return None
+        except (ValidationError, ValueError) as e:
+            if attempt < max_validation_attempts - 1:
+                logger.warning(f"Validation error (attempt {attempt+1}/{max_validation_attempts}): {e}")
+                # Append error message and retry
+                messages.append({
+                    "role": "user",
+                    "content": f"Your previous response had a validation error: {str(e)}. "
+                               "Please correct your response to match the required schema and constraints."
+                })
+            else:
+                logger.warning(f"Validation error on final attempt: {e}")
+                return None
+        except Exception as e:
+            # LiteLLM Router already handled retries and fallbacks for API errors
+            logger.error(f"Error processing input after all retries and fallbacks: {e}")
+            return None
+    return None
 
 
 async def detect_nested_structure(
     blocks: list[ContentBlock],
     context: Context,
     router: Router,
-    semaphore: asyncio.Semaphore,
     depth: int = 0,
     max_depth: int = 5,
 ) -> list[StructuredNode]:
@@ -270,8 +348,7 @@ async def detect_nested_structure(
     Args:
         blocks: List of `ContentBlock` objects that represent the content of an HTML node.
         context: Context for the LLM, including the parent headings and tags.
-        router: LiteLLM Router instance with fallback configuration.
-        semaphore: Semaphore for rate limiting.
+        router: LiteLLM Router instance with fallback configuration and built-in concurrency control.
         depth: Current depth of recursion.
         max_depth: Maximum depth to recurse.
 
@@ -284,7 +361,7 @@ async def detect_nested_structure(
         return _create_nodes_from_blocks(blocks)
 
     # Process the input with the LLM
-    response: ParsedHTMLPartial | None = await _process_single_input_with_semaphore(blocks, context, semaphore, router)
+    response: ParsedHTMLPartial | None = await _process_single_input(blocks, context, router, depth)
     nodes = []
     # Stop recursion if LLM response is invalid
     if response is None:
@@ -316,13 +393,12 @@ async def detect_nested_structure(
                         [blocks[j] for j in proposed.children],
                         context=child_context,
                         router=router,
-                        semaphore=semaphore,
                         depth=depth + 1,
                         max_depth=max_depth,
                     )
                 )
 
-        # 2. Await all child tasks in parallel (bounded by the shared semaphore)
+        # 2. Await all child tasks in parallel (Router handles concurrency control automatically)
         if child_tasks:
             resolved_lists = await asyncio.gather(*child_tasks.values())
             children_results = {
@@ -348,8 +424,6 @@ async def detect_nested_structure(
 
 
 if __name__ == "__main__":
-    import os
-    import json
     import time
     import dotenv
     import pymupdf
@@ -359,23 +433,23 @@ if __name__ == "__main__":
     async def _test_main() -> None:
         """Ad-hoc harness for manual testing; not used by production code."""
 
-        # Increase concurrency even more - Router handles load balancing intelligently
-        semaphore = asyncio.Semaphore(20)  # Increased from 12 to 20
-
         # Get API keys for all providers
         gemini_api_key = os.getenv("GEMINI_API_KEY")
         openai_api_key = os.getenv("OPENAI_API_KEY")
         deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
+        openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
         
         assert gemini_api_key, "GEMINI_API_KEY is not set"
         assert openai_api_key, "OPENAI_API_KEY is not set"
         assert deepseek_api_key, "DEEPSEEK_API_KEY is not set"
+        assert openrouter_api_key, "OPENROUTER_API_KEY is not set"
 
-        # Create router with advanced load balancing
+        # Create router with built-in load balancing and concurrency control
         router = create_router(
             gemini_api_key, 
             openai_api_key, 
-            deepseek_api_key
+            deepseek_api_key,
+            openrouter_api_key,
         )
 
         doc = pymupdf.open(os.path.join("artifacts", "wkdir", "doc_601.pdf"))
@@ -395,7 +469,6 @@ if __name__ == "__main__":
                 blocks,
                 context=Context(parent_tags=[tag_name], parent_heading=None),
                 router=router,
-                semaphore=semaphore,
                 max_depth=7,
             )
             for tag_name, blocks in top_level_structure
@@ -425,4 +498,4 @@ if __name__ == "__main__":
     start_time = time.time()
     asyncio.run(_test_main())
     end_time = time.time()
-    print(f"Time taken: {end_time - start_time} seconds")
+    logger.info(f"Time taken: {end_time - start_time} seconds")
