@@ -55,6 +55,8 @@ Return your response in the following JSON format:
 
 {response_schema}
 
+Remember to use *inclusive* ranges. E.g., 0-2 encompasses 0, 1, and 2. The last index is included in the range!
+
 Note that you may either wrap elements in a structural container or mutate them by splitting/merging/replacing; don't do both things to the same element.
 Elements you wrap in a structural container will be further processed by a subagent.
 Every node should be mapped by id to either `children` or `sources`.
@@ -164,7 +166,8 @@ async def _process_single_input_with_semaphore(
                         if id_num not in range(len(blocks))
                     ), -1)
                     if invalid_source_id != -1:
-                        raise ValueError(f"Your response included an out of bounds source index: {invalid_source_id} (valid range: 0-{len(blocks)-1})")
+                        hint = " Remember to use *inclusive* ranges. E.g., 0-2 encompasses 0, 1, and 2. The last index is included in the range!"
+                        raise ValueError(f"Your response included an out of bounds source index: {invalid_source_id} (valid range: 0-{len(blocks)-1}){hint if invalid_source_id + 1 == len(blocks) else ''}")
                     return parsed_html_partial
                 else:
                     print("Warning: No valid response from Gemini")
