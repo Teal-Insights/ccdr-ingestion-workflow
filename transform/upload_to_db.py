@@ -22,16 +22,13 @@ def upload_structured_nodes_to_db(nested_structure: list[StructuredNode], docume
             if node.tag == TagName.IMG or node.text is not None:
                 embedding_source = EmbeddingSource.DESCRIPTION if node.tag == TagName.IMG else EmbeddingSource.TEXT_CONTENT
                 text_content = node.text if node.tag != TagName.IMG else None
-                storage_url = node.attributes.get('src') if node.tag == TagName.IMG else None
-                description = node.attributes.get('alt') if node.tag == TagName.IMG else None
-                caption = node.attributes.get('caption') if node.tag == TagName.IMG else None
 
                 content_data = ContentData(
                     node_id=db_node.id,
                     text_content=text_content,
-                    storage_url=storage_url,
-                    description=description,
-                    caption=caption,
+                    storage_url=node.storage_url,
+                    description=node.description,
+                    caption=node.caption,
                     embedding_source=embedding_source,
                 )
                 session.add(content_data)

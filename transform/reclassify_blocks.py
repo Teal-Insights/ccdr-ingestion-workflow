@@ -242,6 +242,9 @@ async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> li
         for i, classification in enumerate(classifications):
             content_blocks[indices_to_reclassify[i]].block_type = classification
             content_blocks[indices_to_reclassify[i]].embedding_source = get_embedding_source(classification)
+
+    # Exclude content blocks of non-picture type that have no text content
+    content_blocks = [block for block in content_blocks if block.block_type == BlockType.PICTURE or block.text_content.strip()]
     return content_blocks
 
 

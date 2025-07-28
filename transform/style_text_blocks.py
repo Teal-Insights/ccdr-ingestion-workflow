@@ -1,3 +1,5 @@
+# TODO: In the event there are overlapping or redundant style tags in the result, we should remove them
+
 import pymupdf
 import re
 from typing import Dict, List, Tuple
@@ -252,14 +254,17 @@ def style_text_blocks(content_blocks: list[ContentBlock], pdf_path: str, temp_di
                     if original_span_text not in used_spans:
                         print(f"Warning: No match found for styled span: '{original_span_text.strip()}'")
         
+        # Discard empty text blocks as a sanity check
+        final_styled_blocks = [block for block in styled_blocks if block.block_type == BlockType.PICTURE or block.text_content.strip()]
+        
         print("\nStyling summary:")
         print(f"  Total content blocks: {len(content_blocks)}")
         print(f"  Excluded blocks (headers/footers): {excluded_count}")
         print(f"  Blocks with styling applied: {total_styled_blocks}")
         print(f"  Total style spans applied: {total_styled_spans_applied}")
-        print(f"  Final output blocks: {len(styled_blocks)}")
-        
-        return styled_blocks
+        print(f"  Final output blocks: {len(final_styled_blocks)}")
+
+        return final_styled_blocks
         
     finally:
         doc.close()

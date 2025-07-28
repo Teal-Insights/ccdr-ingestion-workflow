@@ -28,7 +28,7 @@ from transform.extract_images import extract_images_from_pdf
 from transform.describe_images import describe_images_with_vlm
 from transform.style_text_blocks import style_text_blocks
 from transform.detect_top_level_structure import detect_top_level_structure
-from transform.detect_nested_structure import detect_nested_structure, Context
+from transform.detect_nested_structure import detect_nested_structure, Context, create_router
 from transform.upload_to_db import upload_structured_nodes_to_db
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node, TagName
@@ -144,13 +144,13 @@ async def main() -> None:
         print("Structure detected successfully!")
 
         # 10. Recursively detect the nested structure of the document with concurrency control
-        semaphore = asyncio.Semaphore(2)  # rate-limit concurrent nested structure calls
+        router = create_router(gemini_api_key, deepseek_api_key, layout_extractor_api_key, layout_extractor_api_url)
         tasks = [
             detect_nested_structure(
                 blocks,
                 context=Context(parent_tags=[tag_name], parent_heading=None),
-                api_key=gemini_api_key,
-                semaphore=semaphore,
+                router=router,
+                max_depth=7,
             )
             for tag_name, blocks in top_level_structure
         ]

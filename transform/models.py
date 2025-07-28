@@ -84,25 +84,38 @@ class ContentBlock(ContentBlockBase):
 
 
 class StructuredNode(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    
     tag: TagName = Field(description="HTML tag name")
-    attributes: dict[str, str] = Field(default_factory=dict, description="HTML attributes")
     children: list["StructuredNode"] = Field(default_factory=list, description="Child nodes")
     text: Optional[str] = Field(default=None, description="Text content")
     section_type: Optional[SectionType] = Field(default=None, description="Section type")
     positional_data: list[PositionalData] = Field(default_factory=list, description="Aggregate positional data")
+    storage_url: Optional[str] = Field(default=None, description="URL of the image or other content (if a non-text block)")
+    description: Optional[str] = Field(default=None, description="Description of the block (if a non-text block)")
+    caption: Optional[str] = Field(default=None, description="Caption associated with the block (if available)")
 
     def to_html(self) -> str:
-        attrs = " ".join(f'{k}="{v}"' for k, v in self.attributes.items())
-        attrs_part = f" {attrs}" if attrs else ""
-        children_html = "".join(child.to_html() for child in self.children)
+        children_html = "\n".join(child.to_html() for child in self.children)
         
         if self.tag == "img":
+            img_attrs = []
+            
+            # Add src attribute if storage_url is available
+            if self.storage_url:
+                img_attrs.append(f'src="{self.storage_url}"')
+            
+            # Add alt attribute if description is available
+            if self.description:
+                img_attrs.append(f'alt="{self.description}"')
+            
+            attrs_str = " ".join(img_attrs)
+            attrs_part = f" {attrs_str}" if attrs_str else ""
             return f"<img{attrs_part} />"
         elif self.text:
-            escaped_text = html.escape(self.text)
-            return f"<{self.tag}{attrs_part}>{escaped_text}</{self.tag}>"
+            return f"<{self.tag}>{self.text}</{self.tag}>"
         else:
-            return f"<{self.tag}{attrs_part}>{children_html}</{self.tag}>"
+            return f"<{self.tag}>{children_html}</{self.tag}>"
 
 
 def create_image_block_html(block: ContentBlock, bboxes: bool = False, block_id: Optional[int] = None) -> str:
@@ -188,6 +201,5 @@ def create_text_block_html(block: ContentBlock, bboxes: bool = False, block_id: 
     
     # Use text_content or fallback to empty string
     text_content = block.text_content or ""
-    escaped_text_content = html.escape(text_content)
     
-    return f"<p{attrs_part}>{escaped_text_content}</p>"
+    return f"<p{attrs_part}>{text_content}</p>"

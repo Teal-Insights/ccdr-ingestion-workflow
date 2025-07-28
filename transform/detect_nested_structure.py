@@ -4,9 +4,13 @@
 #  3. Validate that list items have a list container parent
 #  4. Validate that table components have a table container parent
 #  5. Validate that the LLM doesn't propose a single wrapper node that has all the indices as its children
-#  6. Accumulate cost of all calls to the LLM and log the total cost at the end
-#  7. Add a "smart" model group to the router for fallback on validation errors
-#  8. Add some examples to the prompt, maybe even use cosine similarity to find the most similar example
+#  6. validate that any proposed img tag node has exactly one source, and the source is an img block
+#  7. Accumulate cost of all calls to the LLM and log the total cost at the end
+#  8. Add a "smart" model group to the router for fallback on validation errors
+#  9. Add some examples to the prompt, maybe even use cosine similarity to find the most similar example
+#  10. Remove attributes from the StructuredNode, since we're not using it
+#  11. Use a helper for Markdown code block extraction in case the LLM wraps the output JSON
+#  12. For images, get the text content of next sibling caption or figcaption block, if any, and assign to caption field
 
 import logging
 import asyncio
@@ -23,7 +27,7 @@ from transform.detect_top_level_structure import parse_range_string
 from transform.models import ContentBlock, StructuredNode, BlockType
 from utils.schema import TagName, PositionalData
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Create specialized file logger for validated responses
@@ -85,22 +89,30 @@ class ParsedHTMLPartial(BaseModel):
 
 
 PROMPT = """You are an expert in HTML and document structure.
-You are given a list of HTML blocks that represent the content of an HTML node.
-Your task is to propose a better structured HTML representation of the content.
-You may only use the following tags: {allowed_tags}.
+You are given an HTML document with a flat structure and only `p` and `img` tags.
+Your task is to propose a better structured HTML representation of the content, with semantic tags and logical hierarchy.
+
+# Response format
 
 Return your response in the following JSON format:
 
+```json
 {response_schema}
+```
 
-Remember to use *inclusive* ranges. E.g., 0-2 encompasses 0, 1, and 2. The last index is included in the range!
+# Requirements
 
-Note that you may either wrap elements in a structural container or mutate them by splitting/merging/replacing; don't do both things to the same element.
-Elements you wrap in a structural container will be further processed by a subagent.
-Every node should be mapped by id to either `children` or `sources`.
-Leaves with `sources` are leaf nodes and should usually (except for images) have `text` content.
-For purposes of this exercise, in-line styling tags like `b`, `i`, `u`, `s`, `sup`, and `sub` are considered text content.
-Clean up whitespace problems and mis-encoded character entities like `&amp;`, but otherwise remain faithful to the original text.
+- You may only use the following tags: {allowed_tags}.
+- Remember to use *inclusive* ranges. E.g., 0-2 encompasses 0, 1, and 2. The last index is included in the range!
+- Every node should be mapped by id to exactly one `children` or `sources` field.
+- `children` and `sources` must be disjoint.
+    - That is, you may wrap elements in a structural container or mutate them by splitting/merging/replacing; don't do both to the same element.
+    - Elements you wrap in a structural container will be further processed by a subagent, so they cease to be your concern.
+- Leaves with `sources` are leaf nodes and should usually have `text` content (except for images).
+- For purposes of this exercise, in-line styling tags like `b`, `i`, `u`, `s`, `sup`, and `sub` are considered text content.
+- Clean up whitespace problems and mis-encoded character entities like `&amp;`, but otherwise remain faithful to the original text.
+
+# Task
 
 Below is the HTML content you are to transform.
 The parent nodes of this content are: {parent_tags}.
@@ -108,13 +120,32 @@ The parent heading level, if any, is: {parent_heading}.
 
 Content:
 
+```html
 {html_representation}
+```
 """
 
 ALLOWED_TAGS: str = ", ".join(
-    repr(tag.value) for tag in TagName
+    tag.value for tag in TagName
     if tag not in [TagName.HEADER, TagName.MAIN, TagName.FOOTER]
 )
+
+
+def de_fence(text: str) -> str:
+    """If response is fenced code block, remove fence"""
+    stripped_text = text.strip()
+    if stripped_text.startswith(("```json\n", "```\n", "``` json\n")):
+        # Find the first newline after the opening fence
+        first_newline = stripped_text.find('\n')
+        if first_newline != -1:
+            # Remove the opening fence
+            stripped_text = stripped_text[first_newline + 1:]
+        
+        # Remove the closing fence if it exists
+        if stripped_text.endswith("\n```"):
+            stripped_text = stripped_text[:-4].rstrip()
+    
+    return stripped_text
 
 
 def create_router(
@@ -128,17 +159,6 @@ def create_router(
         {
             "model_name": "html-parser",  # Using a common model_name for load balancing
             "litellm_params": {
-                "model": "gemini/gemini-2.5-flash",
-                "api_key": gemini_api_key,
-                "tpm": 250000,  # tokens per minute
-                "rpm": 10,    # requests per minute
-                "max_parallel_requests": 2,
-                "weight": 3,
-            }
-        },
-        {
-            "model_name": "html-parser",  # Using a common model_name for load balancing
-            "litellm_params": {
                 "model": "openrouter/google/gemini-2.5-flash",
                 "api_key": openrouter_api_key,
                 "max_parallel_requests": 5,
@@ -148,9 +168,9 @@ def create_router(
         {
             "model_name": "html-parser",
             "litellm_params": {
-                "model": "qwen/qwen3-coder:free",
+                "model": "openrouter/qwen/qwen3-coder:free",
                 "api_key": openrouter_api_key,
-                "max_parallel_requests": 5,
+                "max_parallel_requests": 1,
                 "weight": 3,
             }
         },
@@ -170,17 +190,6 @@ def create_router(
                 "api_key": deepseek_api_key,
                 "max_parallel_requests": 15,
                 "weight": 2,    # Secondary preference
-            }
-        },
-        {
-            "model_name": "html-parser",
-            "litellm_params": {
-                "model": "gpt-4o-mini",
-                "api_key": openai_api_key,
-                "tpm": 200000,
-                "rpm": 500,
-                "max_parallel_requests": 15,
-                "weight": 1,    # Fallback option
             }
         }
     ]
@@ -211,6 +220,8 @@ def _create_nodes_from_blocks(blocks: list[ContentBlock]) -> list[StructuredNode
                 children=[],
                 text=block.text_content,
                 positional_data=[block.positional_data],
+                description=block.description,
+                storage_url=block.storage_url
             )
         )
     return leaf_nodes
@@ -229,8 +240,8 @@ async def _process_single_input(
             "role": "user",
             "content": PROMPT.format(
                 html_representation=html_representation,
-                parent_tags=" -> ".join([f"{tag}" for tag in context.parent_tags]),
-                parent_heading=context.parent_heading or "None",
+                parent_tags=" -> ".join([f"{tag.value}" for tag in context.parent_tags]),
+                parent_heading=context.parent_heading.value if context.parent_heading else "None",
                 allowed_tags=ALLOWED_TAGS,
                 response_schema=HTMLPartial.model_json_schema()
             )
@@ -265,7 +276,7 @@ async def _process_single_input(
                 logger.debug(f"${float(cost):.10f} (using {actual_model})")
                 
                 html_partial = HTMLPartial.model_validate_json(
-                    response.choices[0].message.content
+                    de_fence(response.choices[0].message.content)
                 )
                 parsed_html_partial = ParsedHTMLPartial(
                     proposed_nodes=[
@@ -417,6 +428,8 @@ async def detect_nested_structure(
                     text=proposed.text,
                     # TODO: introduce a helper to merge same-page bboxes; also use children's positional data
                     positional_data=[blocks[j].positional_data for j in proposed.sources],
+                    description=blocks[proposed.sources[0]].description if proposed.sources else None,
+                    storage_url=blocks[proposed.sources[0]].storage_url if proposed.sources else None,
                 )
             )
     # Base case: all nodes are leaves or all children have been processed
