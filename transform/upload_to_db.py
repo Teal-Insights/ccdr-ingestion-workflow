@@ -43,3 +43,20 @@ def upload_structured_nodes_to_db(nested_structure: list[StructuredNode], docume
         for idx, root in enumerate(nested_structure):
             _upload(root, None, idx)
         session.commit()
+
+if __name__ == "__main__":
+    import os
+    import json
+    from transform.models import StructuredNode
+
+    # Load nested structure from JSON (for testing purposes)
+    file_path = os.path.join("artifacts", "doc_601_nested_structure.json")
+    with open(file_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    # Parse into StructuredNode objects
+    nested_structure = [StructuredNode.model_validate(item) for item in data]
+
+    # Test document_id (replace with actual ID as needed)
+    test_document_id = 601
+    upload_structured_nodes_to_db(nested_structure, test_document_id)
+    print(f"Uploaded nested structure to DB for document_id {test_document_id}")
