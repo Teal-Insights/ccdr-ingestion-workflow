@@ -334,7 +334,7 @@ if __name__ == "__main__":
                     positional_data=[
                         PositionalData(
                             page_pdf=page_number,
-                            bbox=page_dimensions[page_number],
+                            bbox=page_dimensions[page_number - 1],
                         )
                         for page_number in {block.positional_data.page_pdf for block in blocks}
                     ],
