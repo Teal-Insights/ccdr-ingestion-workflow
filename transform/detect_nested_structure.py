@@ -7,8 +7,7 @@
 #  6. Accumulate cost of all calls to the LLM and print the total cost at the end
 
 import asyncio
-from tenacity import retry, stop_after_attempt, wait_exponential
-from litellm import acompletion, completion_cost
+from litellm import Router, completion_cost
 from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
 from typing import Optional
@@ -79,6 +78,63 @@ ALLOWED_TAGS: str = ", ".join(
 )
 
 
+def create_router(
+    gemini_api_key: str, 
+    openai_api_key: str, 
+    deepseek_api_key: str
+) -> Router:
+    """Create a LiteLLM Router with advanced load balancing and fallback configuration."""
+    model_list = [
+        {
+            "model_name": "html-parser",  # Using a common model_name for load balancing
+            "litellm_params": {
+                "model": "gemini/gemini-2.5-flash",
+                "api_key": gemini_api_key,
+                "tpm": 120000,  # tokens per minute
+                "rpm": 2000,    # requests per minute
+                "max_parallel_requests": 20,  # concurrent requests to this deployment
+                "weight": 3,    # Prefer Gemini (3x more likely to be chosen)
+            }
+        },
+        {
+            "model_name": "html-parser",
+            "litellm_params": {
+                "model": "deepseek/deepseek-chat", 
+                "api_key": deepseek_api_key,
+                "tpm": 100000,
+                "rpm": 1000,
+                "max_parallel_requests": 15,
+                "weight": 2,    # Secondary preference
+            }
+        },
+        {
+            "model_name": "html-parser",
+            "litellm_params": {
+                "model": "gpt-4o-mini",
+                "api_key": openai_api_key,
+                "tpm": 150000,
+                "rpm": 1000,
+                "max_parallel_requests": 15,
+                "weight": 1,    # Fallback option
+            }
+        }
+    ]
+    
+    # Router configuration without Redis
+    return Router(
+        model_list=model_list,
+        routing_strategy="simple-shuffle",  # Weighted random selection without Redis
+        fallbacks=[{"html-parser": ["html-parser"]}],  # Falls back within the same group
+        num_retries=2,
+        request_timeout=45,
+        allowed_fails=5,  # More lenient - allow more fails before cooldown
+        cooldown_time=30,  # Shorter cooldown time
+        enable_pre_call_checks=True,  # Enable context window and rate limit checks
+        default_max_parallel_requests=50,  # Global default
+        set_verbose=False,  # Set to True for debugging
+    )
+
+
 def _create_nodes_from_blocks(blocks: list[ContentBlock]) -> list[StructuredNode]:
     """Fallback helper to create leaf StructuredNodes from a list of ContentBlocks
     when the LLM fails to propose a valid response or maximum depth is reached."""
@@ -97,9 +153,12 @@ def _create_nodes_from_blocks(blocks: list[ContentBlock]) -> list[StructuredNode
 
 
 async def _process_single_input_with_semaphore(
-    blocks: list[ContentBlock], context: Context, semaphore: asyncio.Semaphore, api_key: str
+    blocks: list[ContentBlock], 
+    context: Context, 
+    semaphore: asyncio.Semaphore, 
+    router: Router
 ) -> ParsedHTMLPartial | None:
-    """Process a single input with semaphore control."""
+    """Process a single input with semaphore control using LiteLLM Router with fallbacks."""
     html_representation = "".join([block.to_html(block_id=i) for i, block in enumerate(blocks)])
     messages = [
         {
@@ -115,18 +174,20 @@ async def _process_single_input_with_semaphore(
     ]
     
     async with semaphore:
-        max_attempts = 3
-        for attempt in range(max_attempts):
+        # Simplified - let LiteLLM handle retries and fallbacks
+        # Only retry on validation errors, not API failures
+        max_validation_attempts = 3
+        for attempt in range(max_validation_attempts):
             try:
-                response = await acompletion(
-                    model="gemini/gemini-2.5-flash",
+                # Use the router - it handles retries and fallbacks automatically
+                response = await router.acompletion(
+                    model="html-parser",  # Use the common model name for load balancing
                     messages=messages,
                     temperature=0.0,
                     response_format={
                         "type": "json_object",
                         "response_schema": HTMLPartial.model_json_schema(),
-                    },
-                    api_key=api_key
+                    }
                 )
 
                 if (
@@ -136,7 +197,10 @@ async def _process_single_input_with_semaphore(
                     and response.choices[0].message.content
                 ):
                     cost = completion_cost(completion_response=response)
-                    print(f"${float(cost):.10f}")
+                    # Get actual model used from response
+                    actual_model = getattr(response, 'model', 'unknown')
+                    print(f"${float(cost):.10f} (using {actual_model})")
+                    
                     html_partial = HTMLPartial.model_validate_json(
                         response.choices[0].message.content
                     )
@@ -170,11 +234,11 @@ async def _process_single_input_with_semaphore(
                         raise ValueError(f"Your response included an out of bounds source index: {invalid_source_id} (valid range: 0-{len(blocks)-1}){hint if invalid_source_id + 1 == len(blocks) else ''}")
                     return parsed_html_partial
                 else:
-                    print("Warning: No valid response from Gemini")
+                    print("Warning: No valid response from LLM")
                     return None
             except (ValidationError, ValueError) as e:
-                if attempt < max_attempts - 1:
-                    print(f"Validation error (attempt {attempt+1}/{max_attempts}): {e}")
+                if attempt < max_validation_attempts - 1:
+                    print(f"Validation error (attempt {attempt+1}/{max_validation_attempts}): {e}")
                     # Append error message and retry
                     messages.append({
                         "role": "user",
@@ -185,16 +249,16 @@ async def _process_single_input_with_semaphore(
                     print(f"Validation error on final attempt: {e}")
                     return None
             except Exception as e:
-                print(f"Error processing input: {e}")
+                # LiteLLM Router already handled retries and fallbacks for API errors
+                print(f"Error processing input after all retries and fallbacks: {e}")
                 return None
         return None
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 async def detect_nested_structure(
     blocks: list[ContentBlock],
     context: Context,
-    api_key: str,
+    router: Router,
     semaphore: asyncio.Semaphore,
     depth: int = 0,
     max_depth: int = 5,
@@ -206,7 +270,7 @@ async def detect_nested_structure(
     Args:
         blocks: List of `ContentBlock` objects that represent the content of an HTML node.
         context: Context for the LLM, including the parent headings and tags.
-        api_key: API key for the LLM.
+        router: LiteLLM Router instance with fallback configuration.
         semaphore: Semaphore for rate limiting.
         depth: Current depth of recursion.
         max_depth: Maximum depth to recurse.
@@ -220,7 +284,7 @@ async def detect_nested_structure(
         return _create_nodes_from_blocks(blocks)
 
     # Process the input with the LLM
-    response: ParsedHTMLPartial | None = await _process_single_input_with_semaphore(blocks, context, semaphore, api_key)
+    response: ParsedHTMLPartial | None = await _process_single_input_with_semaphore(blocks, context, semaphore, router)
     nodes = []
     # Stop recursion if LLM response is invalid
     if response is None:
@@ -251,7 +315,7 @@ async def detect_nested_structure(
                     detect_nested_structure(
                         [blocks[j] for j in proposed.children],
                         context=child_context,
-                        api_key=api_key,
+                        router=router,
                         semaphore=semaphore,
                         depth=depth + 1,
                         max_depth=max_depth,
@@ -295,10 +359,24 @@ if __name__ == "__main__":
     async def _test_main() -> None:
         """Ad-hoc harness for manual testing; not used by production code."""
 
-        semaphore = asyncio.Semaphore(2)  # rate-limit concurrent Gemini calls
+        # Increase concurrency even more - Router handles load balancing intelligently
+        semaphore = asyncio.Semaphore(20)  # Increased from 12 to 20
 
-        api_key = os.getenv("GEMINI_API_KEY")
-        assert api_key, "GEMINI_API_KEY is not set"
+        # Get API keys for all providers
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
+        
+        assert gemini_api_key, "GEMINI_API_KEY is not set"
+        assert openai_api_key, "OPENAI_API_KEY is not set"
+        assert deepseek_api_key, "DEEPSEEK_API_KEY is not set"
+
+        # Create router with advanced load balancing
+        router = create_router(
+            gemini_api_key, 
+            openai_api_key, 
+            deepseek_api_key
+        )
 
         doc = pymupdf.open(os.path.join("artifacts", "wkdir", "doc_601.pdf"))
         page_dimensions = {
@@ -316,7 +394,7 @@ if __name__ == "__main__":
             detect_nested_structure(
                 blocks,
                 context=Context(parent_tags=[tag_name], parent_heading=None),
-                api_key=api_key,
+                router=router,
                 semaphore=semaphore,
                 max_depth=7,
             )
