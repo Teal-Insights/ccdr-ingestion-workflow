@@ -1,10 +1,10 @@
-# TODO: For validation errors in the response parsing, append a user message to messages: explain the error and retry
 # TODOs:
 #  1. Validate that the children and sources lists are disjoint
 #  2. Validate that all original ids are present in the children and sources lists
 #  3. Validate that list items have a list container parent
 #  4. Validate that table components have a table container parent
 #  5. Validate that the LLM doesn't propose a single wrapper node that has all the indices as its children
+#  6. Accumulate cost of all calls to the LLM and print the total cost at the end
 
 import asyncio
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -26,8 +26,8 @@ class Context(BaseModel):
 
 class ProposedNode(BaseModel):
     tag: TagName = Field(description="HTML tag name")
-    children: Optional[str] = Field(default=None, description="Comma-separated ranges for ids of elements that will become children of this node (e.g., '1-3,5,7-9')")
-    sources: Optional[str] = Field(default=None, description="Comma-separated ranges for ids of elements being merged into or replaced by this node, or from which this node is being split (e.g., '4,6,10-12')")
+    children: Optional[str] = Field(default=None, description="Comma-separated inclusive ranges for ids of elements that will become children of this node (e.g., '0-3,5,7-9')")
+    sources: Optional[str] = Field(default=None, description="Comma-separated inclusive ranges for ids of elements being merged into or replaced by this node, or from which this node is being split (e.g., '4,6,10-12')")
     text: Optional[str] = Field(default=None, description="Text content (should only be present for leaf nodes, may contain `b`, `i`, `u`, `s`, `sup`, `sub` tags)")
 
 
@@ -154,22 +154,22 @@ async def _process_single_input_with_semaphore(
                         for node in parsed_html_partial.proposed_nodes 
                         for id_num in node.children
                         if id_num not in range(len(blocks))
-                    ), default=None)
-                    if invalid_child_id is not None:
+                    ), -1)
+                    if invalid_child_id != -1:
                         raise ValueError(f"Your response included an out of bounds child index: {invalid_child_id} (valid range: 0-{len(blocks)-1})")
                     invalid_source_id = next(
                         (id_num 
                         for node in parsed_html_partial.proposed_nodes 
                         for id_num in node.sources
                         if id_num not in range(len(blocks))
-                    ), default=None)
-                    if invalid_source_id is not None:
+                    ), -1)
+                    if invalid_source_id != -1:
                         raise ValueError(f"Your response included an out of bounds source index: {invalid_source_id} (valid range: 0-{len(blocks)-1})")
                     return parsed_html_partial
                 else:
                     print("Warning: No valid response from Gemini")
                     return None
-            except (ValidationError, AssertionError) as e:
+            except (ValidationError, ValueError) as e:
                 if attempt < max_attempts - 1:
                     print(f"Validation error (attempt {attempt+1}/{max_attempts}): {e}")
                     # Append error message and retry
