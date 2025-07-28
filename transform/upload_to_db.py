@@ -1,0 +1,45 @@
+from transform.models import StructuredNode
+from sqlmodel import Session
+from utils.db import engine
+from utils.schema import Node as DBNode, ContentData, EmbeddingSource, NodeType, TagName
+
+def upload_structured_nodes_to_db(nested_structure: list[StructuredNode], document_id: str) -> None:
+    with Session(engine) as session:
+        def _upload(node: StructuredNode, parent_id: int | None, seq: int):
+            db_node = DBNode(
+                document_id=int(document_id),
+                node_type=NodeType.ELEMENT_NODE,
+                tag_name=node.tag,
+                section_type=node.section_type,
+                parent_id=parent_id,
+                sequence_in_parent=seq,
+                positional_data=[pos.dict() for pos in node.positional_data],
+            )
+            session.add(db_node)
+            session.flush()
+
+            # Create ContentData for text or image nodes
+            if node.tag == TagName.IMG or node.text is not None:
+                embedding_source = EmbeddingSource.DESCRIPTION if node.tag == TagName.IMG else EmbeddingSource.TEXT_CONTENT
+                text_content = node.text if node.tag != TagName.IMG else None
+                storage_url = node.attributes.get('src') if node.tag == TagName.IMG else None
+                description = node.attributes.get('alt') if node.tag == TagName.IMG else None
+                caption = node.attributes.get('caption') if node.tag == TagName.IMG else None
+
+                content_data = ContentData(
+                    node_id=db_node.id,
+                    text_content=text_content,
+                    storage_url=storage_url,
+                    description=description,
+                    caption=caption,
+                    embedding_source=embedding_source,
+                )
+                session.add(content_data)
+
+            # Recursively upload child nodes
+            for idx, child in enumerate(node.children):
+                _upload(child, db_node.id, idx)
+
+        for idx, root in enumerate(nested_structure):
+            _upload(root, None, idx)
+        session.commit()
