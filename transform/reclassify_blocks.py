@@ -1,4 +1,5 @@
 # TODO: Move text_content into ContentBlockBase and save the original text_content
+# TODO: We should discard any detected LayoutBlocks whose bbox is fully outside the page area
 
 import pymupdf
 from transform.models import LayoutBlock, BlockType, ContentBlockBase

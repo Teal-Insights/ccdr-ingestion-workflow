@@ -106,7 +106,7 @@ async def main() -> None:
                 ExtractedLayoutBlock.model_validate(block) for block in json.load(f)
             ]
 
-        # 4. Use page numbers to label all blocks with logical page numbers, then discard headers footer, and page number blocks
+        # 4. Use page numbers to label all blocks with logical page numbers, then discard page header and footer blocks
         layout_blocks: list[LayoutBlock] = add_logical_page_numbers(extracted_layout_blocks, deepseek_api_key)
         filtered_layout_blocks: list[LayoutBlock] = [
             block for block in layout_blocks if block.type not in [BlockType.PAGE_HEADER, BlockType.PAGE_FOOTER]

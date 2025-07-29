@@ -1,3 +1,5 @@
+# TODO: We should perhaps zero-index the page numbers throughout the codebase
+
 import json
 import re
 from collections import defaultdict
