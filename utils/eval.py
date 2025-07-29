@@ -3,7 +3,7 @@ import re
 from statistics import mean
 from transform.detect_nested_structure import ParsedHTMLPartial, Context
 
-FILEPATH = "artifacts/validated_responses_20250728_171253.jsonl"
+FILEPATH = "artifacts/validated_responses_20250729_171818.jsonl"
 
 with open(FILEPATH, "r") as f:
     data = []

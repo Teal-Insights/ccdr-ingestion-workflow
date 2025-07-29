@@ -157,39 +157,12 @@ def create_router(
     """Create a LiteLLM Router with advanced load balancing and fallback configuration."""
     model_list = [
         {
-            "model_name": "html-parser",  # Using a common model_name for load balancing
-            "litellm_params": {
-                "model": "openrouter/google/gemini-2.5-flash",
-                "api_key": openrouter_api_key,
-                "max_parallel_requests": 5,
-                "weight": 3,
-            }
-        },
-        {
-            "model_name": "html-parser",
-            "litellm_params": {
-                "model": "openrouter/qwen/qwen3-coder:free",
-                "api_key": openrouter_api_key,
-                "max_parallel_requests": 1,
-                "weight": 3,
-            }
-        },
-        {
             "model_name": "html-parser",
             "litellm_params": {
                 "model": "openrouter/x-ai/grok-3-mini",
                 "api_key": openrouter_api_key,
-                "max_parallel_requests": 5,
-                "weight": 3,
-            }
-        },
-        {
-            "model_name": "html-parser",
-            "litellm_params": {
-                "model": "deepseek/deepseek-chat", 
-                "api_key": deepseek_api_key,
-                "max_parallel_requests": 15,
-                "weight": 2,    # Secondary preference
+                "max_parallel_requests": 10,
+                "weight": 1,
             }
         }
     ]
@@ -258,10 +231,7 @@ async def _process_single_input(
                 model="html-parser",  # Use the common model name for load balancing
                 messages=messages,  # type: ignore[arg-type]
                 temperature=0.0,
-                response_format={
-                    "type": "json_object",
-                    "response_schema": HTMLPartial.model_json_schema(),
-                }
+                response_format=HTMLPartial
             )
 
             if (

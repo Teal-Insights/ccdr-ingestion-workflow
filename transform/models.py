@@ -73,14 +73,14 @@ class ContentBlock(ContentBlockBase):
     description: Optional[str] = Field(default=None, description="Description of the block (if a non-text block)")
     caption: Optional[str] = Field(default=None, description="Caption associated with the block (if available)")
 
-    def to_html(self, bboxes: bool = False, block_id: Optional[int] = None) -> str:
+    def to_html(self, bboxes: bool = False, block_id: Optional[int] = None, page_numbers: bool = False) -> str:
         """
         Convert the content block to an HTML string.
         """
         if self.block_type == BlockType.PICTURE:
-            return create_image_block_html(self, bboxes=bboxes, block_id=block_id)
+            return create_image_block_html(self, bboxes=bboxes, block_id=block_id, page_numbers=page_numbers)
         else:
-            return create_text_block_html(self, bboxes=bboxes, block_id=block_id)
+            return create_text_block_html(self, bboxes=bboxes, block_id=block_id, page_numbers=page_numbers)
 
 
 class StructuredNode(BaseModel):
@@ -118,7 +118,7 @@ class StructuredNode(BaseModel):
             return f"<{self.tag}>{children_html}</{self.tag}>"
 
 
-def create_image_block_html(block: ContentBlock, bboxes: bool = False, block_id: Optional[int] = None) -> str:
+def create_image_block_html(block: ContentBlock, bboxes: bool = False, block_id: Optional[int] = None, page_numbers: bool = False) -> str:
     """
     Create an img element for a picture block.
     
@@ -126,6 +126,7 @@ def create_image_block_html(block: ContentBlock, bboxes: bool = False, block_id:
         block: ContentBlock of type PICTURE
         bboxes: If True, include bbox coordinates as data attributes
         block_id: Optional block ID for the element
+        page_numbers: If True, include page number as data attribute
         
     Returns:
         HTML img element as string
@@ -136,8 +137,9 @@ def create_image_block_html(block: ContentBlock, bboxes: bool = False, block_id:
     if block_id is not None:
         img_attrs.append(f'id="{block_id}"')
     
-    # Add page data attribute
-    img_attrs.append(f'data-page="{block.positional_data.page_pdf}"')
+    # Add page data attribute if requested
+    if page_numbers:
+        img_attrs.append(f'data-page="{block.positional_data.page_pdf}"')
     
     # Add src attribute if storage_url is available
     if block.storage_url:
@@ -164,7 +166,7 @@ def create_image_block_html(block: ContentBlock, bboxes: bool = False, block_id:
     return f"<img {attrs_str} />"
 
 
-def create_text_block_html(block: ContentBlock, bboxes: bool = False, block_id: Optional[int] = None) -> str:
+def create_text_block_html(block: ContentBlock, bboxes: bool = False, block_id: Optional[int] = None, page_numbers: bool = False) -> str:
     """
     Create a p element for a text block.
     
@@ -172,6 +174,7 @@ def create_text_block_html(block: ContentBlock, bboxes: bool = False, block_id: 
         block: ContentBlock with text content
         bboxes: If True, include bbox coordinates as data attributes
         block_id: Optional block ID for the element
+        page_numbers: If True, include page number as data attribute
         
     Returns:
         HTML p element as string
@@ -182,8 +185,9 @@ def create_text_block_html(block: ContentBlock, bboxes: bool = False, block_id: 
     if block_id is not None:
         p_attrs.append(f'id="{block_id}"')
     
-    # Add page data attribute
-    p_attrs.append(f'data-page="{block.positional_data.page_pdf}"')
+    # Add page data attribute if requested
+    if page_numbers:
+        p_attrs.append(f'data-page="{block.positional_data.page_pdf}"')
     
     # Add bbox data attribute if requested
     if bboxes and block.positional_data.bbox:
