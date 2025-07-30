@@ -28,6 +28,9 @@ def create_nodes_from_html(html: str, content_blocks: list[ContentBlock]) -> lis
     
     def _convert_element_to_node(element: Tag) -> StructuredNode:
         """Convert a BeautifulSoup Tag to a StructuredNode."""
+        # Inline styling tags to treat as flat text
+        inline_style_tags = {'b', 'i', 'u', 's', 'sup', 'sub'}
+        
         # Get tag name and convert to TagName enum
         tag_name = TagName(element.name.lower())
         
@@ -36,22 +39,37 @@ def create_nodes_from_html(html: str, content_blocks: list[ContentBlock]) -> lis
         source_indices = parse_range_string(data_sources_str)
         positional_data = _get_positional_data(source_indices)
         
-        # Get text content (only direct text, not from children)
+        # Get text content, flattening inline style tags
         text_content = None
-        if element.string:
-            text_content = element.string.strip()
-        elif len(element.contents) == 1 and isinstance(element.contents[0], NavigableString):
-            text_content = str(element.contents[0]).strip()
-        
-        # Process children
         children = []
-        for child in element.children:
-            if isinstance(child, Tag):
-                children.append(_convert_element_to_node(child))
-            elif isinstance(child, NavigableString) and child.strip():
-                # Skip if we already captured this as text_content
-                if not text_content:
-                    text_content = child.strip()
+        
+        # Check if this element has mixed content (text + inline styling)
+        has_inline_styles = any(
+            isinstance(child, Tag) and child.name.lower() in inline_style_tags
+            for child in element.children
+        )
+        
+        if has_inline_styles or (element.string and not any(isinstance(child, Tag) and child.name.lower() not in inline_style_tags for child in element.children)):
+            # Flatten the content, preserving inline styling tags as HTML
+            text_content = ""
+            for child in element.children:
+                if isinstance(child, NavigableString):
+                    text_content += str(child)
+                elif isinstance(child, Tag) and child.name.lower() in inline_style_tags:
+                    # Preserve the inline styling tag as HTML
+                    text_content += str(child)
+                elif isinstance(child, Tag):
+                    # This is a structural tag, process as child
+                    children.append(_convert_element_to_node(child))
+            text_content = text_content.strip() if text_content else None
+        else:
+            # Process children normally (no inline styling)
+            for child in element.children:
+                if isinstance(child, Tag):
+                    children.append(_convert_element_to_node(child))
+                elif isinstance(child, NavigableString) and child.strip():
+                    if not text_content:
+                        text_content = child.strip()
         
         return StructuredNode(
             tag=tag_name,
@@ -76,7 +94,6 @@ def test_create_nodes_from_html_list_merging():
     line becoming a separate <li> item. The data-sources attributes track
     which original content blocks each element came from.
     """
-    print("Starting test_create_nodes_from_html_list_merging...")
     from utils.schema import PositionalData, EmbeddingSource, TagName
     from transform.models import BlockType
     
@@ -107,11 +124,11 @@ def test_create_nodes_from_html_list_merging():
     # HTML string where the paragraphs are merged into a single ul
     # with data-sources tracking the original blocks
     html = """<ul data-sources="0,1">
-    <li data-sources="0">First item from block 0</li>
+    <li data-sources="0">First item from <i>block 0</i></li>
     <li data-sources="0">Second item from block 0</li>
-    <li data-sources="0">Third item from block 0</li>
+    <li data-sources="0">Third <b>item</b> from block 0</li>
     <li data-sources="1">Fourth item from block 1</li>
-    <li data-sources="1">Fifth item from block 1</li>
+    <li data-sources="1">Fifth item from block <sup>1</sup></li>
 </ul>"""
     
     # Expected output: StructuredNodes representing the list structure
@@ -121,7 +138,7 @@ def test_create_nodes_from_html_list_merging():
             children=[
                 StructuredNode(
                     tag=TagName.LI,
-                    text="First item from block 0",
+                    text="First item from <i>block 0</i>",
                     positional_data=[content_blocks[0].positional_data]
                 ),
                 StructuredNode(
@@ -131,7 +148,7 @@ def test_create_nodes_from_html_list_merging():
                 ),
                 StructuredNode(
                     tag=TagName.LI,
-                    text="Third item from block 0",
+                    text="Third <b>item</b> from block 0",
                     positional_data=[content_blocks[0].positional_data]
                 ),
                 StructuredNode(
@@ -141,7 +158,7 @@ def test_create_nodes_from_html_list_merging():
                 ),
                 StructuredNode(
                     tag=TagName.LI,
-                    text="Fifth item from block 1",
+                    text="Fifth item from block <sup>1</sup>",
                     positional_data=[content_blocks[1].positional_data]
                 )
             ],
@@ -153,9 +170,7 @@ def test_create_nodes_from_html_list_merging():
     ]
     
     # Test the function
-    print("Running create_nodes_from_html...")
     result = create_nodes_from_html(html, content_blocks)
-    print(f"Got {len(result)} nodes")
 
     # Assertions comparing result to expected structure
     assert len(result) == len(expected_nodes), f"Expected {len(expected_nodes)} nodes, got {len(result)}"
@@ -175,7 +190,7 @@ def test_create_nodes_from_html_list_merging():
     # Check that positional data is correctly aggregated at the UL level
     assert result_ul.positional_data == expected_ul.positional_data, "UL positional data mismatch"
     
-    print("Test case specification complete - ready for implementation!")
+
 
 
 if __name__ == "__main__":
@@ -186,3 +201,4 @@ if __name__ == "__main__":
         print(f"❌ Test failed: {e}")
         import traceback
         traceback.print_exc()
+        exit(1)

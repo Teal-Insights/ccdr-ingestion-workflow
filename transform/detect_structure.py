@@ -25,8 +25,8 @@ class SplitGroup(BaseModel):
     def get_html(self, html: str) -> str:
         current_chunk = []
         for id in parse_range_string(self.range):
-            pattern = re.compile(rf"^.+ id=\"{id}\".+$")
-            match = pattern.match(html)
+            pattern = re.compile(rf"^.+ id=\"{id}\".+$", re.MULTILINE)
+            match = pattern.search(html)
             if match:
                 current_chunk.append(match.group(0))
             else:
@@ -241,7 +241,7 @@ async def _split_html(
     attempt: int = 0,
 ) -> list[SplitSection]:
     """Process a single input using LiteLLM Router with built-in concurrency control and fallbacks."""
-    html = "\n".join(block.to_html() for block in content_blocks)
+    html = "\n".join(block.to_html(block_id=i) for i, block in enumerate(content_blocks))
     if len(html) > MAX_CHUNK_CHAR_SIZE:
         messages = messages or [
             {
