@@ -231,15 +231,6 @@ def create_router(
                 "weight": 1,
             }
         },
-        {
-            "model_name": "html-parser",
-            "litellm_params": {
-                "model": "openrouter/openrouter/horizon-alpha", # 128k tokens output
-                "api_key": openrouter_api_key,
-                "max_parallel_requests": 3,
-                "weight": 1
-            }
-        },
         # {
         #     "model_name": "html-parser",
         #     "litellm_params": {
@@ -258,15 +249,6 @@ def create_router(
         #         "weight": 1
         #     }
         # },
-        {
-            "model_name": "html-parser",
-            "litellm_params": {
-                "model": "openrouter/mistralai/devstral-medium", # 131k tokens output
-                "api_key": openrouter_api_key,
-                "max_parallel_requests": 3,
-                "weight": 1
-            }
-        },
         {
             "model_name": "html-parser",
             "litellm_params": {
@@ -313,6 +295,7 @@ def _positional_data_from_blocks(content_blocks: list[ContentBlock], page_dimens
             positional_data.append(
                 PositionalData(
                     page_pdf=page_pdf,
+                    page_logical=block.positional_data.page_logical,
                     bbox=page_dimensions[page_pdf - 1],
                 )
             )
@@ -367,7 +350,7 @@ async def _split_html(
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 with open(os.path.join("artifacts", "splits", f"input_{timestamp}.html"), "w") as fw:
                     fw.write(html)
-                with open(os.path.join("artifacts", "splits", f"output_{timestamp}_{response.model.split('-')[-1]}.json"), "w") as fw:
+                with open(os.path.join("artifacts", "splits", f"output_{timestamp}_{response.model.split('/')[-1]}.json"), "w") as fw:
                     fw.write(split_result.model_dump_json())
 
                 for i, split_section in enumerate(split_sections):
@@ -401,7 +384,14 @@ async def _split_html(
         return [SplitSection(tag=None, content_blocks=content_blocks, html_str=html)]
 
 
-async def _restructure_html(html_str: str, parents: str, router: Router) -> str:
+async def _restructure_html(
+    html_str: str, 
+    parents: str, 
+    router: Router,
+    messages: Optional[list[dict[str, str]]] = None,
+    max_validation_attempts: int = 3,
+    attempt: int = 0,
+) -> str:
     """
     Use LLM to restructure HTML content with better semantic structure.
     
@@ -409,12 +399,15 @@ async def _restructure_html(html_str: str, parents: str, router: Router) -> str:
         html_str: HTML string to restructure (from section.html_str)
         parents: Parent tag context for the LLM
         router: LiteLLM Router for LLM calls
+        messages: Optional list of messages for retry attempts
+        max_validation_attempts: Maximum number of validation attempts
+        attempt: Current attempt number
         
     Returns:
         Restructured HTML string
     """    
     # Prepare the prompt
-    messages = [
+    messages = messages or [
         {
             "role": "user",
             "content": HTML_PROMPT.format(
@@ -439,33 +432,51 @@ async def _restructure_html(html_str: str, parents: str, router: Router) -> str:
             and isinstance(response, ModelResponse)
             and isinstance(response.choices[0], Choices)
             and response.choices[0].message.content
-        ):
-            # Debug: Dump input and response to file
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            with open(os.path.join("artifacts", "revisions", f"input_{timestamp}.html"), "w") as fw:
-                fw.write(html_str)
-            with open(os.path.join("artifacts", "revisions", f"output_{timestamp}_{response.model.split('-')[-1]}.json"), "w") as fw:
-                fw.write(response.choices[0].message.content)
-            
-            # Remove any code fencing and return the restructured HTML
-            html_result = HTMLResult.model_validate_json(de_fence(response.choices[0].message.content, type="json"))
-            if not html_result.html.strip():
-                raise ValueError("No valid response from LLM for HTML restructuring, returning original HTML")
-            
-            # Validate that all data-sources attributes are valid range strings
-            data_sources = re.findall(r'data-sources="([^"]+)"', html_result.html)
-            for data_source in data_sources:
-                if not re.match(r'^[0-9\s,\-]+$', data_source):
-                    raise ValueError(f"Invalid data-sources attribute: {data_source}. Must be a comma-separated list with only numbers, spaces, or dashes.")
-            
-            return html_result.html
+        ):            
+            try:
+                # Remove any code fencing and return the restructured HTML
+                html_result = HTMLResult.model_validate_json(de_fence(response.choices[0].message.content, type="json"))
+                if not html_result.html.strip():
+                    raise ValueError("Empty HTML content in response")
+
+                # Debug: Dump input and response to file
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                with open(os.path.join("artifacts", "revisions", f"input_{timestamp}.html"), "w") as fw:
+                    fw.write(html_str)
+                with open(os.path.join("artifacts", "revisions", f"output_{timestamp}_{response.model.split('/')[-1]}.html"), "w") as fw:
+                    fw.write(html_result.html)
+
+                # Validate that all data-sources attributes are valid range strings
+                data_sources = re.findall(r'data-sources="([^"]+)"', html_result.html)
+                for data_source in data_sources:
+                    if not re.match(r'^[0-9\s,\-]+$', data_source):
+                        raise ValueError(f"Invalid data-sources attribute: {data_source}. Must be a comma-separated list with only numbers, spaces, or dashes.")
+                
+                return html_result.html
+            except (ValidationError, ValueError) as e:
+                if attempt < max_validation_attempts - 1:
+                    logger.warning(f"Validation error (attempt {attempt+1}/{max_validation_attempts}): {e}")
+                    # Append error message and retry
+                    messages.append(response.choices[0].message.model_dump())
+                    messages.append({
+                        "role": "user",
+                        "content": f"Your previous response had a validation error: {str(e)}. "
+                                    "Please correct your response to match the required schema and constraints."
+                    })
+                    return await _restructure_html(html_str, parents, router, messages, max_validation_attempts, attempt + 1)
+                else:
+                    logger.error(f"Validation error on final attempt: {e}, returning original HTML")
+                    return html_str
         else:
-            logger.warning("No valid response from LLM for HTML restructuring, returning original HTML")
-            return html_str
+            raise ValueError("No valid response from LLM")
             
     except Exception as e:
-        logger.error(f"Error during HTML restructuring: {e}, returning original HTML")
-        return html_str
+        if attempt < max_validation_attempts - 1:
+            logger.warning(f"Error during HTML restructuring (attempt {attempt+1}/{max_validation_attempts}): {e}")
+            return await _restructure_html(html_str, parents, router, messages, max_validation_attempts, attempt + 1)
+        else:
+            logger.error(f"Error during HTML restructuring on final attempt: {e}, returning original HTML")
+            return html_str
 
 
 async def process_top_level_structure(

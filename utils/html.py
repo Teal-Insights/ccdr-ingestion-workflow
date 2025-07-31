@@ -1,4 +1,6 @@
-from transform.models import ContentBlock, StructuredNode
+# TODO: Aggregate same-page bounding boxes for the same output node
+
+from transform.models import ContentBlock, StructuredNode, BlockType
 from transform.detect_top_level_structure import parse_range_string
 from bs4 import BeautifulSoup, Tag, NavigableString
 from utils.schema import TagName
@@ -38,6 +40,33 @@ def create_nodes_from_html(html: str, content_blocks: list[ContentBlock]) -> lis
         data_sources_str = element.get('data-sources', '')
         source_indices = parse_range_string(data_sources_str)
         positional_data = _get_positional_data(source_indices)
+        
+        # Handle img tags specially to extract storage_url, description, and caption
+        if element.name.lower() == 'img':
+            # Extract storage_url, description, and caption from source ContentBlocks
+            storage_url = None
+            description = None
+            caption = None
+            
+            if source_indices:
+                # Get the first valid source block for the image
+                for idx in source_indices:
+                    if idx < len(content_blocks) and content_blocks[idx].block_type == BlockType.PICTURE:
+                        source_block = content_blocks[idx]
+                        storage_url = source_block.storage_url
+                        description = source_block.description
+                        caption = source_block.caption
+                        break
+            
+            return StructuredNode(
+                tag=tag_name,
+                children=[],
+                text=None,
+                positional_data=positional_data,
+                storage_url=storage_url,
+                description=description,
+                caption=caption
+            )
         
         # Get text content, flattening inline style tags
         text_content = None
@@ -118,20 +147,33 @@ def test_create_nodes_from_html_list_merging():
             block_type=BlockType.TEXT,
             embedding_source=EmbeddingSource.TEXT_CONTENT,
             text_content="Fourth item from block 1\nFifth item from block 1"
+        ),
+        ContentBlock(
+            positional_data=PositionalData(
+                page_pdf=1,
+                page_logical=1,
+                bbox={"x1": 100, "y1": 320, "x2": 500, "y2": 370}
+            ),
+            block_type=BlockType.PICTURE,
+            embedding_source=EmbeddingSource.DESCRIPTION,
+            description="A picture of a cat",
+            storage_url="https://example.com/cat.jpg",
+            caption="A picture of a cat"
         )
     ]
     
     # HTML string where the paragraphs are merged into a single ul
-    # with data-sources tracking the original blocks
+    # with data-sources tracking the original blocks, plus an img tag
     html = """<ul data-sources="0,1">
     <li data-sources="0">First item from <i>block 0</i></li>
     <li data-sources="0">Second item from block 0</li>
     <li data-sources="0">Third <b>item</b> from block 0</li>
     <li data-sources="1">Fourth item from block 1</li>
     <li data-sources="1">Fifth item from block <sup>1</sup></li>
-</ul>"""
+</ul>
+<img data-sources="2" src="https://example.com/cat.jpg" alt="A picture of a cat" />"""
     
-    # Expected output: StructuredNodes representing the list structure
+    # Expected output: StructuredNodes representing the list structure and image
     expected_nodes = [
         StructuredNode(
             tag=TagName.UL,
@@ -166,6 +208,13 @@ def test_create_nodes_from_html_list_merging():
                 content_blocks[0].positional_data,
                 content_blocks[1].positional_data
             ]
+        ),
+        StructuredNode(
+            tag=TagName.IMG,
+            storage_url="https://example.com/cat.jpg",
+            description="A picture of a cat",
+            caption="A picture of a cat",
+            positional_data=[content_blocks[2].positional_data]
         )
     ]
     
@@ -175,6 +224,7 @@ def test_create_nodes_from_html_list_merging():
     # Assertions comparing result to expected structure
     assert len(result) == len(expected_nodes), f"Expected {len(expected_nodes)} nodes, got {len(result)}"
     
+    # Test the UL element
     expected_ul = expected_nodes[0]
     result_ul = result[0]
     
@@ -190,7 +240,15 @@ def test_create_nodes_from_html_list_merging():
     # Check that positional data is correctly aggregated at the UL level
     assert result_ul.positional_data == expected_ul.positional_data, "UL positional data mismatch"
     
-
+    # Test the IMG element
+    expected_img = expected_nodes[1]
+    result_img = result[1]
+    
+    assert result_img.tag == expected_img.tag, f"Expected {expected_img.tag} tag, got {result_img.tag}"
+    assert result_img.storage_url == expected_img.storage_url, f"IMG storage_url mismatch: expected '{expected_img.storage_url}', got '{result_img.storage_url}'"
+    assert result_img.description == expected_img.description, f"IMG description mismatch: expected '{expected_img.description}', got '{result_img.description}'"
+    assert result_img.caption == expected_img.caption, f"IMG caption mismatch: expected '{expected_img.caption}', got '{result_img.caption}'"
+    assert result_img.positional_data == expected_img.positional_data, "IMG positional data mismatch"
 
 
 if __name__ == "__main__":

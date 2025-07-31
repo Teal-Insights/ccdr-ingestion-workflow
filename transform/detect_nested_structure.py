@@ -467,10 +467,11 @@ if __name__ == "__main__":
                     children=children_list,
                     positional_data=[
                         PositionalData(
-                            page_pdf=page_number,
-                            bbox=page_dimensions[page_number - 1],
+                            page_pdf=positional_datum.page_pdf,
+                            page_logical=positional_datum.page_logical,
+                            bbox=page_dimensions[positional_datum.page_pdf - 1],
                         )
-                        for page_number in {block.positional_data.page_pdf for block in blocks}
+                        for positional_datum in {block.positional_data for block in blocks}
                     ],
                 )
             )
