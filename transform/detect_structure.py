@@ -160,7 +160,7 @@ ALLOWED_TAGS: str = ", ".join(
 ) + ", b, i, u, s, sup, sub"
 
 
-MODEL_TOKEN_LIMIT: int = 16000
+MODEL_TOKEN_LIMIT: int = 128000
 # assume 4 chars per token, allow ~1/3 margin of error
 MAX_CHUNK_CHAR_SIZE: int = ((MODEL_TOKEN_LIMIT * 4) * 2) // 3
 
@@ -191,29 +191,47 @@ def create_router(
 ) -> Router:
     """Create a LiteLLM Router with advanced load balancing and fallback configuration."""
     model_list = [
+        # {
+        #     "model_name": "html-parser",
+        #     "litellm_params": {
+        #         "model": "openrouter/x-ai/grok-3-mini", # 16k tokens output
+        #         "api_key": openrouter_api_key,
+        #         "max_parallel_requests": 10,
+        #         "weight": 1,
+        #     }
+        # },
+        # {
+        #     "model_name": "html-parser",
+        #     "litellm_params": {
+        #         "model": "openai/gpt-4o-mini", # 16k tokens output
+        #         "api_key": openai_api_key,
+        #         "max_parallel_requests": 10,
+        #         "weight": 1,
+        #     }
+        # },
+        # {
+        #     "model_name": "html-parser",
+        #     "litellm_params": {
+        #         "model": "openai/gpt-4.1-mini", # 32k tokens output
+        #         "api_key": openai_api_key,
+        #         "max_parallel_requests": 10,
+        #         "weight": 1,
+        #     }
+        # }
+        # {
+        #     "model_name": "html-parser",
+        #     "litellm_params": {
+        #         "model": "openrouter/openrouter/horizon-alpha", # 128k tokens output
+        #         "api_key": openrouter_api_key,
+        #         "max_parallel_requests": 3,
+        #         "weight": 1
+        #     }
+        # },
         {
             "model_name": "html-parser",
             "litellm_params": {
-                "model": "openrouter/x-ai/grok-3-mini", # 16k tokens output
+                "model": "openrouter/anthropic/claude-sonnet-4", # 128k tokens output
                 "api_key": openrouter_api_key,
-                "max_parallel_requests": 10,
-                "weight": 1,
-            }
-        },
-        {
-            "model_name": "html-parser",
-            "litellm_params": {
-                "model": "openai/gpt-4o-mini", # 16k tokens output
-                "api_key": openai_api_key,
-                "max_parallel_requests": 10,
-                "weight": 1,
-            }
-        },
-        {
-            "model_name": "html-parser",
-            "litellm_params": {
-                "model": "openai/gpt-4.1-mini", # 32k tokens output
-                "api_key": openai_api_key,
                 "max_parallel_requests": 10,
                 "weight": 1,
             }
@@ -304,9 +322,17 @@ async def _split_html(
                     SplitSection.from_split_group(group, html, content_blocks)
                     for group in split_result.groups
                 ]
+
+                # Debug: Dump input and response to file
+                with open(os.path.join("artifacts", "split_html_input.html"), "w") as fw:
+                    fw.write(html)
+                with open(os.path.join("artifacts", "split_html_output.json"), "w") as fw:
+                    fw.write(split_result.model_dump_json())
+
                 for i, split_section in enumerate(split_sections):
-                    if len(split_section.html_str) > MAX_CHUNK_CHAR_SIZE:
-                        raise ValueError(f"Split section {i} is too long")
+                    if len(split_section.html_str) > MODEL_TOKEN_LIMIT * 3: # Slightly more permissive than the prompt calls for
+                        raise ValueError(f"Split section {i} is too long: {len(split_section.html_str)} characters")
+   
                 return split_sections
             else:
                 raise ValueError("No valid response from LLM")
@@ -379,7 +405,17 @@ async def _restructure_html(html_str: str, parents: str, router: Router) -> str:
             and response.choices[0].message.content
         ):
             # Remove any code fencing and return the restructured HTML
-            return de_fence(response.choices[0].message.content)
+            clean_html = de_fence(response.choices[0].message.content)
+            if not clean_html.strip():
+                raise ValueError("No valid response from LLM for HTML restructuring, returning original HTML")
+            
+            # Validate that all data-sources attributes are valid range strings
+            data_sources = re.findall(r'data-sources="([^"]+)"', clean_html)
+            for data_source in data_sources:
+                if not re.match(r'^[0-9\s,\-]+$', data_source):
+                    raise ValueError(f"Invalid data-sources attribute: {data_source}. Must be a comma-separated list with only numbers, spaces, or dashes.")
+            
+            return clean_html
         else:
             logger.warning("No valid response from LLM for HTML restructuring, returning original HTML")
             return html_str
