@@ -20,7 +20,7 @@ from datetime import datetime
 from litellm import Router, completion_cost
 from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
-from typing import Optional
+from typing import Optional, Literal
 from pydantic import BaseModel, Field, ValidationError
 
 from transform.detect_top_level_structure import parse_range_string
@@ -131,10 +131,10 @@ ALLOWED_TAGS: str = ", ".join(
 )
 
 
-def de_fence(text: str) -> str:
+def de_fence(text: str, type: Literal["json", "html"] = "json") -> str:
     """If response is fenced code block, remove fence"""
     stripped_text = text.strip()
-    if stripped_text.startswith(("```json\n", "```\n", "``` json\n")):
+    if stripped_text.startswith((f"```{type}\n", "```\n", f"``` {type}\n")):
         # Find the first newline after the opening fence
         first_newline = stripped_text.find('\n')
         if first_newline != -1:

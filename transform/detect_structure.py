@@ -165,10 +165,10 @@ MODEL_TOKEN_LIMIT: int = 128000
 MAX_CHUNK_CHAR_SIZE: int = ((MODEL_TOKEN_LIMIT * 4) * 2) // 3
 
 
-def de_fence(text: str) -> str:
+def de_fence(text: str, type: Literal["json", "html"] = "json") -> str:
     """If response is fenced code block, remove fence"""
     stripped_text = text.strip()
-    if stripped_text.startswith(("```html\n", "```\n", "``` html\n")):
+    if stripped_text.startswith((f"```{type}\n", "```\n", f"``` {type}\n")):
         # Find the first newline after the opening fence
         first_newline = stripped_text.find('\n')
         if first_newline != -1:
