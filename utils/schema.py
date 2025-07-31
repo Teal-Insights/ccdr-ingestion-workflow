@@ -37,7 +37,6 @@ class TagName(str, Enum):
     TR = "tr"
     TD = "td"
     CAPTION = "caption"
-    TITLE = "title"
     SECTION = "section"
     NAV = "nav"
     ASIDE = "aside"
