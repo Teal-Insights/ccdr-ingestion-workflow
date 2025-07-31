@@ -29,7 +29,7 @@ def create_nodes_from_html(html: str, content_blocks: list[ContentBlock]) -> lis
     def _convert_element_to_node(element: Tag) -> StructuredNode:
         """Convert a BeautifulSoup Tag to a StructuredNode."""
         # Inline styling tags to treat as flat text
-        inline_style_tags = {'b', 'i', 'u', 's', 'sup', 'sub'}
+        inline_style_tags = {'b', 'i', 'u', 's', 'sup', 'sub', 'br'}
         
         # Get tag name and convert to TagName enum
         tag_name = TagName(element.name.lower())

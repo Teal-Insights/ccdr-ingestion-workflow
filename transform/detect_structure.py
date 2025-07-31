@@ -157,7 +157,7 @@ Content:
 ALLOWED_TAGS: str = ", ".join(
     tag.value for tag in TagName
     if tag not in [TagName.HEADER, TagName.MAIN, TagName.FOOTER]
-) + ", b, i, u, s, sup, sub"
+) + ", b, i, u, s, sup, sub, br"
 
 
 MODEL_TOKEN_LIMIT: int = 128000
