@@ -3,6 +3,7 @@ import asyncio
 import json
 import os
 import re
+from datetime import datetime
 from typing import Literal, Optional
 from litellm import Router
 from litellm.files.main import ModelResponse
@@ -172,7 +173,7 @@ ALLOWED_TAGS: str = ", ".join(
 ) + ", b, i, u, s, sup, sub, br"
 
 
-MODEL_TOKEN_LIMIT: int = 128000
+MODEL_TOKEN_LIMIT: int = 64000
 # assume 4 chars per token, allow ~1/3 margin of error
 MAX_CHUNK_CHAR_SIZE: int = ((MODEL_TOKEN_LIMIT * 4) * 2) // 3
 
@@ -203,37 +204,55 @@ def create_router(
 ) -> Router:
     """Create a LiteLLM Router with advanced load balancing and fallback configuration."""
     model_list = [
+        {
+            "model_name": "html-splitter",
+            "litellm_params": {
+                "model": "openrouter/x-ai/grok-3-mini", # 16k tokens output
+                "api_key": openrouter_api_key,
+                "max_parallel_requests": 10,
+                "weight": 1,
+            }
+        },
+        {
+            "model_name": "html-splitter",
+            "litellm_params": {
+                "model": "openai/gpt-4o-mini", # 16k tokens output
+                "api_key": openai_api_key,
+                "max_parallel_requests": 10,
+                "weight": 1,
+            }
+        },
+        {
+            "model_name": "html-splitter",
+            "litellm_params": {
+                "model": "openai/gpt-4.1-mini", # 32k tokens output
+                "api_key": openai_api_key,
+                "max_parallel_requests": 10,
+                "weight": 1,
+            }
+        },
+        {
+            "model_name": "html-parser",
+            "litellm_params": {
+                "model": "openrouter/openrouter/horizon-alpha", # 128k tokens output
+                "api_key": openrouter_api_key,
+                "max_parallel_requests": 3,
+                "weight": 1
+            }
+        },
         # {
         #     "model_name": "html-parser",
         #     "litellm_params": {
-        #         "model": "openrouter/x-ai/grok-3-mini", # 16k tokens output
+        #         "model": "openrouter/z-ai/glm-4.5", # 96k tokens output
         #         "api_key": openrouter_api_key,
-        #         "max_parallel_requests": 10,
-        #         "weight": 1,
+        #         "max_parallel_requests": 3,
+        #         "weight": 1
         #     }
         # },
         # {
         #     "model_name": "html-parser",
         #     "litellm_params": {
-        #         "model": "openai/gpt-4o-mini", # 16k tokens output
-        #         "api_key": openai_api_key,
-        #         "max_parallel_requests": 10,
-        #         "weight": 1,
-        #     }
-        # },
-        # {
-        #     "model_name": "html-parser",
-        #     "litellm_params": {
-        #         "model": "openai/gpt-4.1-mini", # 32k tokens output
-        #         "api_key": openai_api_key,
-        #         "max_parallel_requests": 10,
-        #         "weight": 1,
-        #     }
-        # }
-        # {
-        #     "model_name": "html-parser",
-        #     "litellm_params": {
-        #         "model": "openrouter/openrouter/horizon-alpha", # 128k tokens output
+        #         "model": "openrouter/z-ai/glm-4.5-air", # 96k tokens output
         #         "api_key": openrouter_api_key,
         #         "max_parallel_requests": 3,
         #         "weight": 1
@@ -242,9 +261,18 @@ def create_router(
         {
             "model_name": "html-parser",
             "litellm_params": {
+                "model": "openrouter/mistralai/devstral-medium", # 131k tokens output
+                "api_key": openrouter_api_key,
+                "max_parallel_requests": 3,
+                "weight": 1
+            }
+        },
+        {
+            "model_name": "html-parser",
+            "litellm_params": {
                 "model": "openrouter/anthropic/claude-sonnet-4", # 128k tokens output
                 "api_key": openrouter_api_key,
-                "max_parallel_requests": 10,
+                "max_parallel_requests": 3,
                 "weight": 1,
             }
         }
@@ -315,7 +343,7 @@ async def _split_html(
         ]
 
         response = await router.acompletion(
-            model="html-parser",
+            model="html-splitter",
             messages=messages, # type: ignore
             temperature=0.0,
             response_format=SplitResult
@@ -328,7 +356,7 @@ async def _split_html(
                 and isinstance(response.choices[0], Choices)
                 and response.choices[0].message.content
             ):
-                split_result = SplitResult.model_validate_json(de_fence(response.choices[0].message.content))
+                split_result = SplitResult.model_validate_json(de_fence(response.choices[0].message.content, type="json"))
                 split_result.validate_comprehensive_coverage(len(content_blocks))
                 split_sections = [
                     SplitSection.from_split_group(group, html, content_blocks)
@@ -336,9 +364,10 @@ async def _split_html(
                 ]
 
                 # Debug: Dump input and response to file
-                with open(os.path.join("artifacts", "split_html_input.html"), "w") as fw:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                with open(os.path.join("artifacts", "splits", f"input_{timestamp}.html"), "w") as fw:
                     fw.write(html)
-                with open(os.path.join("artifacts", "split_html_output.json"), "w") as fw:
+                with open(os.path.join("artifacts", "splits", f"output_{timestamp}_{response.model.split('-')[-1]}.json"), "w") as fw:
                     fw.write(split_result.model_dump_json())
 
                 for i, split_section in enumerate(split_sections):
@@ -405,18 +434,19 @@ async def _restructure_html(html_str: str, parents: str, router: Router) -> str:
             temperature=0.0
         )
 
-        # Debug: Dump input and response to file
-        with open(os.path.join("artifacts", "restructure_html_input.html"), "w") as fw:
-            fw.write(html_str)
-        with open(os.path.join("artifacts", "restructure_html_response.json"), "w") as fw:
-            fw.write(response.choices[0].message.content)
-
         if (
             response
             and isinstance(response, ModelResponse)
             and isinstance(response.choices[0], Choices)
             and response.choices[0].message.content
         ):
+            # Debug: Dump input and response to file
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            with open(os.path.join("artifacts", "revisions", f"input_{timestamp}.html"), "w") as fw:
+                fw.write(html_str)
+            with open(os.path.join("artifacts", "revisions", f"output_{timestamp}_{response.model.split('-')[-1]}.json"), "w") as fw:
+                fw.write(response.choices[0].message.content)
+            
             # Remove any code fencing and return the restructured HTML
             html_result = HTMLResult.model_validate_json(de_fence(response.choices[0].message.content, type="json"))
             if not html_result.html.strip():
