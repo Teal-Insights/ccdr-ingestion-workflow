@@ -101,6 +101,10 @@ class SplitSection(BaseModel):
         )
 
 
+class HTMLResult(BaseModel):
+    html: str = Field(description="Revised HTML content with semantic tags, logical hierarchy, and data-sources attributes")
+
+
 SPLIT_PROMPT = """You will be given a very long HTML document with a flat structure and only `p` and `img` tags.
 Subagents will process the content to propose a better structured HTML representation of the content, with semantic tags and logical hierarchy.
 However, the input is too long for a single subagent to process.
@@ -140,7 +144,15 @@ Your task is to propose a better structured HTML representation of the content, 
 - You may split, merge, or replace structural containers as necessary, but you should make an effort to:
     - Clean up any whitespace, encoding, redundant style tags, or other formatting issues
     - Otherwise maintain the identical wording/spelling of the text content and of image descriptions and source URLs
-    - Add a `data-sources` attribute to any content-bearing elements with a comma-separated list of ids of the source elements (for attribute mapping and content validation)
+    - Add a `data-sources` attribute to any content-bearing elements with a comma-separated list of ids of the source elements (for attribute mapping and content validation). This can include ranges, e.g., `data-sources="0-5,7,9-12"`
+
+# Response format
+
+Return the full revised HTML content in the following JSON format:
+
+```json
+{response_schema}
+```
 
 # Task
 
@@ -379,7 +391,8 @@ async def _restructure_html(html_str: str, parents: str, router: Router) -> str:
             "content": HTML_PROMPT.format(
                 html_representation=html_str,
                 parent_tags=parents,
-                allowed_tags=ALLOWED_TAGS
+                allowed_tags=ALLOWED_TAGS,
+                response_schema=HTMLResult.model_json_schema()
             )
         }
     ]
@@ -405,17 +418,17 @@ async def _restructure_html(html_str: str, parents: str, router: Router) -> str:
             and response.choices[0].message.content
         ):
             # Remove any code fencing and return the restructured HTML
-            clean_html = de_fence(response.choices[0].message.content)
-            if not clean_html.strip():
+            html_result = HTMLResult.model_validate_json(de_fence(response.choices[0].message.content, type="json"))
+            if not html_result.html.strip():
                 raise ValueError("No valid response from LLM for HTML restructuring, returning original HTML")
             
             # Validate that all data-sources attributes are valid range strings
-            data_sources = re.findall(r'data-sources="([^"]+)"', clean_html)
+            data_sources = re.findall(r'data-sources="([^"]+)"', html_result.html)
             for data_source in data_sources:
                 if not re.match(r'^[0-9\s,\-]+$', data_source):
                     raise ValueError(f"Invalid data-sources attribute: {data_source}. Must be a comma-separated list with only numbers, spaces, or dashes.")
             
-            return clean_html
+            return html_result.html
         else:
             logger.warning("No valid response from LLM for HTML restructuring, returning original HTML")
             return html_str
