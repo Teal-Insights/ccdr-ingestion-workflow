@@ -7,7 +7,7 @@ from typing import Literal, Optional
 from litellm import Router
 from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from transform.detect_top_level_structure import parse_range_string
 from transform.models import ContentBlock, StructuredNode
@@ -21,6 +21,14 @@ logger = logging.getLogger(__name__)
 class SplitGroup(BaseModel):
     range: str = Field(description="Comma-separated inclusive id range of elements to be included in the group (e.g., '0-51,53')")
     tag: Optional[Literal["section", "aside", "nav"]] = Field(default=None, description="Tag in which to enclose the entire group, if any")
+    
+    @field_validator('range')
+    @classmethod
+    def validate_range_string(cls, v: str) -> str:
+        """Validate that range string only contains numbers, spaces, dashes, or commas."""
+        if not re.match(r'^[0-9\s,\-]+$', v):
+            raise ValueError("Range string can only contain numbers, spaces, dashes, or commas")
+        return v
 
     def get_html(self, html: str) -> str:
         current_chunk = []
@@ -36,10 +44,30 @@ class SplitGroup(BaseModel):
 class SplitResult(BaseModel):
     groups: list[SplitGroup] = Field(default_factory=list, description="Ranges of ids that will be grouped together")
 
-    # TODO: Add method that takes the HTML input, splits it into chunks by range, and returns a list of HTML strings
     def split_html(self, html: str) -> list[str]:
         """Assuming one tag per line and a numerical id for each tag, split the HTML into chunks by id list"""
         return [group.get_html(html) for group in self.groups]
+    
+    def validate_comprehensive_coverage(self, num_content_blocks: int) -> bool:
+        """
+        Validate that group ranges comprehensively cover all content blocks from 0 to num_content_blocks-1.
+        """
+        if num_content_blocks <= 0:
+            if not self.groups:
+                return True
+            raise ValueError("Cannot have groups when num_content_blocks is 0 or negative")
+        
+        group_ids = [id for group in self.groups for id in parse_range_string(group.range)]
+
+        covered_ids = set(group_ids)
+        expected_ids = set(range(num_content_blocks))
+        if not covered_ids == expected_ids:
+            raise ValueError(f"Group ranges must cover all content blocks exactly once. Difference: {covered_ids.difference(expected_ids)}")
+
+        if len(group_ids) > len(covered_ids):
+            duplicates = [id for id in covered_ids if group_ids.count(id) > 1]
+            raise ValueError(f"Group ranges contained duplicate ID coverage: {sorted(duplicates)}")
+        return True
 
 
 class SplitSection(BaseModel):
@@ -79,6 +107,7 @@ However, the input is too long for a single subagent to process.
 It must be split into at least {num_chunks} sections, each no longer than {max_chunk_size} characters.
 Chunk boundaries should ideally never interrupt a logical section of the document, or else subagents will be unable to group related content in their output HTML.
 If an entire chunk should be wrapped in a structural container, specify the tag in the `tag` field.
+Typically a range will be a single group of contiguous blocks, but there may be edge cases where the blocks are slightly out of logical order, in which case you can tack on an extra block or range with a comma (e.g., `0-51,53`).
 
 # Response format
 
@@ -270,6 +299,7 @@ async def _split_html(
                 and response.choices[0].message.content
             ):
                 split_result = SplitResult.model_validate_json(de_fence(response.choices[0].message.content))
+                split_result.validate_comprehensive_coverage(len(content_blocks))
                 split_sections = [
                     SplitSection.from_split_group(group, html, content_blocks)
                     for group in split_result.groups
@@ -335,7 +365,13 @@ async def _restructure_html(html_str: str, parents: str, router: Router) -> str:
             messages=messages, # type: ignore
             temperature=0.0
         )
-        
+
+        # Debug: Dump input and response to file
+        with open(os.path.join("artifacts", "restructure_html_input.html"), "w") as fw:
+            fw.write(html_str)
+        with open(os.path.join("artifacts", "restructure_html_response.json"), "w") as fw:
+            fw.write(response.choices[0].message.content)
+
         if (
             response
             and isinstance(response, ModelResponse)
