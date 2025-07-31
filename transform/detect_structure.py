@@ -468,6 +468,67 @@ async def _restructure_html(html_str: str, parents: str, router: Router) -> str:
         return html_str
 
 
+async def process_top_level_structure(
+    top_level_structure: list[tuple[TagName, list[ContentBlock]]],
+    pdf_path: str,
+    gemini_api_key: str,
+    openai_api_key: str,
+    deepseek_api_key: str,
+    openrouter_api_key: str,
+) -> list[StructuredNode]:
+    """Process the top-level structure of the document."""
+    # Create router with built-in load balancing and concurrency control
+    router = create_router(
+        gemini_api_key, 
+        openai_api_key, 
+        deepseek_api_key,
+        openrouter_api_key,
+    )
+
+    doc = pymupdf.open(pdf_path)
+    page_dimensions = {
+        page.number: {"x1": 0, "y1": 0, "x2": page.rect.width, "y2": page.rect.height}
+        for page in doc
+    }
+
+    parent_nodes = [
+        StructuredNode(
+            tag=tag_name,
+            children=[],
+            positional_data=_positional_data_from_blocks(blocks, page_dimensions)
+        )
+        for tag_name, blocks in top_level_structure
+    ]
+
+    split_section_tasks = [
+        _split_html(blocks, router)
+        for _, blocks in top_level_structure
+    ]
+    split_sections: list[list[SplitSection]] = await asyncio.gather(*split_section_tasks)
+
+    for parent_node, split in zip(parent_nodes, split_sections):
+        for section in split:
+            restructured_html = await _restructure_html(
+                section.html_str,
+                parent_node.tag + ", " + section.tag if section.tag else parent_node.tag,
+                router
+            )
+            child_nodes = create_nodes_from_html(restructured_html, section.content_blocks)
+            if section.tag:
+                parent_node.children.append(
+                    StructuredNode(
+                        tag=TagName(section.tag),
+                        children=child_nodes,
+                        positional_data=_positional_data_from_blocks(
+                            section.content_blocks, page_dimensions
+                        )
+                    )
+                )
+            else:
+                parent_node.children.extend(child_nodes)
+    return parent_nodes
+
+
 if __name__ == "__main__":
     import time
     import dotenv
@@ -489,19 +550,7 @@ if __name__ == "__main__":
         assert deepseek_api_key, "DEEPSEEK_API_KEY is not set"
         assert openrouter_api_key, "OPENROUTER_API_KEY is not set"
 
-        # Create router with built-in load balancing and concurrency control
-        router = create_router(
-            gemini_api_key, 
-            openai_api_key, 
-            deepseek_api_key,
-            openrouter_api_key,
-        )
-
-        doc = pymupdf.open(os.path.join("artifacts", "wkdir", "doc_601.pdf"))
-        page_dimensions = {
-            page.number: {"x1": 0, "y1": 0, "x2": page.rect.width, "y2": page.rect.height}
-            for page in doc
-        }
+        pdf_path = os.path.join("artifacts", "wkdir", "doc_601.pdf")
 
         with open(os.path.join("artifacts", "doc_601_top_level_structure.json"), "r") as fr:
             top_level_structure: list[tuple[TagName, list[ContentBlock]]] = [
@@ -509,41 +558,14 @@ if __name__ == "__main__":
                 for tag_name, blocks in json.load(fr)
             ]
 
-        parent_nodes = [
-            StructuredNode(
-                tag=tag_name,
-                children=[],
-                positional_data=_positional_data_from_blocks(blocks, page_dimensions)
-            )
-            for tag_name, blocks in top_level_structure
-        ]
-
-        split_section_tasks = [
-            _split_html(blocks, router)
-            for _, blocks in top_level_structure
-        ]
-        split_sections: list[list[SplitSection]] = await asyncio.gather(*split_section_tasks)
-
-        for parent_node, split in zip(parent_nodes, split_sections):
-            for section in split:
-                restructured_html = await _restructure_html(
-                    section.html_str,
-                    parent_node.tag + ", " + section.tag if section.tag else parent_node.tag,
-                    router
-                )
-                child_nodes = create_nodes_from_html(restructured_html, section.content_blocks)
-                if section.tag:
-                    parent_node.children.append(
-                        StructuredNode(
-                            tag=TagName(section.tag),
-                            children=child_nodes,
-                            positional_data=_positional_data_from_blocks(
-                                section.content_blocks, page_dimensions
-                            )
-                        )
-                    )
-                else:
-                    parent_node.children.extend(child_nodes)
+        parent_nodes = await process_top_level_structure(
+            top_level_structure,
+            pdf_path,
+            gemini_api_key,
+            openai_api_key,
+            deepseek_api_key,
+            openrouter_api_key,
+        )
 
         with open(os.path.join("artifacts", "doc_601_nested_structure.json"), "w") as fw:
             json.dump([node.model_dump() for node in parent_nodes], fw, indent=2)
