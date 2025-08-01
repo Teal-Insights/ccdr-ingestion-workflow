@@ -1,3 +1,6 @@
+# TODO: Parallelize the parts of this pipeline that use LLM API calls
+# TODO: Apply the router pattern from detect_structure.py to other modules that use litellm
+
 """CCDR Ingestion Pipeline
 
 Main orchestration script for the CCDR (Country and Climate Development Reports) ingestion workflow.
