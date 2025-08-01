@@ -1,16 +1,34 @@
-"""
-1. Get document records from the database and identify which ones we need to process
-2. For each document, download the PDF from S3 to a local temp file
-3. Send the PDF to the Layout Extractor API to get bounding boxes and labels for each element on each page
-4. Ignore headers and footers based on their labels
-5. Many boxes are mislabeled as text; use heuristics to re-label them as images or figures
-6. Extract images from the PDF and save them to S3
-7. Describe the images with a VLM (e.g., Gemini)
-8. Style the text blocks with the descriptions of the images
-9. Preliminary HTML conversion, 1 p or img tag per block
-10. Detect the top-level structure of the document
-11. Recursively detect the nested structure of the document
-12. Convert HTML to graph and ingest into the database
+"""CCDR Ingestion Pipeline
+
+Main orchestration script for the CCDR (Country and Climate Development Reports) ingestion workflow.
+Transforms World Bank PDF documents into a structured graph database format suitable for semantic search.
+
+This pipeline processes unprocessed documents from the database through the following stages:
+
+1. **Document Discovery**: Identifies unprocessed documents from the database
+2. **PDF Acquisition**: Downloads PDFs from S3 or directly from World Bank URLs
+3. **Layout Analysis**: Extracts bounding boxes and element labels using Layout Extractor API
+4. **Content Classification**: Filters headers/footers and reclassifies mislabeled blocks
+5. **Image Processing**: Extracts images and generates descriptions using Vision Language Models
+6. **Text Styling**: Applies formatting information from PDF to text blocks
+7. **Structure Detection**: Identifies document hierarchy (top-level and nested structure)
+8. **Database Ingestion**: Converts structured content to graph nodes and uploads to PostgreSQL
+
+The pipeline uses async/await for concurrent processing and includes comprehensive error handling
+with fail-fast validation for required environment variables and database schema synchronization.
+
+Environment Variables Required:
+- GEMINI_API_KEY: For image description and structure detection
+- DEEPSEEK_API_KEY: For logical page numbering and nested structure detection  
+- LAYOUT_EXTRACTOR_API_KEY: For PDF layout analysis
+- LAYOUT_EXTRACTOR_API_URL: Layout extraction service endpoint
+- AWS credentials: For S3 operations
+
+Usage:
+    uv run ingest_ccdrs.py
+
+The script processes documents in batches (configurable LIMIT) and outputs all intermediate
+artifacts to a working directory for debugging and pipeline inspection.
 """
 
 import dotenv
@@ -28,7 +46,7 @@ from transform.extract_images import extract_images_from_pdf
 from transform.describe_images import describe_images_with_vlm
 from transform.style_text_blocks import style_text_blocks
 from transform.detect_top_level_structure import detect_top_level_structure
-from transform.detect_nested_structure import detect_nested_structure, Context, create_router
+from transform.detect_structure import process_top_level_structure
 from transform.upload_to_db import upload_structured_nodes_to_db
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node, TagName
@@ -45,6 +63,10 @@ async def main() -> None:
     # Fail fast if required env vars are not set or DB schema is out of sync
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     assert gemini_api_key, "GEMINI_API_KEY is not set"
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    assert openai_api_key, "OPENAI_API_KEY is not set"
+    openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
+    assert openrouter_api_key, "OPENROUTER_API_KEY is not set"
     deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
     assert deepseek_api_key, "DEEPSEEK_API_KEY is not set"
     layout_extractor_api_key: str = os.getenv("LAYOUT_EXTRACTOR_API_KEY", "")
@@ -144,17 +166,15 @@ async def main() -> None:
         print("Structure detected successfully!")
 
         # 10. Recursively detect the nested structure of the document with concurrency control
-        router = create_router(gemini_api_key, deepseek_api_key, layout_extractor_api_key, layout_extractor_api_url)
-        tasks = [
-            detect_nested_structure(
-                blocks,
-                context=Context(parent_tags=[tag_name], parent_heading=None),
-                router=router,
-                max_depth=7,
-            )
-            for tag_name, blocks in top_level_structure
-        ]
-        nested_structure: list[StructuredNode] = await asyncio.gather(*tasks)
+        nested_structure: list[StructuredNode] = await process_top_level_structure(
+            top_level_structure,
+            pdf_path,
+            gemini_api_key,
+            openai_api_key,
+            deepseek_api_key,
+            openrouter_api_key,
+        )
+
         print("Nested structure detected successfully!")
 
         # 11. Convert the Pydantic models to our schema and ingest it into our database
@@ -163,6 +183,10 @@ async def main() -> None:
 
         # 12. Enrich the database records by generating relations from anchor tags
         # TODO: Implement this
+
+        # 13. Generate embeddings for each ContentData record
+        # TODO: Implement this
+        # TODO: For tables, explore embedding the table node's entire html content (add embeddingType for this?)
 
     print(f"Pipeline completed! All outputs in: {temp_dir}")
 
