@@ -1,14 +1,6 @@
 # Use remove element by id to remove unused clip paths for better reliability than regex
 
-import tempfile
-import subprocess
-import os
-from PIL import Image
-from typing import Literal
-import re
-import io
 import svgelements
-import numpy as np
 
 
 def has_geometry(element: svgelements.SVGElement) -> bool:

@@ -1,5 +1,7 @@
-# TODO: Parallelize the parts of this pipeline that use LLM API calls
+# TODO: the "de_fence" function is repeated across modules, so it should be a helper function in utils/
+# TODO: Alos, see map_page_numbers for how to attach it as a pre-validation step to Pydantic models
 # TODO: Apply the router pattern from detect_structure.py to other modules that use litellm
+# TODO: Use more parallelization at the top level of the pipeline?
 
 """CCDR Ingestion Pipeline
 
