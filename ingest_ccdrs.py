@@ -139,19 +139,19 @@ async def main() -> None:
         print(f"Added logical page numbers to {len(layout_blocks)} blocks")
 
         # 5. Re-label text blocks that are actually images or figures by detecting if there's an image or geometry in the bbox
-        content_blocks: list[ContentBlockBase] = asyncio.run(
-            reclassify_block_types(filtered_layout_blocks, pdf_path)
-        )
+        content_blocks: list[ContentBlockBase] = await reclassify_block_types(filtered_layout_blocks, pdf_path)
         print(f"Re-labeled {len(content_blocks)} blocks")
 
         # 6. Extract and describe images with a VLM (e.g., Gemini)
-        content_blocks_with_images: list[ContentBlock] = extract_images_from_pdf(content_blocks, pdf_path, temp_dir, document_id)
+        content_blocks_with_images: list[ContentBlock] = extract_images_from_pdf(
+            content_blocks, pdf_path, temp_dir, publication_id, document_id
+        )
         print("Images extracted successfully!")
 
         # 7. Describe the images with a VLM (e.g., Gemini)
-        content_blocks_with_descriptions: list[ContentBlock] = asyncio.run(describe_images_with_vlm(
+        content_blocks_with_descriptions: list[ContentBlock] = await describe_images_with_vlm(
             content_blocks_with_images, gemini_api_key, temp_dir, document_id
-        ))
+        )
         print("Images described successfully!")
 
         # 8. For spans in the pymupdf dict that have formatting flags, substring match to
@@ -161,11 +161,9 @@ async def main() -> None:
         )
 
         # 9. Detect the top-level structure of the document
-        top_level_structure: list[tuple[TagName, list[ContentBlock]]] = asyncio.run(
-            detect_top_level_structure(
+        top_level_structure: list[tuple[TagName, list[ContentBlock]]] = await detect_top_level_structure(
                 styled_text_blocks, api_key=gemini_api_key
             )
-        )
         print("Structure detected successfully!")
 
         # 10. Recursively detect the nested structure of the document with concurrency control
