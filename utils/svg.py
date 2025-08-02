@@ -1,5 +1,3 @@
-# Use remove element by id to remove unused clip paths for better reliability than regex
-
 import svgelements
 
 
