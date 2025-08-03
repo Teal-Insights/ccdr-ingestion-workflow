@@ -30,7 +30,7 @@ def de_fence_json(text: str) -> str:
         if first_newline != -1:
             # Remove the opening fence
             stripped_text = stripped_text[first_newline + 1:]
-        
+
         # Remove the closing fence if it exists
         if stripped_text.endswith("\n```"):
             stripped_text = stripped_text[:-4].rstrip()
@@ -71,8 +71,8 @@ def create_router(
         {
             "model_name": "page-mapper",
             "litellm_params": {
-                "model": "openai/gpt-4o-mini",
-                "api_key": openai_api_key,
+                "model": "openrouter/deepseek/deepseek-chat",
+                "api_key": openrouter_api_key,
                 "max_parallel_requests": 10,
                 "weight": 1,
             }

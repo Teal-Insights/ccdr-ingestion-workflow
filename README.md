@@ -1,25 +1,28 @@
 # CCDR Ingestion Workflow
 
-A complete workflow to transform World Bank Country and Climate Development Reports (CCDRs) from PDF format into a RAG-friendly schema and upload them to PostgreSQL for semantic search and retrieval.
+A complete workflow to transform World Bank Country and Climate Development Reports (CCDRs) from PDF format into a structured graph database format suitable for semantic search and retrieval.
 
 ## Overview
 
-This project processes PDF documents through a multi-stage pipeline that extracts text, images, and vector graphics, then uses Large Language Models (LLMs) to clean and structure the content into semantic HTML before converting it to a graph database schema optimized for Retrieval-Augmented Generation (RAG) applications. [See here](https://github.com/Teal-Insights/ccdr-explorer-api/blob/main/schema.md) for the database schema and discussion of schema design.
+This project processes PDF documents from PostgreSQL/AWS S3 storage through a multi-stage pipeline that extracts layout information, images, and text content, then uses Large Language Models (LLMs) to structure the content hierarchically as HTML DOM before uploading structured nodes back to the database. [See here](https://github.com/Teal-Insights/ccdr-explorer-api/blob/main/schema.md) for the database schema and discussion of schema design.
 
 ## Architecture
 
-The pipeline consists of 10 main stages:
+The pipeline consists of 11 main stages:
 
-1. **Text Block Extraction** - Extract text blocks with styling and positioning from PDF
-2. **Image Extraction** - Extract and describe images using vision-language models
-3. **SVG Extraction** - Extract vector graphics and generate descriptions
-4. **Block Combination** - Merge all extracted blocks into a unified document
-5. **HTML Conversion** - Convert blocks to structured HTML with semantic IDs
-6. **Structure Detection** - Use LLM to identify document sections (header/main/footer)
-7. **Rich HTML Generation** - Create styled HTML with positioning data
-8. **HTML Cleaning** - LLM-based cleaning to conform to semantic specification
-9. **Graph Conversion** - Transform HTML DOM to database graph schema
-10. **Relation Enrichment** - Generate relationships from anchor tags and references
+1. **Document Discovery** - Identifies unprocessed documents from the database
+2. **PDF Acquisition** - Downloads PDFs from S3 or directly from World Bank URLs  
+3. **Layout Analysis** - Extracts bounding boxes and element labels using Layout Extractor API
+4. **Logical Page Mapping** - Maps physical pages to logical page numbers using LLM analysis
+5. **Content Block Reclassification** - Reclassifies content blocks to improve accuracy
+6. **Image Extraction** - Extracts images using PyMuPDF
+7. **Image Description** - Describes images using Vision Language Models
+8. **Text Styling** - Applies formatting information from PDF to text blocks
+9. **Top-Level Structure Detection** - Identifies front, body, and back matter using LLM analysis
+10. **Nested Structure Detection** - Converts the top-level structure into a nested HTML DOM structure using LLM analysis
+11. **Database Ingestion** - Converts structured content to database directed graph nodes and uploads to PostgreSQL
+12. **Relation Enrichment** - Generate relationships from anchor tags and references (TODO)
+13. **Embedding Generation** - Generate embeddings for each ContentData record (TODO)
 
 ## Schema Evolution
 
@@ -47,158 +50,186 @@ uv add package_name
 
 ## Configuration
 
-Set up your environment variables:
-
-```bash
-# Required API keys
-export GEMINI_API_KEY="your_gemini_api_key"
-export DEEPSEEK_API_KEY="your_deepseek_api_key"
-```
-
-Or create a `.env` file:
+Create a `.env` file:
 
 ```
-GEMINI_API_KEY=your_gemini_api_key
-DEEPSEEK_API_KEY=your_deepseek_api_key
+# LLM API credentials
+GEMINI_API_KEY=
+DEEPSEEK_API_KEY=
+OPENROUTER_API_KEY=
+OPENAI_API_KEY=
+
+# Temporary bug fix to prevent litellm resource leakage
+DISABLE_AIOHTTP_TRANSPORT=True
+
+# Experimental ML document layout extraction service
+LAYOUT_EXTRACTOR_API_URL=
+LAYOUT_EXTRACTOR_API_KEY=
+
+# AWS S3 credentials
+S3_BUCKET_NAME=
+AWS_REGION=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+
+# Database instance
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=ccdr-explorer-db
 ```
 
 ## Usage
 
 ### Full Pipeline
 
-Run the complete pipeline on a PDF:
+Run the complete pipeline to process unprocessed documents from the database:
 
 ```bash
-# Place your PDF as 'input.pdf' in the project root
 uv run ingest_ccdrs.py
 ```
 
-This will process the PDF through all stages and output the results to a temporary directory.
+This will:
+1. Query the database for unprocessed documents (documents with no child nodes)
+2. Download PDFs from S3 or World Bank URLs
+3. Process documents through the complete pipeline
+4. Upload structured nodes back to the database
+5. Output all intermediate artifacts to `./artifacts/wkdir` for debugging
 
-### Individual Stages
+The pipeline processes documents in batches (configurable via `LIMIT` variable) and includes comprehensive error handling with fail-fast validation for required environment variables and database schema synchronization.
 
-You can also run individual components:
+### Individual Components
 
-#### Extract Text Blocks
+You can also test individual transformation components:
+
+#### Layout Extraction
 ```bash
-uv run -m transform.extract_text_blocks document.pdf
+uv run -m transform.extract_layout document.pdf output.json
 ```
 
-#### Extract Images
+#### Page Number Mapping
 ```bash
-uv run -m transform.extract_images document.pdf
+uv run -m transform.map_page_numbers
 ```
 
-#### Extract SVGs
+#### Image Description
 ```bash
-uv run -m transform.extract_svgs document.pdf
+uv run -m transform.describe_images
 ```
 
-#### Combine Blocks
+#### Structure Detection
 ```bash
-uv run -m transform.combine_blocks output.json text_blocks.json images.json svgs.json
-```
-
-#### Convert to HTML
-```bash
-uv run -m transform.convert_to_html combined_blocks.json output.html --rich-text --bboxes --include-ids
-```
-
-#### Detect Structure
-```bash
-uv run -m transform.detect_structure document.html blocks.json output_dir/
-```
-
-#### Clean HTML
-```bash
-uv run -m transform.clean_html -i main:content.html -o cleaned.html -k YOUR_API_KEY
+uv run -m transform.detect_structure
 ```
 
 ## Project Structure
 
 ```
 ccdr-ingestion-workflow/
-├── main.py                    # Main pipeline orchestrator
+├── ingest_ccdrs.py            # Main pipeline orchestrator
 ├── transform/                 # Core transformation modules
-│   ├── extract_text_blocks.py # Text extraction with styling
-│   ├── extract_images.py      # Image extraction and description
-│   ├── extract_svgs.py        # SVG extraction and description
-│   ├── combine_blocks.py      # Block combination utilities
-│   ├── convert_to_html.py     # Block-to-HTML conversion
-│   ├── detect_structure.py    # Document structure detection
-│   ├── clean_html.py          # LLM-based HTML cleaning
-│   ├── html_to_graph.py       # HTML-to-graph conversion (WIP)
-│   ├── create_relations.py    # Relationship extraction (WIP)
+│   ├── extract_layout.py      # PDF layout extraction using Layout Extractor API
+│   ├── map_page_numbers.py    # Logical page number mapping using LLM router
+│   ├── reclassify_blocks.py   # Content block type reclassification
+│   ├── extract_images.py      # Image extraction from PDF
+│   ├── describe_images.py     # Image description using Vision Language Models
+│   ├── style_text_blocks.py   # Text styling from PDF formatting
+│   ├── detect_top_level_structure.py # Top-level document structure detection
+│   ├── detect_structure.py    # Nested structure detection with concurrency control
+│   ├── upload_to_db.py        # Database upload functionality
 │   └── models.py              # Pydantic data models
-├── sample_data/               # Sample data for different pipeline stages
-├── schema_legacy.md           # Previous schema design
-├── schema_revision.md         # Current schema design
+├── utils/                     # Utility modules
+│   ├── db.py                  # Database connection and schema validation
+│   ├── schema.py              # Database schema definitions
+│   ├── aws.py                 # S3 and AWS operations
+│   └── html.py                # HTML processing utilities
+├── artifacts/                 # Working directory for pipeline outputs
 └── pyproject.toml            # Project dependencies
 ```
 
 ## Key Features
 
-### Multi-modal Content Extraction
-- **Text**: Preserves styling and semantic structure from PDF
-- **Images**: Automatic extraction with AI-generated descriptions
-- **Vector Graphics**: SVG extraction with content analysis
+### Database-Driven Processing
+- Queries PostgreSQL database for unprocessed documents
+- Downloads PDFs from S3 or World Bank URLs as fallback
+- Uploads structured content back to database as graph nodes
+- Fail-fast validation for environment variables and schema sync
+
+### Advanced Layout Analysis
+- Uses dedicated Layout Extractor API for precise bounding box detection
+- Intelligent logical page number mapping using LLM analysis
+- Content block reclassification to improve accuracy
+- Header/footer filtering based on logical page analysis
+
+### Multi-modal Content Processing
+- **Text**: Preserves styling and formatting from original PDF
+- **Images**: Automatic extraction with context-aware AI descriptions
+- **Structure**: Hierarchical document organization with nested sections
 
 ### Intelligent Structure Detection
-- Uses Gemini LLM to identify document sections
-- Separates front matter, body, and back matter
-- Maintains reading order and hierarchical relationships
+- Two-stage structure detection (top-level and nested)
+- Uses multiple LLM providers with router-based load balancing
+- Concurrency control for efficient API usage
+- Context-aware section identification
 
-### Semantic HTML Generation
-- Limited tag vocabulary for consistent structure
-- Rich data attributes for metadata preservation
-- Support for academic document features (citations, footnotes, etc.)
+### Robust API Integration
+- LiteLLM Router with advanced load balancing and fallbacks
+- Multiple provider support (Gemini, OpenAI, DeepSeek, OpenRouter)
+- Built-in retry logic and error handling
+- Configurable rate limiting and concurrency control
 
-### Concurrent Processing
-- Parallel LLM API calls for image/SVG description
-- Configurable concurrency limits to respect API rate limits
-- Async/await patterns for efficient processing
-
-### Flexible Output Formats
-- JSON blocks for programmatic processing
-- Structured HTML for human review
-- Graph schema for database ingestion
+### Scalable Processing
+- Async/await patterns throughout the pipeline
+- Batch processing with configurable limits
+- Comprehensive error handling and recovery
+- Intermediate artifact preservation for debugging
 
 ## Dependencies
 
+- **SQLModel**: Database ORM and schema definitions
+- **PostgreSQL**: Primary database for document storage
 - **PyMuPDF**: PDF parsing and content extraction
-- **Pillow**: Image processing
-- **LiteLLM**: Unified LLM API interface
+- **Pillow**: Image processing and conversion
+- **LiteLLM**: Unified LLM API interface with router support
 - **Pydantic**: Data validation and serialization
 - **Tenacity**: Retry logic for API calls
+- **Boto3**: AWS S3 integration for PDF storage
 
 ## API Usage
 
-The project uses two LLM providers:
-- **Gemini**: Structure detection and image description
-- **DeepSeek**: HTML cleaning and SVG description
+The project uses multiple LLM providers through LiteLLM Router:
+- **Gemini**: Image description and top-level structure detection
+- **OpenAI**: Available through router for various tasks
+- **DeepSeek**: Page number mapping and nested structure detection
+- **OpenRouter**: Alternative provider access
 
-Both APIs support concurrent requests with configurable rate limiting.
+The router provides load balancing, fallbacks, and automatic retry logic with configurable concurrency limits.
 
 ## Development Status
 
 ### Completed
-- ✅ Text, image, and SVG extraction
-- ✅ Block combination and HTML conversion
-- ✅ Structure detection with LLM
-- ✅ HTML cleaning and semantic conformance
-- ✅ Concurrent processing with rate limiting
+- ✅ Database-driven document discovery and processing
+- ✅ PDF download from S3 and World Bank URLs
+- ✅ Layout extraction using dedicated API
+- ✅ Logical page number mapping with LLM analysis
+- ✅ Content block reclassification and filtering
+- ✅ Image extraction and description with VLM
+- ✅ Text styling preservation from PDF formatting
+- ✅ Two-stage hierarchical structure detection
+- ✅ Database ingestion of structured content
+- ✅ Concurrent processing with semaphore control
+- ✅ LiteLLM Router integration with multiple providers
 
 ### In Progress
-- 🚧 HTML-to-graph conversion (`html_to_graph.py`)
 - 🚧 Relationship extraction from anchor tags (`create_relations.py`)
-- 🚧 Database ingestion and storage
+- 🚧 Vector embedding generation for semantic search
 
 ### Planned
-- 📋 Evals for model selection (for SVG description and HTML cleaning)
-- 📋 Logical page number mapping
-- 📋 Cosine similarity for block-to-PDF mapping
-- 📋 Vector embedding generation
-- 📋 Full database schema implementation
+- 📋 Enhanced error recovery
+- 📋 Performance optimization and batch size tuning
+- 📋 Enhanced LLM response validation/evaluation
+- 📋 Fine-tuning dataset prep and/or similar-example injection
 
 ## Contributing
 

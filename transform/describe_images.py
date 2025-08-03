@@ -1,6 +1,3 @@
-# TODO: Should be an easy matter to include a little text context from
-# neighboring text blocks with the image to improve the description
-
 import asyncio
 import base64
 import io
@@ -83,11 +80,11 @@ async def describe_images_with_vlm(
                 j >= 0
                 and j < len(content_blocks_with_images)
                 and content_blocks_with_images[j].positional_data.page_pdf == current_page
-                and content_blocks_with_images[j].block_type in [
+                and (content_blocks_with_images[j].block_type in [
                     BlockType.TEXT, BlockType.TITLE, BlockType.SECTION_HEADER,
                     BlockType.CAPTION, BlockType.LIST_ITEM, BlockType.FORMULA,
                     BlockType.TABLE
-                ]
+                ] or j == i) # Include the current block if it has text_content
                 and content_blocks_with_images[j].text_content  # Check text_content exists
             ):
                 text_content = content_blocks_with_images[j].text_content

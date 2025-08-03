@@ -150,7 +150,7 @@ async def main() -> None:
         content_blocks: list[ContentBlockBase] = await reclassify_block_types(filtered_layout_blocks, pdf_path)
         print(f"Re-labeled {len(content_blocks)} blocks")
 
-        # 6. Extract and describe images with a VLM (e.g., Gemini)
+        # 6. Extract images from the PDF
         content_blocks_with_images: list[ContentBlock] = extract_images_from_pdf(
             content_blocks, pdf_path, temp_dir, publication_id, document_id
         )
@@ -174,7 +174,7 @@ async def main() -> None:
             )
         print("Structure detected successfully!")
 
-        # 10. Recursively detect the nested structure of the document with concurrency control
+        # 10. Detect the nested structure of the document
         nested_structure: list[StructuredNode] = await process_top_level_structure(
             top_level_structure,
             pdf_path,
