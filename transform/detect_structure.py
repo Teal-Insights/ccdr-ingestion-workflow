@@ -16,6 +16,7 @@ from transform.detect_top_level_structure import parse_range_string
 from transform.models import ContentBlock, StructuredNode
 from utils.schema import TagName, PositionalData
 from utils.html import create_nodes_from_html
+from utils.json import de_fence
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -220,23 +221,6 @@ Content:
 {html_representation}
 ```
 """
-
-
-def de_fence(text: str, type: Literal["json", "html"] = "json") -> str:
-    """If response is fenced code block, remove fence"""
-    stripped_text = text.strip()
-    if stripped_text.startswith((f"```{type}\n", "```\n", f"``` {type}\n")):
-        # Find the first newline after the opening fence
-        first_newline = stripped_text.find('\n')
-        if first_newline != -1:
-            # Remove the opening fence
-            stripped_text = stripped_text[first_newline + 1:]
-        
-        # Remove the closing fence if it exists
-        if stripped_text.endswith("\n```"):
-            stripped_text = stripped_text[:-4].rstrip()
-    
-    return stripped_text
 
 
 # TODO: Experiment with Claude, which can do 128k tokens output
