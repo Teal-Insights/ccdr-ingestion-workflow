@@ -11,6 +11,7 @@ from litellm import Router
 from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
 from pydantic import BaseModel, Field, ValidationError, field_validator
+import pymupdf
 
 from transform.detect_top_level_structure import parse_range_string
 from transform.models import ContentBlock, StructuredNode
@@ -82,6 +83,30 @@ class SplitResult(BaseModel):
             duplicates = [id for id in covered_ids if group_ids.count(id) > 1]
             raise ValueError(f"Group ranges contained duplicate ID coverage: {sorted(duplicates)}")
         return True
+
+    @classmethod
+    def model_validate_json(cls, json_data: str | bytes, **kwargs) -> "SplitResult":
+        """
+        Custom JSON validation with code fence removal.
+        Handles LLM responses that may be wrapped in markdown code blocks.
+        """
+        if isinstance(json_data, bytes):
+            json_data = json_data.decode('utf-8')
+        
+        # Always try fence removal first since LLMs often return fenced JSON
+        de_fenced_json = de_fence(json_data)
+        
+        try:
+            # Try to parse the de-fenced JSON
+            parsed_data = json.loads(de_fenced_json)
+            return cls.model_validate(parsed_data, **kwargs)
+        except json.JSONDecodeError:
+            # If de-fenced parsing fails, try the original
+            try:
+                return super().model_validate_json(json_data, **kwargs)
+            except json.JSONDecodeError:
+                # Re-raise the de-fenced error as it's more likely to be informative
+                raise ValueError(f"Failed to parse JSON after de-fencing: {de_fenced_json[:200]}...")
 
 
 class SplitSection(BaseModel):
@@ -223,7 +248,6 @@ Content:
 """
 
 
-# TODO: Experiment with Claude, which can do 128k tokens output
 def create_router(
     gemini_api_key: str, 
     openai_api_key: str, 
@@ -367,7 +391,7 @@ async def _split_html(
                 and isinstance(response.choices[0], Choices)
                 and response.choices[0].message.content
             ):
-                split_result = SplitResult.model_validate_json(de_fence(response.choices[0].message.content, type="json"))
+                split_result = SplitResult.model_validate_json(response.choices[0].message.content, type="json")
                 split_result.validate_comprehensive_coverage(len(content_blocks))
                 split_sections = [
                     SplitSection.from_split_group(group, html, content_blocks)
@@ -573,7 +597,6 @@ async def process_top_level_structure(
 if __name__ == "__main__":
     import time
     import dotenv
-    import pymupdf
 
     dotenv.load_dotenv()
 

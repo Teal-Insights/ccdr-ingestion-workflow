@@ -1,4 +1,3 @@
-# TODO: Also, see map_page_numbers for how to attach it as a pre-validation step to Pydantic models
 # TODO: Apply the router pattern from detect_structure.py to other modules that use litellm
 # TODO: Use more parallelization at the top level of the pipeline?
 
@@ -7,31 +6,10 @@
 Main orchestration script for the CCDR (Country and Climate Development Reports) ingestion workflow.
 Transforms World Bank PDF documents into a structured graph database format suitable for semantic search.
 
-This pipeline processes unprocessed documents from the database through the following stages:
-
-1. **Document Discovery**: Identifies unprocessed documents from the database
-2. **PDF Acquisition**: Downloads PDFs from S3 or directly from World Bank URLs
-3. **Layout Analysis**: Extracts bounding boxes and element labels using Layout Extractor API
-4. **Content Classification**: Filters headers/footers and reclassifies mislabeled blocks
-5. **Image Processing**: Extracts images and generates descriptions using Vision Language Models
-6. **Text Styling**: Applies formatting information from PDF to text blocks
-7. **Structure Detection**: Identifies document hierarchy (top-level and nested structure)
-8. **Database Ingestion**: Converts structured content to graph nodes and uploads to PostgreSQL
-
-The pipeline uses async/await for concurrent processing and includes comprehensive error handling
-with fail-fast validation for required environment variables and database schema synchronization.
-
-Environment Variables Required:
-- GEMINI_API_KEY: For image description and structure detection
-- DEEPSEEK_API_KEY: For logical page numbering and nested structure detection  
-- LAYOUT_EXTRACTOR_API_KEY: For PDF layout analysis
-- LAYOUT_EXTRACTOR_API_URL: Layout extraction service endpoint
-- AWS credentials: For S3 operations
-
 Usage:
     uv run ingest_ccdrs.py
 
-The script processes documents in batches (configurable LIMIT) and outputs all intermediate
+The script processes documents in batches (configurable LIMIT) and outputs intermediate
 artifacts to a working directory for debugging and pipeline inspection.
 """
 

@@ -1,5 +1,4 @@
 # TODO: We should discard any detected LayoutBlocks whose bbox is fully outside the page area
-# TODO: For PICTURE blocks that have text content, we should split the text content into a separate ContentBlockBase (or maybe not, since this is often just axis labels?)
 
 import pymupdf
 from transform.models import LayoutBlock, BlockType, ContentBlockBase
