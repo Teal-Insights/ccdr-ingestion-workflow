@@ -1,12 +1,9 @@
-# TODO: The models suck at this task, perhaps because so few LayoutBlocks have
-# correct page header and page footer classifications. I bet accuracy would improve
-# with heuristic-based reclassification for the top and bottom inch of the page.
-# Also, we could try mechanically interpolating the series to fill in missing numbers.
-# TODO: We should perhaps zero-index the page numbers throughout the codebase
-
 import json
 import logging
 import asyncio
+import re
+import roman
+import pymupdf
 from collections import defaultdict
 from typing import Optional
 from litellm import Router
@@ -14,28 +11,288 @@ from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
 from pydantic import BaseModel, ValidationError
 from transform.models import ExtractedLayoutBlock, LayoutBlock, BlockType
+from utils.json import de_fence
+from utils.positioning import is_header_or_footer_by_position
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def de_fence_json(text: str) -> str:
-    """
-    Remove markdown code fencing from JSON response.
-    Based on detect_structure.py's de_fence function.
-    """
-    stripped_text = text.strip()
-    if stripped_text.startswith(("```json\n", "```\n", "``` json\n")):
-        # Find the first newline after the opening fence
-        first_newline = stripped_text.find('\n')
-        if first_newline != -1:
-            # Remove the opening fence
-            stripped_text = stripped_text[first_newline + 1:]
 
-        # Remove the closing fence if it exists
-        if stripped_text.endswith("\n```"):
-            stripped_text = stripped_text[:-4].rstrip()
+def get_actual_page_dimensions(pdf_path: str) -> dict[int, tuple[float, float]]:
+    """
+    Get actual page dimensions from PDF using PyMuPDF.
     
-    return stripped_text
+    Args:
+        pdf_path: Path to the PDF file
+        
+    Returns:
+        Dictionary mapping page numbers (1-indexed) to (width, height) tuples
+    """
+    try:
+        doc = pymupdf.open(pdf_path)
+        dimensions = {}
+        
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            rect = page.rect
+            # Convert to 1-indexed page numbering to match ExtractedLayoutBlock
+            dimensions[page_num + 1] = (rect.width, rect.height)
+        
+        doc.close()
+        return dimensions
+    except Exception as e:
+        logger.warning(f"Could not get page dimensions from PDF: {e}")
+        return {}
+
+
+def validate_and_correct_page_dimensions(
+    blocks: list[ExtractedLayoutBlock], 
+    pdf_path: Optional[str] = None
+) -> list[ExtractedLayoutBlock]:
+    """
+    Validate page dimensions in blocks against actual PDF dimensions.
+    If PDF path is provided and dimensions differ, use actual dimensions.
+    
+    Args:
+        blocks: List of ExtractedLayoutBlocks to validate
+        pdf_path: Optional path to PDF for dimension verification
+        
+    Returns:
+        List of blocks with corrected dimensions if needed
+    """
+    if not pdf_path:
+        return blocks
+    
+    actual_dimensions = get_actual_page_dimensions(pdf_path)
+    if not actual_dimensions:
+        return blocks
+    
+    corrected_blocks = []
+    corrections_made = 0
+    
+    for block in blocks:
+        corrected_block = block.model_copy()
+        
+        if block.page_number in actual_dimensions:
+            actual_width, actual_height = actual_dimensions[block.page_number]
+            
+            # Check if stored dimensions differ significantly from actual
+            width_diff = abs(block.page_width - actual_width)
+            height_diff = abs(block.page_height - actual_height)
+            
+            if width_diff > 1.0 or height_diff > 1.0:
+                corrected_block.page_width = actual_width
+                corrected_block.page_height = actual_height
+                corrections_made += 1
+        
+        corrected_blocks.append(corrected_block)
+    
+    if corrections_made > 0:
+        logger.info(f"Corrected page dimensions for {corrections_made} blocks using PyMuPDF")
+    
+    return corrected_blocks
+
+
+class ExtractedLayoutBlockBBox:
+    """Adapter to make ExtractedLayoutBlock compatible with positioning utilities."""
+    def __init__(self, block: ExtractedLayoutBlock):
+        self.x1 = block.left
+        self.y1 = block.top
+        self.x2 = block.left + block.width
+        self.y2 = block.top + block.height
+
+
+def is_header_or_footer_by_position_block(block: ExtractedLayoutBlock) -> bool:
+    """
+    Determine if a block is a header or footer based on position.
+    Wrapper around the shared positioning utility.
+    
+    Args:
+        block: ExtractedLayoutBlock with position and page dimensions
+    
+    Returns:
+        True if the block is entirely contained in header/footer area
+    """
+    bbox = ExtractedLayoutBlockBBox(block)
+    return is_header_or_footer_by_position(bbox, block.page_height)
+
+
+def looks_like_page_number(text: str) -> bool:
+    """
+    Check if text looks like a page number using regex patterns.
+    
+    Patterns found in doc_601.json:
+    - Arabic numerals: 01, 1, 2, 3, etc.
+    - Roman numerals: i, ii, iii, I, II, III, etc.
+    - Letters: A, B, C
+    """
+    text = text.strip()
+    if not text:
+        return False
+    
+    # Arabic numerals (1-2 digits, possibly with leading zero)
+    if re.match(r'^\d{1,2}$', text):
+        return True
+    
+    # Roman numerals (case insensitive)
+    if re.match(r'^[IVXLCDMivxlcdm]+$', text):
+        return True
+    
+    # Single letters (for appendices)
+    if re.match(r'^[A-Z]$', text):
+        return True
+    
+    return False
+
+
+def reclassify_headers_and_footers(blocks: list[ExtractedLayoutBlock]) -> list[ExtractedLayoutBlock]:
+    """
+    Reclassify blocks that should be headers or footers based on position and content.
+    """
+    reclassified_blocks = []
+    
+    for block in blocks:
+        new_block = block.model_copy()
+        
+        # Only reclassify Text blocks that are in header/footer positions
+        if (block.type == BlockType.TEXT and 
+            is_header_or_footer_by_position_block(block) and
+            looks_like_page_number(block.text)):
+            
+            # Determine if it's header or footer based on position
+            distance_from_top = block.top
+            distance_from_bottom = block.page_height - (block.top + block.height)
+            
+            if distance_from_top < distance_from_bottom:
+                new_block.type = BlockType.PAGE_HEADER
+            else:
+                new_block.type = BlockType.PAGE_FOOTER
+                
+            logger.debug(f"Reclassified page {block.page_number} text '{block.text}' as {new_block.type}")
+        
+        reclassified_blocks.append(new_block)
+    
+    return reclassified_blocks
+
+
+def detect_page_number_type(page_number: str) -> str:
+    """Detect the type of page number: integer, roman_lower, roman_upper, or letter."""
+    page_number = page_number.strip()
+    
+    if re.match(r'^\d+$', page_number):
+        return 'integer'
+    elif re.match(r'^[ivxlcdm]+$', page_number):
+        return 'roman_lower'
+    elif re.match(r'^[IVXLCDM]+$', page_number):
+        return 'roman_upper'
+    elif re.match(r'^[A-Z]$', page_number):
+        return 'letter'
+    else:
+        return 'unknown'
+
+
+def increment_page_number(page_number: str, increment: int = 1) -> Optional[str]:
+    """Increment a page number by the given amount, handling different formats."""
+    page_type = detect_page_number_type(page_number)
+    
+    try:
+        if page_type == 'integer':
+            return str(int(page_number) + increment)
+        elif page_type == 'roman_lower':
+            current_val = roman.fromRoman(page_number.upper())
+            new_val = current_val + increment
+            if new_val <= 0:
+                return None
+            return roman.toRoman(new_val).lower()
+        elif page_type == 'roman_upper':
+            current_val = roman.fromRoman(page_number)
+            new_val = current_val + increment
+            if new_val <= 0:
+                return None
+            return roman.toRoman(new_val)
+        elif page_type == 'letter':
+            current_val = ord(page_number) - ord('A')
+            new_val = current_val + increment
+            if new_val < 0 or new_val > 25:  # A-Z range
+                return None
+            return chr(ord('A') + new_val)
+    except (ValueError, roman.InvalidRomanNumeralError):
+        return None
+    
+    return None
+
+
+def interpolate_missing_page_numbers(page_mapping: dict[str, str | None]) -> dict[str, str | None]:
+    """
+    Interpolate missing page numbers based on detected sequences.
+    
+    This function identifies sequences of page numbers and fills in gaps where
+    the LLM might have missed detecting page numbers.
+    """
+    # Convert to list of tuples for easier processing
+    pages = [(int(k), v) for k, v in page_mapping.items()]
+    pages.sort()
+    
+    interpolated = dict(page_mapping)  # Start with original mapping
+    
+    # Group pages by numbering sequence type
+    sequences = {}  # {sequence_type: [(pdf_page, logical_page), ...]}
+    
+    for pdf_page, logical_page in pages:
+        if logical_page is not None:
+            page_type = detect_page_number_type(logical_page)
+            if page_type != 'unknown':
+                if page_type not in sequences:
+                    sequences[page_type] = []
+                sequences[page_type].append((pdf_page, logical_page))
+    
+    # For each sequence type, interpolate missing values
+    for seq_type, seq_pages in sequences.items():
+        if len(seq_pages) < 2:
+            continue  # Need at least 2 points to interpolate
+        
+        seq_pages.sort()
+        
+        # Try to fill gaps within the sequence
+        for i in range(len(seq_pages) - 1):
+            current_pdf, current_logical = seq_pages[i]
+            next_pdf, next_logical = seq_pages[i + 1]
+            
+            # Calculate expected increment
+            try:
+                if seq_type == 'integer':
+                    current_val = int(current_logical)
+                    next_val = int(next_logical)
+                elif seq_type in ['roman_lower', 'roman_upper']:
+                    current_val = roman.fromRoman(current_logical.upper())
+                    next_val = roman.fromRoman(next_logical.upper())
+                elif seq_type == 'letter':
+                    current_val = ord(current_logical) - ord('A')
+                    next_val = ord(next_logical) - ord('A')
+                else:
+                    continue
+                
+                logical_diff = next_val - current_val
+                pdf_diff = next_pdf - current_pdf
+                
+                # Only interpolate if the logical increment is reasonable (1-3 per PDF page)
+                if pdf_diff > 1 and 1 <= logical_diff <= pdf_diff * 3:
+                    expected_increment = logical_diff / pdf_diff
+                    
+                    # Fill in missing pages if increment is close to 1
+                    if 0.8 <= expected_increment <= 1.2:
+                        for pdf_page in range(current_pdf + 1, next_pdf):
+                            if interpolated[str(pdf_page)] is None:
+                                logical_increment = round((pdf_page - current_pdf) * expected_increment)
+                                new_logical = increment_page_number(current_logical, logical_increment)
+                                if new_logical:
+                                    interpolated[str(pdf_page)] = new_logical
+                                    logger.debug(f"Interpolated page {pdf_page} as {new_logical}")
+                
+            except (ValueError, roman.InvalidRomanNumeralError):
+                continue
+    
+    return interpolated
 
 
 class PageMappingResult(BaseModel):
@@ -51,13 +308,20 @@ class PageMappingResult(BaseModel):
         if isinstance(json_data, bytes):
             json_data = json_data.decode('utf-8')
         
-        # Try direct parsing first (most common case)
+        # Always try fence removal first since LLMs often return fenced JSON
+        de_fenced_json = de_fence(json_data)
+        
         try:
-            return super().model_validate_json(json_data, **kwargs)
+            # Try to parse the de-fenced JSON manually first
+            parsed_data = json.loads(de_fenced_json)
+            return cls.model_validate(parsed_data, **kwargs)
         except json.JSONDecodeError:
-            # Fall back to fence removal if direct parsing fails
-            de_fenced_json = de_fence_json(json_data)
-            return super().model_validate_json(de_fenced_json, **kwargs)
+            # If de-fenced parsing fails, try the original
+            try:
+                return super().model_validate_json(json_data, **kwargs)
+            except json.JSONDecodeError:
+                # Re-raise the de-fenced error as it's more likely to be informative
+                raise ValueError(f"Failed to parse JSON after de-fencing: {de_fenced_json[:200]}...")
 
 
 def create_router(
@@ -186,6 +450,7 @@ async def add_logical_page_numbers(
     openai_api_key: str,
     deepseek_api_key: str,
     openrouter_api_key: str,
+    pdf_path: Optional[str] = None,
 ) -> list[LayoutBlock]:
     """
     Some pages will have BlockType.PAGE_HEADER or BlockType.PAGE_FOOTER that contain page numbers.
@@ -203,9 +468,17 @@ async def add_logical_page_numbers(
         openai_api_key: API key for OpenAI models
         deepseek_api_key: API key for DeepSeek models  
         openrouter_api_key: API key for OpenRouter models
+        pdf_path: Optional path to PDF file for dimension validation using PyMuPDF
     """
     if not extracted_layout_blocks:
         return []
+
+    # 0. Validate and correct page dimensions using PyMuPDF if PDF path provided
+    if pdf_path:
+        extracted_layout_blocks = validate_and_correct_page_dimensions(extracted_layout_blocks, pdf_path)
+
+    # 1. Reclassify blocks that should be headers/footers based on position
+    extracted_layout_blocks = reclassify_headers_and_footers(extracted_layout_blocks)
 
     # 1. Group header/footer text by physical page number
     page_contents = defaultdict(list)
@@ -230,6 +503,16 @@ async def add_logical_page_numbers(
     try:
         # The internal function handles retries via the router.
         page_mapping = await _get_logical_page_mapping_from_llm(page_contents, router)
+        
+        # 2.5. Interpolate missing page numbers based on detected sequences
+        original_count = sum(1 for v in page_mapping.values() if v is not None)
+        page_mapping = interpolate_missing_page_numbers(page_mapping)
+        interpolated_count = sum(1 for v in page_mapping.values() if v is not None)
+        
+        if interpolated_count > original_count:
+            logger.info(f"Interpolated {interpolated_count - original_count} additional page numbers "
+                       f"({original_count} -> {interpolated_count} total)")
+        
     except Exception as e:
         # If the LLM call fails completely after all retries, log the error.
         # The code will gracefully fall back to None logical page numbers in the next step.
@@ -279,7 +562,7 @@ if __name__ == "__main__":
         if not any([gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key]):
             raise ValueError("At least one API key must be provided")
         
-        with open("artifacts/wkdir/doc_601.json", "r") as f:
+        with open("doc_601.json", "r") as f:
             data = json.load(f)
 
         blocks = [ExtractedLayoutBlock(**block) for block in data]
@@ -288,9 +571,10 @@ if __name__ == "__main__":
             gemini_api_key or "",
             openai_api_key or "",
             deepseek_api_key or "",
-            openrouter_api_key or ""
+            openrouter_api_key or "",
+            pdf_path="doc_601.pdf"  # Pass PDF path for dimension validation
         )
-        with open("artifacts/doc_601_with_logical_page_numbers.json", "w") as f:
+        with open("doc_601_with_logical_page_numbers.json", "w") as f:
             json.dump([block.model_dump() for block in blocks], f, indent=2)
 
     asyncio.run(main())
