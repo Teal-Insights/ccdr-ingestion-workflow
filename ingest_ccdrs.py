@@ -138,7 +138,8 @@ async def main() -> None:
             gemini_api_key,
             openai_api_key,
             deepseek_api_key,
-            openrouter_api_key
+            openrouter_api_key,
+            pdf_path
         )
         filtered_layout_blocks: list[LayoutBlock] = [
             block for block in layout_blocks if block.type not in [BlockType.PAGE_HEADER, BlockType.PAGE_FOOTER]
