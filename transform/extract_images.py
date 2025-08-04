@@ -26,10 +26,10 @@ def extract_images_from_pdf(
         # Use positional data to get pixmap for the page and crop to the bbox
         page: pymupdf.Page = pdf[content_block.positional_data.page_pdf - 1]
         rect_like_bbox = (
-            content_block.positional_data.bbox["x1"],
-            content_block.positional_data.bbox["y1"],
-            content_block.positional_data.bbox["x2"],
-            content_block.positional_data.bbox["y2"]
+            content_block.positional_data.bbox.x1,
+            content_block.positional_data.bbox.y1,
+            content_block.positional_data.bbox.x2,
+            content_block.positional_data.bbox.y2
         )
         image = page.get_pixmap(clip=rect_like_bbox)
 

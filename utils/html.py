@@ -38,6 +38,8 @@ def create_nodes_from_html(html: str, content_blocks: list[ContentBlock]) -> lis
         
         # Parse data-sources attribute
         data_sources_str = element.get('data-sources', '')
+        if not isinstance(data_sources_str, str):
+            raise ValueError(f"data-sources attribute is not a string: {data_sources_str}")
         source_indices = parse_range_string(data_sources_str)
         positional_data = _get_positional_data(source_indices)
         
@@ -123,7 +125,7 @@ def test_create_nodes_from_html_list_merging():
     line becoming a separate <li> item. The data-sources attributes track
     which original content blocks each element came from.
     """
-    from utils.schema import PositionalData, EmbeddingSource, TagName
+    from utils.schema import PositionalData, EmbeddingSource, TagName, BoundingBox
     from transform.models import BlockType
     
     # Create input ContentBlocks - two paragraphs with multiline text
@@ -132,7 +134,7 @@ def test_create_nodes_from_html_list_merging():
             positional_data=PositionalData(
                 page_pdf=1,
                 page_logical=1,
-                bbox={"x1": 100, "y1": 200, "x2": 500, "y2": 250}
+                bbox=BoundingBox(x1=100, y1=200, x2=500, y2=250)
             ),
             block_type=BlockType.TEXT,
             embedding_source=EmbeddingSource.TEXT_CONTENT,
@@ -142,7 +144,7 @@ def test_create_nodes_from_html_list_merging():
             positional_data=PositionalData(
                 page_pdf=1,
                 page_logical=1,
-                bbox={"x1": 100, "y1": 260, "x2": 500, "y2": 310}
+                bbox=BoundingBox(x1=100, y1=260, x2=500, y2=310)
             ),
             block_type=BlockType.TEXT,
             embedding_source=EmbeddingSource.TEXT_CONTENT,
@@ -152,7 +154,7 @@ def test_create_nodes_from_html_list_merging():
             positional_data=PositionalData(
                 page_pdf=1,
                 page_logical=1,
-                bbox={"x1": 100, "y1": 320, "x2": 500, "y2": 370}
+                bbox=BoundingBox(x1=100, y1=320, x2=500, y2=370)
             ),
             block_type=BlockType.PICTURE,
             embedding_source=EmbeddingSource.DESCRIPTION,

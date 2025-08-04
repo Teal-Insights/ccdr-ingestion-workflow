@@ -154,10 +154,10 @@ def create_image_block_html(block: ContentBlock, bboxes: bool = False, block_id:
     # Add bbox data attribute if requested
     if bboxes and block.positional_data.bbox:
         bbox_values = [
-            block.positional_data.bbox["x1"],
-            block.positional_data.bbox["y1"], 
-            block.positional_data.bbox["x2"],
-            block.positional_data.bbox["y2"]
+            block.positional_data.bbox.x1,
+            block.positional_data.bbox.y1, 
+            block.positional_data.bbox.x2,
+            block.positional_data.bbox.y2
         ]
         bbox_str = ",".join(str(int(coord)) for coord in bbox_values)
         img_attrs.append(f'data-bbox="{bbox_str}"')
@@ -192,10 +192,10 @@ def create_text_block_html(block: ContentBlock, bboxes: bool = False, block_id: 
     # Add bbox data attribute if requested
     if bboxes and block.positional_data.bbox:
         bbox_values = [
-            block.positional_data.bbox["x1"],
-            block.positional_data.bbox["y1"],
-            block.positional_data.bbox["x2"], 
-            block.positional_data.bbox["y2"]
+            block.positional_data.bbox.x1,
+            block.positional_data.bbox.y1,
+            block.positional_data.bbox.x2, 
+            block.positional_data.bbox.y2
         ]
         bbox_str = ",".join(str(int(coord)) for coord in bbox_values)
         p_attrs.append(f'data-bbox="{bbox_str}"')

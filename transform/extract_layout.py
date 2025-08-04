@@ -6,13 +6,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def extract_layout(pdf_path: str, output_path: str) -> str:
+def extract_layout(pdf_path: str, output_path: str, api_url: str, api_key: str) -> str:
     """Extract layout from a PDF file and save it to a JSON file"""
     with open(pdf_path, 'rb') as pdf_file:
         response = requests.post(
-            os.getenv("LAYOUT_EXTRACTOR_API_URL"),
+            api_url,
             files={'file': pdf_file},
-            headers={'X-API-Key': os.getenv("LAYOUT_EXTRACTOR_API_KEY")},
+            headers={'X-API-Key': api_key},
             timeout=300  # 5 minutes timeout
         )
     response.raise_for_status()
@@ -27,6 +27,14 @@ def extract_layout(pdf_path: str, output_path: str) -> str:
 
 
 if __name__ == "__main__":
+    import dotenv
+
+    dotenv.load_dotenv()
+    LAYOUT_EXTRACTOR_API_URL = os.getenv("LAYOUT_EXTRACTOR_API_URL")
+    LAYOUT_EXTRACTOR_API_KEY = os.getenv("LAYOUT_EXTRACTOR_API_KEY")
+    assert LAYOUT_EXTRACTOR_API_URL, "LAYOUT_EXTRACTOR_API_URL is not set"
+    assert LAYOUT_EXTRACTOR_API_KEY, "LAYOUT_EXTRACTOR_API_KEY is not set"
+
     pdf_path = "artifacts/wkdir/doc_601.pdf"
     output_path = "artifacts/wkdir/doc_601.json"
-    extract_layout(pdf_path, output_path)
+    extract_layout(pdf_path, output_path, LAYOUT_EXTRACTOR_API_URL, LAYOUT_EXTRACTOR_API_KEY)

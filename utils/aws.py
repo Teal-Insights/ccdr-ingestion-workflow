@@ -95,18 +95,19 @@ def download_pdf_from_s3(
     Returns:
         The local file path of the downloaded PDF.
     """
-    if not storage_url and not ids:
-        raise ValueError("Must provide either storage_url or ids")
-
     if storage_url:
         # Parse the S3 URL to extract bucket and key
         # URL format: https://{bucket}.s3.{region}.amazonaws.com/{key}
         from urllib.parse import urlparse
         parsed = urlparse(storage_url)
+        if not parsed.hostname or not parsed.path:
+            raise ValueError(f"Invalid storage URL: {storage_url}")
         bucket = parsed.hostname.split('.')[0]  # Extract bucket from hostname
         pdf_key = parsed.path.lstrip('/')  # Remove leading slash to get the key
         layout_key = pdf_key.replace('.pdf', '.json')
     else:
+        if not ids:
+            raise ValueError("Must provide either storage_url or ids")
         # Construct from IDs
         bucket_name, _ = verify_environment_variables()
         publication_id, document_id = ids
@@ -125,17 +126,18 @@ def download_pdf_from_s3(
     s3_client.download_file(Bucket=bucket, Key=pdf_key, Filename=local_pdf_path)
     try:
         s3_client.download_file(Bucket=bucket, Key=layout_key, Filename=local_layout_path)
-    except Exception:
-        local_layout_path = None
 
-    logger.info(f"Downloaded {pdf_key} from bucket {bucket} to {local_pdf_path}")
-    if local_layout_path:
-        logger.info(f"Downloaded {layout_key} from bucket {bucket} to {local_layout_path}")
-    return local_pdf_path, local_layout_path
+        logger.info(f"Downloaded {pdf_key} from bucket {bucket} to {local_pdf_path}")
+        if local_layout_path:
+            logger.info(f"Downloaded {layout_key} from bucket {bucket} to {local_layout_path}")
+        return local_pdf_path, local_layout_path
+    except Exception:
+        logger.error(f"Failed to download {layout_key} from bucket {bucket}")
+        return local_pdf_path, None
 
 
 def upload_json_to_s3(
-    temp_dir: str, ids: Tuple[int, int] | None = None
+    temp_dir: str, ids: Tuple[int, int]
 ) -> str:
     """
     Uploads a single JSON file to S3 and returns its public URL.

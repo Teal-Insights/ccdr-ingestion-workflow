@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from transform.detect_top_level_structure import parse_range_string
 from transform.models import ContentBlock, StructuredNode
-from utils.schema import TagName, PositionalData
+from utils.schema import TagName, PositionalData, BoundingBox
 from utils.html import create_nodes_from_html
 from utils.json import de_fence
 
@@ -302,7 +302,7 @@ def create_router(
     )
 
 
-def _positional_data_from_blocks(content_blocks: list[ContentBlock], page_dimensions: dict[int, dict[str, int]]) -> list[PositionalData]:
+def _positional_data_from_blocks(content_blocks: list[ContentBlock], page_dimensions: dict[int, BoundingBox]) -> list[PositionalData]:
     """
     Extract unique positional data per page from a list of content blocks.
     
@@ -378,7 +378,8 @@ async def _split_html(
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 with open(os.path.join("artifacts", "splits", f"input_{timestamp}.html"), "w") as fw:
                     fw.write(html)
-                with open(os.path.join("artifacts", "splits", f"output_{timestamp}_{response.model.split('/')[-1]}.json"), "w") as fw:
+                response_model = response.model or "unknown"
+                with open(os.path.join("artifacts", "splits", f"output_{timestamp}_{response_model.split('/')[-1]}.json"), "w") as fw:
                     fw.write(split_result.model_dump_json())
 
                 for i, split_section in enumerate(split_sections):
@@ -471,7 +472,8 @@ async def _restructure_html(
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 with open(os.path.join("artifacts", "revisions", f"input_{timestamp}.html"), "w") as fw:
                     fw.write(html_str)
-                with open(os.path.join("artifacts", "revisions", f"output_{timestamp}_{response.model.split('/')[-1]}.html"), "w") as fw:
+                response_model = response.model or "unknown"
+                with open(os.path.join("artifacts", "revisions", f"output_{timestamp}_{response_model.split('/')[-1]}.html"), "w") as fw:
                     fw.write(html_result.html)
 
                 # Validate that all data-sources attributes are valid range strings
@@ -526,7 +528,7 @@ async def process_top_level_structure(
 
     doc = pymupdf.open(pdf_path)
     page_dimensions = {
-        page.number: {"x1": 0, "y1": 0, "x2": page.rect.width, "y2": page.rect.height}
+        page.number: BoundingBox(x1=0, y1=0, x2=page.rect.width, y2=page.rect.height)
         for page in doc
     }
 

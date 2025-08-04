@@ -3,7 +3,7 @@
 
 import pymupdf
 from transform.models import LayoutBlock, BlockType, ContentBlockBase
-from utils.schema import EmbeddingSource, PositionalData
+from utils.schema import EmbeddingSource, PositionalData, BoundingBox
 from transform.extract_drawings_by_bbox import is_completely_contained, is_bbox_contained
 from utils.svg import has_geometry, is_font_element
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -11,7 +11,6 @@ import asyncio
 import base64
 import os
 from math import ceil
-import dotenv
 from litellm import acompletion
 from collections import defaultdict
 from typing import Dict, List
@@ -19,9 +18,6 @@ from svgelements import SVG, SVGElement
 from io import StringIO
 import pydantic
 from typing import Literal
-
-dotenv.load_dotenv()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 
 class ImageClassification(pydantic.BaseModel):
@@ -43,10 +39,10 @@ def get_classification(response: str) -> BlockType:
 
 
 def get_embedding_source(block_type: BlockType) -> EmbeddingSource:
-    if block_type == BlockType.TEXT:
-        return EmbeddingSource.TEXT_CONTENT
-    elif block_type == BlockType.PICTURE:
+    if block_type == BlockType.PICTURE:
         return EmbeddingSource.DESCRIPTION
+    else:
+        return EmbeddingSource.TEXT_CONTENT
 
 
 def extract_page_geometries(svg_content: str) -> List[SVGElement]:
@@ -156,7 +152,7 @@ You should return a JSON object with the following fields:
     return [get_classification(response) for response in responses]
 
 
-async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> list[ContentBlockBase]:
+async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str, gemini_api_key: str) -> list[ContentBlockBase]:
     """Reclassify block types based on the content of the bbox, optimized to process by page"""
     pdf = pymupdf.open(pdf_path)
 
@@ -186,12 +182,12 @@ async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> li
         for block in page_blocks:
             # Coerce positional data to our own schema
             positional_data = PositionalData(
-                bbox={
-                    "x1": int(block.left),
-                    "y1": int(block.top),
-                    "x2": int(ceil(float(block.left) + float(block.width))),
-                    "y2": int(ceil(float(block.top) + float(block.height))),
-                },
+                bbox=BoundingBox(
+                    x1=int(block.left),
+                    y1=int(block.top),
+                    x2=int(ceil(float(block.left) + float(block.width))),
+                    y2=int(ceil(float(block.top) + float(block.height))),
+                ),
                 page_pdf=block.page_number,
                 page_logical=block.logical_page_number,
             )
@@ -238,25 +234,34 @@ async def reclassify_block_types(blocks: list[LayoutBlock], pdf_path: str) -> li
         semaphore = asyncio.Semaphore(2)
         blocks_to_reclassify = [content_blocks[i] for i in indices_to_reclassify]
         classifications = await reclassify_images_with_gemini(
-            blocks_to_reclassify, pdf_path, GEMINI_API_KEY, semaphore
+            blocks_to_reclassify, pdf_path, gemini_api_key, semaphore
         )
         for i, classification in enumerate(classifications):
             content_blocks[indices_to_reclassify[i]].block_type = classification
             content_blocks[indices_to_reclassify[i]].embedding_source = get_embedding_source(classification)
 
     # Exclude content blocks of non-picture type that have no text content
-    content_blocks = [block for block in content_blocks if block.block_type == BlockType.PICTURE or block.text_content.strip()]
+    content_blocks = [
+        block for block in content_blocks
+        if block.block_type == BlockType.PICTURE or (block.text_content and block.text_content.strip())
+    ]
     return content_blocks
 
 
 if __name__ == "__main__":
     import json
     import asyncio
+    import dotenv
+
+    dotenv.load_dotenv()
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    assert GEMINI_API_KEY, "GEMINI_API_KEY is not set"
+
     with open(os.path.join("artifacts", "doc_601_with_logical_page_numbers.json"), "r") as f:
         layout_blocks = json.load(f)
         layout_blocks = [LayoutBlock.model_validate(block) for block in layout_blocks]
     print(f"Loaded {len(layout_blocks)} layout blocks")
-    content_blocks = asyncio.run(reclassify_block_types(layout_blocks, "artifacts/wkdir/doc_601.pdf"))
+    content_blocks = asyncio.run(reclassify_block_types(layout_blocks, "artifacts/wkdir/doc_601.pdf", GEMINI_API_KEY))
     print(f"Re-classified {len(content_blocks)} content blocks")
     with open(os.path.join("artifacts", "doc_601_content_blocks.json"), "w") as f:
         json.dump([block.model_dump() for block in content_blocks], f, indent=2)

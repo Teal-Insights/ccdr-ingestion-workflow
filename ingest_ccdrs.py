@@ -120,7 +120,12 @@ async def main() -> None:
 
         # 3. Extract layout JSON from the PDF using the Layout Extractor API
         if not layout_path:
-            layout_path = extract_layout(pdf_path, os.path.join(temp_dir, f"doc_{document_id}.json"))
+            layout_path = extract_layout(
+                pdf_path,
+                os.path.join(temp_dir, f"doc_{document_id}.json"),
+                layout_extractor_api_url,
+                layout_extractor_api_key
+            )
             print(f"Extracted layout to {layout_path}")
             upload_json_to_s3(temp_dir, (publication_id, document_id))
         else:
@@ -147,7 +152,7 @@ async def main() -> None:
         print(f"Added logical page numbers to {len(layout_blocks)} blocks")
 
         # 5. Re-label text blocks that are actually images or figures by detecting if there's an image or geometry in the bbox
-        content_blocks: list[ContentBlockBase] = await reclassify_block_types(filtered_layout_blocks, pdf_path)
+        content_blocks: list[ContentBlockBase] = await reclassify_block_types(filtered_layout_blocks, pdf_path, gemini_api_key)
         print(f"Re-labeled {len(content_blocks)} blocks")
 
         # 6. Extract images from the PDF
@@ -169,7 +174,7 @@ async def main() -> None:
         )
 
         # 9. Detect the top-level structure of the document
-        top_level_structure: list[tuple[TagName, list[ContentBlock]]] = await detect_top_level_structure(
+        top_level_structure: list[tuple[TagName, list[ContentBlock]]] = detect_top_level_structure(
                 styled_text_blocks, api_key=gemini_api_key
             )
         print("Structure detected successfully!")

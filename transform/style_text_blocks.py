@@ -224,7 +224,10 @@ def style_text_blocks(content_blocks: list[ContentBlock], pdf_path: str, temp_di
                         print(f"Warning: No match found for styled span: '{original_span_text.strip()}'")
         
         # Discard empty text blocks as a sanity check
-        final_styled_blocks = [block for block in styled_blocks if block.block_type == BlockType.PICTURE or block.text_content.strip()]
+        final_styled_blocks = [
+            block for block in styled_blocks if block.block_type == BlockType.PICTURE or 
+            (block.text_content and block.text_content.strip())
+        ]
         
         print("\nStyling summary:")
         print(f"  Total content blocks: {len(content_blocks)}")

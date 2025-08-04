@@ -236,7 +236,7 @@ def interpolate_missing_page_numbers(page_mapping: dict[str, str | None]) -> dic
     interpolated = dict(page_mapping)  # Start with original mapping
     
     # Group pages by numbering sequence type
-    sequences = {}  # {sequence_type: [(pdf_page, logical_page), ...]}
+    sequences: dict[str, list[tuple[int, str]]] = {}  # {sequence_type: [(pdf_page, logical_page), ...]}
     
     for pdf_page, logical_page in pages:
         if logical_page is not None:
