@@ -135,3 +135,38 @@ class TestPageNumberMapping:
         assert expected_mapping[17] == "1"  # First arabic numeral
         assert expected_mapping[68] == "A"  # First letter
         assert expected_mapping[72] is None # End matter
+    
+    def test_header_footer_classification(self, doc_601_with_logical_pages):
+        """Test that page headers and footers are correctly reclassified in the output."""
+        # Count total footers
+        footer_count = sum(1 for block in doc_601_with_logical_pages if block["type"] == "Page footer")
+        
+        # Count header instances
+        header_count = sum(1 for block in doc_601_with_logical_pages if block["type"] == "Page header")
+        
+        # Find all instances of the specific footer text
+        ccdr_footer_blocks = [
+            block for block in doc_601_with_logical_pages 
+            if block["text"] == "West Bank and Gaza Country Climate and Development Report"
+        ]
+        
+        # Verify that all instances of the CCDR title text are classified as footers
+        assert len(ccdr_footer_blocks) > 0, "Should find instances of CCDR footer text"
+        
+        for block in ccdr_footer_blocks:
+            assert block["type"] == "Page footer", (
+                f"Block with text 'West Bank and Gaza Country Climate and Development Report' "
+                f"on page {block['page_number']} should be classified as 'Page footer', "
+                f"but was classified as '{block['type']}'"
+            )
+        
+        # Log classification statistics for debugging
+        print("\nHEADER/FOOTER CLASSIFICATION RESULTS:")
+        print(f"Total footers found: {footer_count}")
+        print(f"Total headers found: {header_count}")
+        print(f"CCDR footer text instances: {len(ccdr_footer_blocks)}")
+        
+        # Verify reasonable counts (based on the comment: 25 -> 131 footers)
+        # This is a sanity check - the exact count may vary but should be substantial
+        assert footer_count >= 100, f"Expected substantial number of footers, got {footer_count}"
+        assert footer_count <= 150, f"Expected 131 footers, got {footer_count}"

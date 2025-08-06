@@ -150,28 +150,18 @@ def reclassify_headers_and_footers(blocks: list[ExtractedLayoutBlock]) -> list[E
     Reclassify blocks that should be headers or footers based on position and content.
     """
     reclassified_blocks = []
-    
+
     for block in blocks:
         new_block = block.model_copy()
-        
+
         # Only reclassify Text blocks that are in header/footer positions
-        if (block.type == BlockType.TEXT and 
-            is_header_or_footer_by_position_block(block) and
-            looks_like_page_number(block.text)):
-            
-            # Determine if it's header or footer based on position
-            distance_from_top = block.top
-            distance_from_bottom = block.page_height - (block.top + block.height)
-            
-            if distance_from_top < distance_from_bottom:
-                new_block.type = BlockType.PAGE_HEADER
-            else:
-                new_block.type = BlockType.PAGE_FOOTER
-                
+        if (block.type == BlockType.TEXT):
+            reclassification: BlockType | None = is_header_or_footer_by_position_block(block)
+            new_block.type = reclassification.value if reclassification else block.type
             logger.debug(f"Reclassified page {block.page_number} text '{block.text}' as {new_block.type}")
-        
+
         reclassified_blocks.append(new_block)
-    
+
     return reclassified_blocks
 
 
@@ -218,7 +208,7 @@ def increment_page_number(page_number: str, increment: int = 1) -> Optional[str]
             return chr(ord('A') + new_val)
     except (ValueError, roman.InvalidRomanNumeralError):
         return None
-    
+
     return None
 
 
@@ -233,7 +223,8 @@ def interpolate_missing_page_numbers(page_mapping: dict[str, str | None]) -> dic
     pages = [(int(k), v) for k, v in page_mapping.items()]
     pages.sort()
     
-    interpolated = dict(page_mapping)  # Start with original mapping
+    # Initialize interpolated with all original keys, preserving None values
+    interpolated = {k: v for k, v in page_mapping.items()}
     
     # Group pages by numbering sequence type
     sequences: dict[str, list[tuple[int, str]]] = {}  # {sequence_type: [(pdf_page, logical_page), ...]}
@@ -282,13 +273,14 @@ def interpolate_missing_page_numbers(page_mapping: dict[str, str | None]) -> dic
                     # Fill in missing pages if increment is close to 1
                     if 0.8 <= expected_increment <= 1.2:
                         for pdf_page in range(current_pdf + 1, next_pdf):
-                            if interpolated[str(pdf_page)] is None:
+                            page_key = str(pdf_page)
+                            if interpolated.get(page_key) is None:  # Only interpolate if not already set
                                 logical_increment = round((pdf_page - current_pdf) * expected_increment)
                                 new_logical = increment_page_number(current_logical, logical_increment)
                                 if new_logical:
-                                    interpolated[str(pdf_page)] = new_logical
+                                    interpolated[page_key] = new_logical
                                     logger.debug(f"Interpolated page {pdf_page} as {new_logical}")
-                
+            
             except (ValueError, roman.InvalidRomanNumeralError):
                 continue
     
@@ -336,6 +328,24 @@ def create_router(
             "model_name": "page-mapper",
             "litellm_params": {
                 "model": "openrouter/deepseek/deepseek-chat",
+                "api_key": openrouter_api_key,
+                "max_parallel_requests": 10,
+                "weight": 3,
+            }
+        },
+        {
+            "model_name": "page-mapper",
+            "litellm_params": {
+                "model": "openrouter/openai/gpt-4o-mini",
+                "api_key": openrouter_api_key,
+                "max_parallel_requests": 10,
+                "weight": 1,
+            }
+        },
+        {
+            "model_name": "page-mapper",
+            "litellm_params": {
+                "model": "openrouter/openai/gpt-4.1-mini",
                 "api_key": openrouter_api_key,
                 "max_parallel_requests": 10,
                 "weight": 1,
@@ -499,26 +509,19 @@ async def add_logical_page_numbers(
 
     # 2. Create router and call the LLM to get the page mapping.
     router = create_router(gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key)
+
     page_mapping = {}
-    try:
-        # The internal function handles retries via the router.
-        page_mapping = await _get_logical_page_mapping_from_llm(page_contents, router)
-        
-        # 2.5. Interpolate missing page numbers based on detected sequences
-        original_count = sum(1 for v in page_mapping.values() if v is not None)
-        page_mapping = interpolate_missing_page_numbers(page_mapping)
-        interpolated_count = sum(1 for v in page_mapping.values() if v is not None)
-        
-        if interpolated_count > original_count:
-            logger.info(f"Interpolated {interpolated_count - original_count} additional page numbers "
-                       f"({original_count} -> {interpolated_count} total)")
-        
-    except Exception as e:
-        # If the LLM call fails completely after all retries, log the error.
-        # The code will gracefully fall back to None logical page numbers in the next step.
-        logger.error(f"LLM call to determine logical page numbers failed: {e}. "
-                     "Setting all logical page numbers to None.")
-        # page_mapping remains empty.
+    # The internal function handles retries via the router.
+    page_mapping = await _get_logical_page_mapping_from_llm(page_contents, router)
+    
+    # 2.5. Interpolate missing page numbers based on detected sequences
+    original_count = sum(1 for v in page_mapping.values() if v is not None)
+    page_mapping = interpolate_missing_page_numbers(page_mapping)
+    interpolated_count = sum(1 for v in page_mapping.values() if v is not None)
+    
+    if interpolated_count > original_count:
+        logger.info(f"Interpolated {interpolated_count - original_count} additional page numbers "
+                    f"({original_count} -> {interpolated_count} total)")
 
     # 3. Enrich the original blocks with the logical page numbers.
     enriched_blocks = []
@@ -562,7 +565,7 @@ if __name__ == "__main__":
         if not any([gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key]):
             raise ValueError("At least one API key must be provided")
         
-        with open("doc_601.json", "r") as f:
+        with open("artifacts/wkdir/doc_601.json", "r") as f:
             data = json.load(f)
 
         blocks = [ExtractedLayoutBlock(**block) for block in data]
@@ -572,9 +575,9 @@ if __name__ == "__main__":
             openai_api_key or "",
             deepseek_api_key or "",
             openrouter_api_key or "",
-            pdf_path="doc_601.pdf"  # Pass PDF path for dimension validation
+            pdf_path="artifacts/wkdir/doc_601.pdf"  # Pass PDF path for dimension validation
         )
-        with open("doc_601_with_logical_page_numbers.json", "w") as f:
+        with open("artifacts/doc_601_with_logical_page_numbers.json", "w") as f:
             json.dump([block.model_dump() for block in blocks], f, indent=2)
 
     asyncio.run(main())
