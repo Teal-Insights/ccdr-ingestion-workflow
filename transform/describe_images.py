@@ -4,9 +4,9 @@ import io
 import os
 from PIL import Image
 import pydantic
-from litellm import acompletion, Choices
+from litellm import Choices
 from litellm.files.main import ModelResponse
-from tenacity import retry, stop_after_attempt, wait_exponential
+from litellm import Router
 from sqlmodel import Session, select
 from transform.models import ContentBlock, BlockType
 from utils.schema import Publication, Document
@@ -18,9 +18,47 @@ class ImageDescription(pydantic.BaseModel):
     description: str
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+def create_router(
+    gemini_api_key: str,
+    openai_api_key: str,
+    deepseek_api_key: str,
+    openrouter_api_key: str,
+) -> Router:
+    """Create a LiteLLM Router with advanced load balancing and fallback configuration."""
+    model_list = [
+        {
+            "model_name": "image-classifier",
+            "litellm_params": {
+                "model": "openrouter/google/gemini-2.5-flash", # 16k tokens output
+                "api_key": openrouter_api_key,
+                "max_parallel_requests": 10,
+                "weight": 1,
+            }
+        }
+    ]
+
+    # Router configuration
+    return Router(
+        model_list=model_list,
+        routing_strategy="simple-shuffle",  # Weighted random selection
+        fallbacks=[{"image-classifier": ["image-classifier"]}],  # Falls back within the same group
+        num_retries=2,
+        allowed_fails=5,
+        cooldown_time=30,
+        enable_pre_call_checks=True,  # Enable context window and rate limit checks
+        default_max_parallel_requests=50,  # Global default
+        set_verbose=False,  # Set to True for debugging
+    )
+
+
 async def describe_images_with_vlm(
-    content_blocks_with_images: list[ContentBlock], api_key: str, temp_dir: str, document_id: int
+    content_blocks_with_images: list[ContentBlock],
+    temp_dir: str,
+    document_id: int,
+    gemini_api_key: str,
+    openai_api_key: str,
+    deepseek_api_key: str,
+    openrouter_api_key: str,
 ) -> list[ContentBlock]:
     """Use Gemini to describe the image with async retry logic."""
 
@@ -48,8 +86,8 @@ async def describe_images_with_vlm(
         "use to inform your response, but you should focus on primarily the image itself."
     )
 
-    # Create tasks for async processing with semaphore control
-    semaphore = asyncio.Semaphore(2)
+    # Create tasks for async processing
+    router = create_router(gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key)
     tasks = []
     
     for i, content_block in enumerate(content_blocks_with_images):
@@ -110,10 +148,10 @@ async def describe_images_with_vlm(
             }
         ]
 
-        # Create task with semaphore and include the content block index for pairing
+        # Create task and include the content block index for pairing
         task = asyncio.create_task(
-            _process_single_image_with_semaphore(
-                semaphore, message, api_key, i
+            _process_single_image(
+                message, i, router
             )
         )
         tasks.append(task)
@@ -130,47 +168,42 @@ async def describe_images_with_vlm(
     return content_blocks_with_images
 
 
-async def _process_single_image_with_semaphore(
-    semaphore: asyncio.Semaphore, message: list, api_key: str, block_index: int
+async def _process_single_image(
+    messages: list, block_index: int, router: Router
 ) -> tuple[int, str] | None:
-    """Process a single image with semaphore control."""
-    async with semaphore:
-        try:
-            response = await acompletion(
-                model="gemini/gemini-2.5-flash",
-                messages=message,
-                temperature=0.0,
-                response_format={
-                    "type": "json_object",
-                    "response_schema": ImageDescription.model_json_schema(),
-                },
-                api_key=api_key
-            )
-            
-            if (
-                response
-                and isinstance(response, ModelResponse)
-                and isinstance(response.choices[0], Choices)
-                and response.choices[0].message.content
-            ):
-                description = ImageDescription.model_validate_json(
-                    response.choices[0].message.content
-                )
-                return block_index, f"{description.label}: {description.description}"
-            else:
-                print(f"Warning: No valid response from Gemini for block {block_index}")
-                return None
-        except Exception as e:
-            print(f"Error processing block {block_index}: {e}")
+    """Process a single image."""
+    try:
+        # litellm router exposes `acompletion` for async completion
+        response = await router.acompletion(
+            model="image-classifier",
+            messages=messages,  # type: ignore
+            temperature=0.0,
+            response_format=ImageDescription
+        )
+
+        if (
+            response
+            and isinstance(response, ModelResponse)
+            and isinstance(response.choices[0], Choices)
+            and response.choices[0].message.content
+        ):
+            image_description = ImageDescription.model_validate_json(response.choices[0].message.content)
+            return block_index, f"{image_description.label}: {image_description.description}"
+        else:
+            print(f"Warning: No valid response from Gemini for block {block_index}")
             return None
+    except Exception as e:
+        print(f"Error processing block {block_index}: {e}")
+        return None
 
 
 if __name__ == "__main__":
     import json
     import dotenv
+
     dotenv.load_dotenv(override=True)
-    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    assert gemini_api_key, "GEMINI_API_KEY is not set"
+
+    gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key = "", "", "", os.getenv("OPENROUTER_API_KEY", "")
     temp_dir: str = "./artifacts"
     document_id: int = 601
 
@@ -178,7 +211,7 @@ if __name__ == "__main__":
         content_blocks_with_images = json.load(fr)
         content_blocks_with_images = [ContentBlock.model_validate(block) for block in content_blocks_with_images]
     content_blocks_with_descriptions = asyncio.run(describe_images_with_vlm(
-        content_blocks_with_images, gemini_api_key, temp_dir, document_id
+        content_blocks_with_images, temp_dir, document_id, gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key
     ))
     print("Images described successfully!")
     with open(os.path.join("artifacts", "doc_601_content_blocks_with_descriptions.json"), "w") as fw:

@@ -1,7 +1,8 @@
+# TODO: Make the validators Pydantic validators and retry on failure
+
 from typing import List
 import pydantic
-from tenacity import retry, stop_after_attempt, wait_exponential
-from litellm import completion
+from litellm import Router
 from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
 
@@ -47,6 +48,39 @@ HTML Content:
 {html_content}
 
 Respond with a JSON object containing the three sections."""
+
+
+def create_router(
+    gemini_api_key: str,
+    openai_api_key: str,
+    deepseek_api_key: str,
+    openrouter_api_key: str,
+) -> Router:
+    """Create a LiteLLM Router with advanced load balancing and fallback configuration."""
+    model_list = [
+        {
+            "model_name": "structure-detector",
+            "litellm_params": {
+                "model": "gemini/gemini-2.5-flash", # openrouter-hosted version fails on this task!
+                "api_key": gemini_api_key,
+                "max_parallel_requests": 10,
+                "weight": 1,
+            }
+        }
+    ]
+
+    # Router configuration
+    return Router(
+        model_list=model_list,
+        routing_strategy="simple-shuffle",  # Weighted random selection
+        fallbacks=[{"structure-detector": ["structure-detector"]}],  # Falls back within the same group
+        num_retries=2,
+        allowed_fails=5,
+        cooldown_time=30,
+        enable_pre_call_checks=True,  # Enable context window and rate limit checks
+        default_max_parallel_requests=50,  # Global default
+        set_verbose=False,  # Set to True for debugging
+    )
 
 
 def parse_range_string(range_str: str) -> List[int]:
@@ -99,10 +133,10 @@ def validate_tag_coverage(
         ValueError: If ids are missing, duplicated, or out of range
     """
     all_assigned_ids = set(header_ids + main_ids + footer_ids)
-    expected_ids = set(range(total_ids))  # Fixed: HTML ids start from 0
+    expected_ids = set(range(total_ids))
 
-    assert len(all_assigned_ids) == len(header_ids) + len(main_ids) + len(footer_ids)
-    assert all_assigned_ids == expected_ids    
+    assert len(all_assigned_ids) == len(header_ids) + len(main_ids) + len(footer_ids), f"Assigned ids do not match expected ids. Duplicates: {all_assigned_ids - expected_ids}"
+    assert all_assigned_ids == expected_ids, f"Assigned ids do not match expected ids. Differences: {expected_ids - all_assigned_ids}"
 
 
 def filter_blocks_by_numbers(
@@ -126,9 +160,12 @@ def filter_blocks_by_numbers(
     return blocks
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-def detect_top_level_structure(
-    content_blocks: list[ContentBlock], api_key: str
+async def detect_top_level_structure(
+    content_blocks: list[ContentBlock],
+    gemini_api_key: str,
+    openai_api_key: str,
+    deepseek_api_key: str,
+    openrouter_api_key: str,
 ) -> list[tuple[TagName, list[ContentBlock]]]:
     """
     Use Gemini to analyze HTML content and detect document structure.
@@ -148,15 +185,15 @@ def detect_top_level_structure(
     )
     messages = [{"role": "user", "content": prompt}]
 
-    response: ModelResponse = completion(
-        model="gemini/gemini-2.5-flash",
+    router = create_router(gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key)
+    response: ModelResponse = await router.acompletion(
+        model="structure-detector",
         messages=messages,
         temperature=0.0,
         response_format={
             "type": "json_object",
             "response_schema": TopLevelStructure.model_json_schema(),
-        },
-        api_key=api_key
+        }
     )
 
     # Parse JSON response into Pydantic model
@@ -207,17 +244,19 @@ if __name__ == "__main__":
     import os
     import json
     import dotenv
+    import asyncio
 
     dotenv.load_dotenv()
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    assert api_key, "GEMINI_API_KEY is not set"
+    gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key = "", "", "", os.getenv("OPENROUTER_API_KEY", "")
     
     with open(os.path.join("artifacts", "doc_601_content_blocks_with_styles.json"), "r") as fr:
         content_blocks: list[ContentBlock] = json.load(fr)
         content_blocks = [ContentBlock.model_validate(block) for block in content_blocks]
 
-    top_level_structure = detect_top_level_structure(content_blocks, api_key=api_key)
+    top_level_structure = asyncio.run(detect_top_level_structure(
+        content_blocks, gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key
+    ))
     with open(os.path.join("artifacts", "doc_601_top_level_structure.json"), "w") as fw:
         json.dump(
             [
@@ -225,4 +264,5 @@ if __name__ == "__main__":
                 for tag_name, blocks in top_level_structure
             ],
             fw,
-            indent=2)
+            indent=2
+        )

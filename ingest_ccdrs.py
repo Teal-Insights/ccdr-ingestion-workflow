@@ -1,5 +1,4 @@
-# TODO: Apply the router pattern from detect_structure.py to other modules that use litellm
-# TODO: Use more parallelization at the top level of the pipeline?
+# TODO: Coordinate router creation and use more parallelization at the top level of the pipeline?
 
 """CCDR Ingestion Pipeline
 
@@ -130,7 +129,9 @@ async def main() -> None:
         print(f"Added logical page numbers to {len(layout_blocks)} blocks")
 
         # 5. Re-label text blocks that are actually images or figures by detecting if there's an image or geometry in the bbox
-        content_blocks: list[ContentBlockBase] = await reclassify_block_types(filtered_layout_blocks, pdf_path, gemini_api_key)
+        content_blocks: list[ContentBlockBase] = await reclassify_block_types(
+            filtered_layout_blocks, pdf_path, openrouter_api_key
+        )
         print(f"Re-labeled {len(content_blocks)} blocks")
 
         # 6. Extract images from the PDF
@@ -141,7 +142,7 @@ async def main() -> None:
 
         # 7. Describe the images with a VLM (e.g., Gemini)
         content_blocks_with_descriptions: list[ContentBlock] = await describe_images_with_vlm(
-            content_blocks_with_images, gemini_api_key, temp_dir, document_id
+            content_blocks_with_images, temp_dir, document_id, gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key
         )
         print("Images described successfully!")
 
@@ -152,8 +153,8 @@ async def main() -> None:
         )
 
         # 9. Detect the top-level structure of the document
-        top_level_structure: list[tuple[TagName, list[ContentBlock]]] = detect_top_level_structure(
-                styled_text_blocks, api_key=gemini_api_key
+        top_level_structure: list[tuple[TagName, list[ContentBlock]]] = await detect_top_level_structure(
+            styled_text_blocks, gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key
             )
         print("Structure detected successfully!")
 
