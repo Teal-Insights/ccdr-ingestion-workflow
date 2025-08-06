@@ -77,7 +77,10 @@ class SplitResult(BaseModel):
         covered_ids = set(group_ids)
         expected_ids = set(range(num_content_blocks))
         if not covered_ids == expected_ids:
-            raise ValueError(f"Group ranges must cover all content blocks exactly once. Difference: {covered_ids.difference(expected_ids)}")
+            missing_ids = expected_ids.difference(covered_ids)
+            extra_ids = covered_ids.difference(expected_ids)
+            raise ValueError(f"Group ranges must cover all content blocks exactly once. "
+                        f"Missing IDs: {sorted(missing_ids)}, Extra IDs: {sorted(extra_ids)}")
 
         if len(group_ids) > len(covered_ids):
             duplicates = [id for id in covered_ids if group_ids.count(id) > 1]
