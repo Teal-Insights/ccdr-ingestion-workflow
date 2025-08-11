@@ -59,10 +59,37 @@ def create_router(
                 "model": "openrouter/anthropic/claude-sonnet-4", # 128k tokens output
                 "api_key": openrouter_api_key,
                 "max_parallel_requests": 3,
+                "weight": 3,
+            }
+        },
+        {
+            "model_name": "html-parser",
+            "litellm_params": {
+                "model": "openrouter/openai/gpt-oss-120b", # 133k tokens output
+                "api_key": openrouter_api_key,
+                "max_parallel_requests": 3,
                 "weight": 1,
             }
         },
-                {
+        {
+            "model_name": "html-parser",
+            "litellm_params": {
+                "model": "openrouter/openai/gpt-5", # 128k tokens output
+                "api_key": openrouter_api_key,
+                "max_parallel_requests": 3,
+                "weight": 1,
+            }
+        },
+        {
+            "model_name": "html-parser",
+            "litellm_params": {
+                "model": "openrouter/qwen/qwen3-235b-a22b-thinking-2507", # 131k tokens output
+                "api_key": openrouter_api_key,
+                "max_parallel_requests": 3,
+                "weight": 1,
+            }
+        },
+        {
             "model_name": "structure-detector",
             "litellm_params": {
                 "model": "gemini/gemini-2.5-flash", # openrouter-hosted version fails on this task!
