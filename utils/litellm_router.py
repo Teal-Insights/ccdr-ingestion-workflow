@@ -1,10 +1,10 @@
 from litellm import Router
 
 def create_router(
-    gemini_api_key: str,
-    openai_api_key: str,
-    deepseek_api_key: str,
-    openrouter_api_key: str,
+    gemini_api_key: str = "",
+    openai_api_key: str = "",
+    deepseek_api_key: str = "",
+    openrouter_api_key: str = "",
 ) -> Router:
     """Create a LiteLLM Router with advanced load balancing and fallback configuration."""
     model_list = [

@@ -462,19 +462,10 @@ async def _restructure_html(
 async def process_top_level_structure(
     top_level_structure: list[tuple[TagName, list[ContentBlock]]],
     pdf_path: str,
-    gemini_api_key: str,
-    openai_api_key: str,
-    deepseek_api_key: str,
-    openrouter_api_key: str,
+    router: Router,
 ) -> list[StructuredNode]:
     """Process the top-level structure of the document."""
     # Create router with built-in load balancing and concurrency control
-    router = create_router(
-        gemini_api_key, 
-        openai_api_key, 
-        deepseek_api_key,
-        openrouter_api_key,
-    )
 
     doc = pymupdf.open(pdf_path)
     page_dimensions = {
@@ -540,6 +531,13 @@ if __name__ == "__main__":
         assert deepseek_api_key, "DEEPSEEK_API_KEY is not set"
         assert openrouter_api_key, "OPENROUTER_API_KEY is not set"
 
+        router = create_router(
+            gemini_api_key, 
+            openai_api_key, 
+            deepseek_api_key,
+            openrouter_api_key,
+        )
+
         pdf_path = os.path.join("artifacts", "wkdir", "doc_601.pdf")
 
         with open(os.path.join("artifacts", "doc_601_top_level_structure.json"), "r") as fr:
@@ -551,10 +549,7 @@ if __name__ == "__main__":
         parent_nodes = await process_top_level_structure(
             top_level_structure,
             pdf_path,
-            gemini_api_key,
-            openai_api_key,
-            deepseek_api_key,
-            openrouter_api_key,
+            router,
         )
 
         with open(os.path.join("artifacts", "doc_601_nested_structure.json"), "w") as fw:

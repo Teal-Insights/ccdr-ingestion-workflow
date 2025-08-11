@@ -19,6 +19,7 @@ import requests
 import asyncio
 from typing import Sequence
 from sqlmodel import Session, select
+from litellm import Router
 from transform.extract_layout import extract_layout
 from transform.map_page_numbers import add_logical_page_numbers
 from transform.reclassify_blocks import reclassify_block_types
@@ -32,6 +33,7 @@ from transform.upload_to_db import upload_structured_nodes_to_db
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node, TagName
 from utils.aws import download_pdf_from_s3, upload_json_to_s3, verify_environment_variables
+from utils.litellm_router import create_router
 
 
 async def main() -> None:
@@ -56,6 +58,8 @@ async def main() -> None:
     assert layout_extractor_api_url, "LAYOUT_EXTRACTOR_API_URL is not set"
     verify_environment_variables()
     assert check_schema_sync(), "DB schema is out of sync."
+
+    router: Router = create_router(gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key)
 
     # Create a temporary working directory for the entire pipeline
     # temp_dir: str = tempfile.mkdtemp(prefix="pdf_parsing_pipeline_")
@@ -117,10 +121,7 @@ async def main() -> None:
         # 4. Use page numbers to label all blocks with logical page numbers, then discard page header and footer blocks
         layout_blocks: list[LayoutBlock] = await add_logical_page_numbers(
             extracted_layout_blocks, 
-            gemini_api_key,
-            openai_api_key,
-            deepseek_api_key,
-            openrouter_api_key,
+            router,
             pdf_path
         )
         filtered_layout_blocks: list[LayoutBlock] = [
@@ -130,7 +131,7 @@ async def main() -> None:
 
         # 5. Re-label text blocks that are actually images or figures by detecting if there's an image or geometry in the bbox
         content_blocks: list[ContentBlockBase] = await reclassify_block_types(
-            filtered_layout_blocks, pdf_path, openrouter_api_key
+            filtered_layout_blocks, pdf_path, router
         )
         print(f"Re-labeled {len(content_blocks)} blocks")
 
@@ -142,7 +143,7 @@ async def main() -> None:
 
         # 7. Describe the images with a VLM (e.g., Gemini)
         content_blocks_with_descriptions: list[ContentBlock] = await describe_images_with_vlm(
-            content_blocks_with_images, temp_dir, document_id, gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key
+            content_blocks_with_images, temp_dir, document_id, router
         )
         print("Images described successfully!")
 
@@ -154,7 +155,7 @@ async def main() -> None:
 
         # 9. Detect the top-level structure of the document
         top_level_structure: list[tuple[TagName, list[ContentBlock]]] = await detect_top_level_structure(
-            styled_text_blocks, gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key
+            styled_text_blocks, router
             )
         print("Structure detected successfully!")
 
@@ -162,10 +163,7 @@ async def main() -> None:
         nested_structure: list[StructuredNode] = await process_top_level_structure(
             top_level_structure,
             pdf_path,
-            gemini_api_key,
-            openai_api_key,
-            deepseek_api_key,
-            openrouter_api_key,
+            router,
         )
 
         print("Nested structure detected successfully!")

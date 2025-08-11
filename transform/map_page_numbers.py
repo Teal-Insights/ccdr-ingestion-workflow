@@ -407,10 +407,7 @@ Example Output: {"mapping": {"1": null, "2": "i", "3": "ii", "4": "1", "5": "2",
 
 async def add_logical_page_numbers(
     extracted_layout_blocks: list[ExtractedLayoutBlock],
-    gemini_api_key: str,
-    openai_api_key: str,
-    deepseek_api_key: str,
-    openrouter_api_key: str,
+    router: Router,
     pdf_path: Optional[str] = None,
 ) -> list[LayoutBlock]:
     """
@@ -458,9 +455,7 @@ async def add_logical_page_numbers(
             for block in extracted_layout_blocks
         ]
 
-    # 2. Create router and call the LLM to get the page mapping.
-    router = create_router(gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key)
-
+    # 2. Call the LLM to get the page mapping.
     page_mapping = {}
     # The internal function handles retries via the router.
     page_mapping = await _get_logical_page_mapping_from_llm(page_contents, router)
@@ -502,6 +497,8 @@ async def add_logical_page_numbers(
 if __name__ == "__main__":
     from dotenv import load_dotenv
     import os
+    from litellm import Router
+    from utils.litellm_router import create_router
 
     async def main():
         load_dotenv(override=True)
@@ -513,19 +510,16 @@ if __name__ == "__main__":
         openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
         
         # Ensure at least one API key is available
-        if not any([gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key]):
-            raise ValueError("At least one API key must be provided")
+        assert all([gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key]), "At least one API key must be provided"
+        router: Router = create_router(gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key)
         
         with open("artifacts/wkdir/doc_601.json", "r") as f:
             data = json.load(f)
 
         blocks = [ExtractedLayoutBlock(**block) for block in data]
         blocks = await add_logical_page_numbers(
-            blocks, 
-            gemini_api_key or "",
-            openai_api_key or "",
-            deepseek_api_key or "",
-            openrouter_api_key or "",
+            blocks,
+            router=router,
             pdf_path="artifacts/wkdir/doc_601.pdf"  # Pass PDF path for dimension validation
         )
         with open("artifacts/doc_601_with_logical_page_numbers.json", "w") as f:

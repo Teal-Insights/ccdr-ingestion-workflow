@@ -23,10 +23,7 @@ async def describe_images_with_vlm(
     content_blocks_with_images: list[ContentBlock],
     temp_dir: str,
     document_id: int,
-    gemini_api_key: str,
-    openai_api_key: str,
-    deepseek_api_key: str,
-    openrouter_api_key: str,
+    router: Router,
 ) -> list[ContentBlock]:
     """Use Gemini to describe the image with async retry logic."""
 
@@ -55,7 +52,6 @@ async def describe_images_with_vlm(
     )
 
     # Create tasks for async processing
-    router = create_router(gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key)
     tasks = []
     
     for i, content_block in enumerate(content_blocks_with_images):
@@ -172,6 +168,8 @@ if __name__ == "__main__":
     dotenv.load_dotenv(override=True)
 
     gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key = "", "", "", os.getenv("OPENROUTER_API_KEY", "")
+    router = create_router(gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key)
+
     temp_dir: str = "./artifacts"
     document_id: int = 601
 
@@ -179,7 +177,7 @@ if __name__ == "__main__":
         content_blocks_with_images = json.load(fr)
         content_blocks_with_images = [ContentBlock.model_validate(block) for block in content_blocks_with_images]
     content_blocks_with_descriptions = asyncio.run(describe_images_with_vlm(
-        content_blocks_with_images, temp_dir, document_id, gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key
+        content_blocks_with_images, temp_dir, document_id, router
     ))
     print("Images described successfully!")
     with open(os.path.join("artifacts", "doc_601_content_blocks_with_descriptions.json"), "w") as fw:

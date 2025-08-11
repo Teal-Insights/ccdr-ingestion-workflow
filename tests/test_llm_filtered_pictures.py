@@ -78,7 +78,7 @@ async def test_llm_filtered_picture_detection():
     dotenv.load_dotenv()
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
     assert OPENROUTER_API_KEY, "OPENROUTER_API_KEY is not set"
-    router = create_router(OPENROUTER_API_KEY)
+    router = create_router(openrouter_api_key=OPENROUTER_API_KEY)
 
     pdf = pymupdf.open("tests/sample_data/doc_601.pdf")
     content_blocks, indices_to_reclassify = await find_visual_candidates_llm_filtered(layout_blocks_parsed, pdf, router)

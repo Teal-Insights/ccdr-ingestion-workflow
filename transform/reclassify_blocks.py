@@ -12,7 +12,6 @@ import pymupdf
 
 from transform.models import LayoutBlock, BlockType, ContentBlockBase
 from utils.schema import EmbeddingSource, PositionalData, BoundingBox
-from utils.litellm_router import create_router
 
 
 def analyze_text_patterns(text: str) -> dict:
@@ -437,13 +436,12 @@ You should return a JSON object with:
 async def reclassify_block_types(
     blocks: list[LayoutBlock], 
     pdf_path: str, 
-    openrouter_api_key: str
+    router: Router
 ) -> list[ContentBlockBase]:
     """LLM-filtered reclassification workflow"""
 
     start_time = time.time()
 
-    router = create_router(openrouter_api_key)
     pdf = pymupdf.open(pdf_path)
 
     print("Finding visual candidates with LLM text filtering...")
@@ -483,10 +481,15 @@ if __name__ == "__main__":
     import json
     import asyncio
     import dotenv
+    from litellm import Router
+
+    from utils.litellm_router import create_router
 
     dotenv.load_dotenv()
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
     assert OPENROUTER_API_KEY, "OPENROUTER_API_KEY is not set"
+
+    router: Router = create_router(openrouter_api_key=OPENROUTER_API_KEY)
 
     with open(os.path.join("artifacts", "doc_601_with_logical_page_numbers.json"), "r") as f:
         layout_blocks = json.load(f)
@@ -498,7 +501,7 @@ if __name__ == "__main__":
     content_blocks = asyncio.run(reclassify_block_types(
         layout_blocks, 
         "artifacts/wkdir/doc_601.pdf", 
-        OPENROUTER_API_KEY
+        router
     ))
     total_time = time.time() - start_time
 

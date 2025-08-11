@@ -4,6 +4,7 @@ from typing import List
 import pydantic
 from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
+from litellm import Router
 
 from transform.models import ContentBlock
 from utils.schema import TagName
@@ -129,10 +130,7 @@ def filter_blocks_by_numbers(
 
 async def detect_top_level_structure(
     content_blocks: list[ContentBlock],
-    gemini_api_key: str,
-    openai_api_key: str,
-    deepseek_api_key: str,
-    openrouter_api_key: str,
+    router: Router,
 ) -> list[tuple[TagName, list[ContentBlock]]]:
     """
     Use Gemini to analyze HTML content and detect document structure.
@@ -152,7 +150,6 @@ async def detect_top_level_structure(
     )
     messages = [{"role": "user", "content": prompt}]
 
-    router = create_router(gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key)
     response: ModelResponse = await router.acompletion(
         model="structure-detector",
         messages=messages,
@@ -216,13 +213,14 @@ if __name__ == "__main__":
     dotenv.load_dotenv()
 
     gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key = "", "", "", os.getenv("OPENROUTER_API_KEY", "")
+    router = create_router(gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key)
     
     with open(os.path.join("artifacts", "doc_601_content_blocks_with_styles.json"), "r") as fr:
         content_blocks: list[ContentBlock] = json.load(fr)
         content_blocks = [ContentBlock.model_validate(block) for block in content_blocks]
 
     top_level_structure = asyncio.run(detect_top_level_structure(
-        content_blocks, gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key
+        content_blocks, router
     ))
     with open(os.path.join("artifacts", "doc_601_top_level_structure.json"), "w") as fw:
         json.dump(
