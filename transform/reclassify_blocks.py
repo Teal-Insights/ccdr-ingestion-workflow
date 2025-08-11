@@ -12,45 +12,7 @@ import pymupdf
 
 from transform.models import LayoutBlock, BlockType, ContentBlockBase
 from utils.schema import EmbeddingSource, PositionalData, BoundingBox
-
-
-def create_router(openrouter_api_key: str) -> Router:
-    """Create a LiteLLM Router with both image and text classifiers."""
-    model_list = [
-        {
-            "model_name": "image-classifier",
-            "litellm_params": {
-                "model": "openrouter/google/gemini-2.5-flash",
-                "api_key": openrouter_api_key,
-                "max_parallel_requests": 10,
-                "weight": 1,
-            }
-        },
-        {
-            "model_name": "text-classifier",
-            "litellm_params": {
-                "model": "openrouter/openai/gpt-4o-mini",
-                "api_key": openrouter_api_key,
-                "max_parallel_requests": 20,  # Higher for text-only tasks
-                "weight": 1,
-            }
-        }
-    ]
-
-    return Router(
-        model_list=model_list,
-        routing_strategy="simple-shuffle",
-        fallbacks=[
-            {"image-classifier": ["image-classifier"]},
-            {"text-classifier": ["text-classifier"]}
-        ],
-        num_retries=2,
-        allowed_fails=5,
-        cooldown_time=30,
-        enable_pre_call_checks=True,
-        default_max_parallel_requests=50,
-        set_verbose=False,
-    )
+from utils.litellm_router import create_router
 
 
 def analyze_text_patterns(text: str) -> dict:

@@ -29,6 +29,7 @@ dev = [
     "mypy>=1.16.1",
     "pytest>=8.4.1",
     "ruff>=0.12.2",
+    "ty>=0.0.1a17",
     "types-boto3[s3]>=1.39.9",
     "types-requests>=2.32.4.20250611",
 ]

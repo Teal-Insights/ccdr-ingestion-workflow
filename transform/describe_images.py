@@ -4,51 +4,19 @@ import io
 import os
 from PIL import Image
 import pydantic
-from litellm import Choices
+from litellm import Choices, Router
 from litellm.files.main import ModelResponse
-from litellm import Router
 from sqlmodel import Session, select
+
 from transform.models import ContentBlock, BlockType
 from utils.schema import Publication, Document
 from utils.db import engine
+from utils.litellm_router import create_router
 
 
 class ImageDescription(pydantic.BaseModel):
     label: str
     description: str
-
-
-def create_router(
-    gemini_api_key: str,
-    openai_api_key: str,
-    deepseek_api_key: str,
-    openrouter_api_key: str,
-) -> Router:
-    """Create a LiteLLM Router with advanced load balancing and fallback configuration."""
-    model_list = [
-        {
-            "model_name": "image-classifier",
-            "litellm_params": {
-                "model": "openrouter/google/gemini-2.5-flash", # 16k tokens output
-                "api_key": openrouter_api_key,
-                "max_parallel_requests": 10,
-                "weight": 1,
-            }
-        }
-    ]
-
-    # Router configuration
-    return Router(
-        model_list=model_list,
-        routing_strategy="simple-shuffle",  # Weighted random selection
-        fallbacks=[{"image-classifier": ["image-classifier"]}],  # Falls back within the same group
-        num_retries=2,
-        allowed_fails=5,
-        cooldown_time=30,
-        enable_pre_call_checks=True,  # Enable context window and rate limit checks
-        default_max_parallel_requests=50,  # Global default
-        set_verbose=False,  # Set to True for debugging
-    )
 
 
 async def describe_images_with_vlm(

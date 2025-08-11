@@ -2,12 +2,12 @@
 
 from typing import List
 import pydantic
-from litellm import Router
 from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
 
 from transform.models import ContentBlock
 from utils.schema import TagName
+from utils.litellm_router import create_router
 
 
 class TopLevelStructure(pydantic.BaseModel):
@@ -48,39 +48,6 @@ HTML Content:
 {html_content}
 
 Respond with a JSON object containing the three sections."""
-
-
-def create_router(
-    gemini_api_key: str,
-    openai_api_key: str,
-    deepseek_api_key: str,
-    openrouter_api_key: str,
-) -> Router:
-    """Create a LiteLLM Router with advanced load balancing and fallback configuration."""
-    model_list = [
-        {
-            "model_name": "structure-detector",
-            "litellm_params": {
-                "model": "gemini/gemini-2.5-flash", # openrouter-hosted version fails on this task!
-                "api_key": gemini_api_key,
-                "max_parallel_requests": 10,
-                "weight": 1,
-            }
-        }
-    ]
-
-    # Router configuration
-    return Router(
-        model_list=model_list,
-        routing_strategy="simple-shuffle",  # Weighted random selection
-        fallbacks=[{"structure-detector": ["structure-detector"]}],  # Falls back within the same group
-        num_retries=2,
-        allowed_fails=5,
-        cooldown_time=30,
-        enable_pre_call_checks=True,  # Enable context window and rate limit checks
-        default_max_parallel_requests=50,  # Global default
-        set_verbose=False,  # Set to True for debugging
-    )
 
 
 def parse_range_string(range_str: str) -> List[int]:

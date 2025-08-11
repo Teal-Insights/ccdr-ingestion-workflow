@@ -77,6 +77,7 @@ async def test_llm_filtered_picture_detection():
     # Set up environment for router
     dotenv.load_dotenv()
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+    assert OPENROUTER_API_KEY, "OPENROUTER_API_KEY is not set"
     router = create_router(OPENROUTER_API_KEY)
 
     pdf = pymupdf.open("tests/sample_data/doc_601.pdf")

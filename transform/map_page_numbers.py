@@ -9,10 +9,12 @@ from typing import Optional
 from litellm import Router
 from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
+from utils.litellm_router import create_router
 from pydantic import BaseModel, ValidationError
 from transform.models import ExtractedLayoutBlock, LayoutBlock, BlockType
 from utils.json import de_fence
 from utils.positioning import is_header_or_footer_by_position
+from utils.schema import BoundingBox
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -93,7 +95,7 @@ def validate_and_correct_page_dimensions(
     return corrected_blocks
 
 
-class ExtractedLayoutBlockBBox:
+class ExtractedLayoutBlockBBox(BoundingBox):
     """Adapter to make ExtractedLayoutBlock compatible with positioning utilities."""
     def __init__(self, block: ExtractedLayoutBlock):
         self.x1 = block.left
@@ -102,7 +104,7 @@ class ExtractedLayoutBlockBBox:
         self.y2 = block.top + block.height
 
 
-def is_header_or_footer_by_position_block(block: ExtractedLayoutBlock) -> bool:
+def is_header_or_footer_by_position_block(block: ExtractedLayoutBlock) -> BlockType | None:
     """
     Determine if a block is a header or footer based on position.
     Wrapper around the shared positioning utility.
@@ -314,57 +316,6 @@ class PageMappingResult(BaseModel):
             except json.JSONDecodeError:
                 # Re-raise the de-fenced error as it's more likely to be informative
                 raise ValueError(f"Failed to parse JSON after de-fencing: {de_fenced_json[:200]}...")
-
-
-def create_router(
-    gemini_api_key: str, 
-    openai_api_key: str, 
-    deepseek_api_key: str,
-    openrouter_api_key: str,
-) -> Router:
-    """Create a LiteLLM Router with advanced load balancing and fallback configuration."""
-    model_list = [
-        {
-            "model_name": "page-mapper",
-            "litellm_params": {
-                "model": "openrouter/deepseek/deepseek-chat",
-                "api_key": openrouter_api_key,
-                "max_parallel_requests": 10,
-                "weight": 3,
-            }
-        },
-        {
-            "model_name": "page-mapper",
-            "litellm_params": {
-                "model": "openrouter/openai/gpt-4o-mini",
-                "api_key": openrouter_api_key,
-                "max_parallel_requests": 10,
-                "weight": 1,
-            }
-        },
-        {
-            "model_name": "page-mapper",
-            "litellm_params": {
-                "model": "openrouter/openai/gpt-4.1-mini",
-                "api_key": openrouter_api_key,
-                "max_parallel_requests": 10,
-                "weight": 1,
-            }
-        }
-    ]
-
-    # Router configuration
-    return Router(
-        model_list=model_list,
-        routing_strategy="simple-shuffle",  # Weighted random selection
-        fallbacks=[{"page-mapper": ["page-mapper"]}],  # Falls back within the same group
-        num_retries=3,
-        allowed_fails=5,
-        cooldown_time=30,
-        enable_pre_call_checks=True,  # Enable context window and rate limit checks
-        default_max_parallel_requests=50,  # Global default
-        set_verbose=False,  # Set to True for debugging
-    )
 
 
 async def _get_logical_page_mapping_from_llm(
