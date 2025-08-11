@@ -1,9 +1,9 @@
 # TODO: Aggregate same-page bounding boxes for the same output node
 
 from transform.models import ContentBlock, StructuredNode, BlockType
-from transform.detect_top_level_structure import parse_range_string
 from bs4 import BeautifulSoup, Tag, NavigableString
 from utils.schema import TagName
+from utils.range_parser import parse_range_string
 
 def create_nodes_from_html(html: str, content_blocks: list[ContentBlock]) -> list[StructuredNode]:
     """Helper to create StructuredNodes from an HTML string

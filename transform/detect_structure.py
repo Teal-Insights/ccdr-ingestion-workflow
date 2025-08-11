@@ -13,12 +13,12 @@ from litellm.types.utils import Choices
 from pydantic import BaseModel, Field, ValidationError, field_validator
 import pymupdf
 
-from transform.detect_top_level_structure import parse_range_string
 from transform.models import ContentBlock, StructuredNode
 from utils.schema import TagName, PositionalData, BoundingBox
 from utils.html import create_nodes_from_html
 from utils.json import de_fence
 from utils.litellm_router import create_router
+from utils.range_parser import parse_range_string
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -176,7 +176,6 @@ Content:
 """
 
 
-# TODO: Add sectionType classifications
 HTML_PROMPT = """You are an expert in HTML and document structure.
 You are given an HTML partial with a flat structure and only `p` and `img` tags.
 Your task is to propose a better structured HTML representation of the content, with semantic tags and logical hierarchy.
