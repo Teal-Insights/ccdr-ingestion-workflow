@@ -1,7 +1,7 @@
 import logging
 from typing import List, Optional
 import pydantic
-from pydantic import ValidationError
+from pydantic import ValidationError, field_validator, model_validator
 from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
 from litellm import Router
@@ -14,22 +14,113 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _parse_range_string(range_str: str) -> List[int]:
+    """
+    Parse a comma-separated range string into a list of integers.
+    
+    Args:
+        range_str: String like "0-3,5,7-9" or empty string
+        
+    Returns:
+        List of integers representing all tag ids in the ranges
+        
+    Raises:
+        ValueError: If the range string format is invalid
+    """
+    if not range_str.strip():
+        return []
+    
+    ids: list[int] = []
+    parts = range_str.split(",")
+    
+    for part in parts:
+        part = part.strip()
+        if "-" in part:
+            # Handle range like "1-3"
+            range_parts = part.split("-", 1)
+            if len(range_parts) != 2:
+                raise ValueError(f"Invalid range format: {part}")
+            try:
+                start_num = int(range_parts[0].strip())
+                end_num = int(range_parts[1].strip())
+                if start_num > end_num:
+                    raise ValueError(f"Invalid range: start ({start_num}) > end ({end_num})")
+                ids.extend(range(start_num, end_num + 1))
+            except ValueError as e:
+                if "invalid literal" in str(e):
+                    raise ValueError(f"Non-numeric values in range: {part}")
+                raise
+        else:
+            # Handle single number like "5"
+            try:
+                ids.append(int(part))
+            except ValueError:
+                raise ValueError(f"Non-numeric value: {part}")
+    
+    return sorted(ids)
+
+
 class TopLevelStructure(pydantic.BaseModel):
     """Pydantic model for document structure detection response"""
 
-    header: str = pydantic.Field(
-        description="Comma-separated ranges for header blocks (e.g., '1-3,5,7-9')"
+    header: List[int] = pydantic.Field(
+        description="List of header block IDs (parsed from comma-separated ranges like '0-3,5,7-9')"
     )
-    main: str = pydantic.Field(
-        description="Comma-separated ranges for main content blocks (e.g., '4,6,10-12')"
+    main: List[int] = pydantic.Field(
+        description="List of main content block IDs (parsed from comma-separated ranges like '4,6,10-12')"
     )
-    footer: str = pydantic.Field(
-        description="Comma-separated ranges for footer blocks (e.g., '13-15')"
+    footer: List[int] = pydantic.Field(
+        description="List of footer block IDs (parsed from comma-separated ranges like '13-15')"
     )
+    
+    @field_validator('header', 'main', 'footer', mode='before')
+    @classmethod
+    def parse_range_strings(cls, v) -> List[int]:
+        """Parse range strings into lists of integers."""
+        if isinstance(v, str):
+            return _parse_range_string(v)
+        elif isinstance(v, list):
+            # Already parsed (e.g., in tests or direct construction)
+            return v
+        else:
+            raise ValueError(f"Expected string or list, got {type(v)}")
+    
+    @model_validator(mode='after')
+    def validate_comprehensive_coverage(self) -> 'TopLevelStructure':
+        """Validate that all sections together provide comprehensive coverage without overlaps."""
+        # This validation will be completed when we know the total number of content blocks
+        # For now, just validate no overlaps within the model itself
+        all_ids = self.header + self.main + self.footer
+        unique_ids = set(all_ids)
+        
+        if len(all_ids) != len(unique_ids):
+            duplicates = [id for id in unique_ids if all_ids.count(id) > 1]
+            raise ValueError(f"Duplicate IDs found across sections: {sorted(duplicates)}")
+        
+        # Validate that all IDs are non-negative
+        negative_ids = [id for id in all_ids if id < 0]
+        if negative_ids:
+            raise ValueError(f"Negative IDs are not allowed: {sorted(negative_ids)}")
+            
+        return self
+    
+    def validate_total_coverage(self, total_ids: int) -> None:
+        """Validate that the sections cover all IDs from 0 to total_ids-1 exactly once."""
+        all_ids = set(self.header + self.main + self.footer)
+        expected_ids = set(range(total_ids))
+        
+        if all_ids != expected_ids:
+            missing_ids = expected_ids - all_ids
+            extra_ids = all_ids - expected_ids
+            raise ValueError(
+                f"Sections must cover all content blocks exactly once. "
+                f"Missing IDs: {sorted(missing_ids)}, Extra IDs: {sorted(extra_ids)}"
+            )
 
+# Ensure the model fields align with TagName enum values
 assert all(
     field in TopLevelStructure.model_fields
-    for field in [TagName.HEADER, TagName.MAIN, TagName.FOOTER]
+    for field in [TagName.HEADER.value, TagName.MAIN.value, TagName.FOOTER.value]
 )
 
 TOP_LEVEL_PROMPT = """Analyze the following HTML content (extracted from a PDF) and identify the document structure. The HTML elements are annotated with sequential id numbers, e.g., <p id="1">, <p id="2">, etc.).
@@ -52,62 +143,6 @@ HTML Content:
 {html_content}
 
 Respond with a JSON object containing the three sections."""
-
-
-def parse_range_string(range_str: str) -> List[int]:
-    """
-    Parse a comma-separated range string into a list of integers.
-
-    Args:
-        range_str: String like "1-3,5,7-9" or empty string
-
-    Returns:
-        List of integers representing all tag ids in the ranges
-    """
-    if not range_str.strip():
-        return []
-
-    ids: list[int] = []
-    parts = range_str.split(",")
-
-    for part in parts:
-        part = part.strip()
-        if "-" in part:
-            # Handle range like "1-3"
-            start, end = part.split("-", 1)
-            start_num = int(start.strip())
-            end_num = int(end.strip())
-            ids.extend(range(start_num, end_num + 1))
-        else:
-            # Handle single number like "5"
-            ids.append(int(part))
-
-    return sorted(ids)
-
-
-def validate_tag_coverage(
-    header_ids: List[int],
-    main_ids: List[int],
-    footer_ids: List[int],
-    total_ids: int,
-) -> None:
-    """
-    Validate that all ids from 1 to total_ids are covered exactly once.
-
-    Args:
-        header_ids: List of id numbers in header section
-        main_ids: List of id numbers in main section
-        footer_ids: List of id numbers in footer section
-        total_ids: Total number of ids that should be covered
-
-    Raises:
-        ValueError: If ids are missing, duplicated, or out of range
-    """
-    all_assigned_ids = set(header_ids + main_ids + footer_ids)
-    expected_ids = set(range(total_ids))
-
-    assert len(all_assigned_ids) == len(header_ids) + len(main_ids) + len(footer_ids), f"Assigned ids do not match expected ids. Duplicates: {all_assigned_ids - expected_ids}"
-    assert all_assigned_ids == expected_ids, f"Assigned ids do not match expected ids. Differences: {expected_ids - all_assigned_ids}"
 
 
 def filter_blocks_by_numbers(
@@ -186,32 +221,22 @@ async def detect_top_level_structure(
                     response.choices[0].message.content
                 )
 
-                # Parse range strings
-                header_ids = parse_range_string(top_level_structure.header)
-                main_ids = parse_range_string(top_level_structure.main)
-                footer_ids = parse_range_string(top_level_structure.footer)
-
-                # Validate tag coverage
-                validate_tag_coverage(
-                    header_ids=header_ids,
-                    main_ids=main_ids,
-                    footer_ids=footer_ids,
-                    total_ids=len(content_blocks),
-                )
+                # Validate total coverage (already parsed by field validators)
+                top_level_structure.validate_total_coverage(len(content_blocks))
 
                 # Build result list, only including sections that have content
                 result = []
                 
-                if header_ids:
-                    header_blocks = filter_blocks_by_numbers(content_blocks, header_ids)
+                if top_level_structure.header:
+                    header_blocks = filter_blocks_by_numbers(content_blocks, top_level_structure.header)
                     result.append((TagName.HEADER, header_blocks))
                 
-                if main_ids:
-                    main_blocks = filter_blocks_by_numbers(content_blocks, main_ids)
+                if top_level_structure.main:
+                    main_blocks = filter_blocks_by_numbers(content_blocks, top_level_structure.main)
                     result.append((TagName.MAIN, main_blocks))
                 
-                if footer_ids:
-                    footer_blocks = filter_blocks_by_numbers(content_blocks, footer_ids)
+                if top_level_structure.footer:
+                    footer_blocks = filter_blocks_by_numbers(content_blocks, top_level_structure.footer)
                     result.append((TagName.FOOTER, footer_blocks))
 
                 return result
