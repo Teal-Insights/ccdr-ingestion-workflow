@@ -1,7 +1,7 @@
-# TODO: Make the validators Pydantic validators and retry on failure
-
-from typing import List
+import logging
+from typing import List, Optional
 import pydantic
+from pydantic import ValidationError
 from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
 from litellm import Router
@@ -9,6 +9,9 @@ from litellm import Router
 from transform.models import ContentBlock
 from utils.schema import TagName
 from utils.litellm_router import create_router
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class TopLevelStructure(pydantic.BaseModel):
@@ -131,77 +134,110 @@ def filter_blocks_by_numbers(
 async def detect_top_level_structure(
     content_blocks: list[ContentBlock],
     router: Router,
+    messages: Optional[list[dict[str, str]]] = None,
+    max_validation_attempts: int = 3,
+    attempt: int = 0,
 ) -> list[tuple[TagName, list[ContentBlock]]]:
     """
-    Use Gemini to analyze HTML content and detect document structure.
+    Use LLM to analyze HTML content and detect document structure.
 
     Args:
         content_blocks: List of content blocks
-        api_key: Gemini API key
+        router: LiteLLM Router for LLM calls
+        messages: Optional list of messages for retry attempts
+        max_validation_attempts: Maximum number of validation attempts
+        attempt: Current attempt number
 
     Returns:
         List of tuples with (TagName, blocks) for each non-empty section
     """
-    prompt = TOP_LEVEL_PROMPT.format(
-        html_content="\n".join([block.to_html(bboxes=True, block_id=i) for i, block in enumerate(content_blocks)]),
-        header=TagName.HEADER.value,
-        main=TagName.MAIN.value,
-        footer=TagName.FOOTER.value,
-    )
-    messages = [{"role": "user", "content": prompt}]
+    # Prepare the prompt
+    messages = messages or [{
+        "role": "user",
+        "content": TOP_LEVEL_PROMPT.format(
+            html_content="\n".join([block.to_html(bboxes=True, block_id=i) for i, block in enumerate(content_blocks)]),
+            header=TagName.HEADER.value,
+            main=TagName.MAIN.value,
+            footer=TagName.FOOTER.value,
+        )
+    }]
 
-    response: ModelResponse = await router.acompletion(
-        model="structure-detector",
-        messages=messages,
-        temperature=0.0,
-        response_format={
-            "type": "json_object",
-            "response_schema": TopLevelStructure.model_json_schema(),
-        }
-    )
-
-    # Parse JSON response into Pydantic model
-    if (
-        response
-        and isinstance(response, ModelResponse)
-        and isinstance(response.choices[0], Choices)
-        and response.choices[0].message.content
-    ):
-        top_level_structure = TopLevelStructure.model_validate_json(
-            response.choices[0].message.content
+    # Make the LLM call
+    try:
+        response: ModelResponse = await router.acompletion(
+            model="structure-detector",
+            messages=messages, # type: ignore
+            temperature=0.0,
+            response_format={
+                "type": "json_object",
+                "response_schema": TopLevelStructure.model_json_schema(),
+            }
         )
 
-    if not top_level_structure:
-        raise Exception("No valid response from Gemini")
+        # Parse JSON response into Pydantic model
+        if (
+            response
+            and isinstance(response, ModelResponse)
+            and isinstance(response.choices[0], Choices)
+            and response.choices[0].message.content
+        ):
+            try:
+                top_level_structure = TopLevelStructure.model_validate_json(
+                    response.choices[0].message.content
+                )
 
-    # Fixed: Use correct attribute names (header, main, footer) instead of enum values
-    header_ids = parse_range_string(top_level_structure.header)
-    main_ids = parse_range_string(top_level_structure.main)
-    footer_ids = parse_range_string(top_level_structure.footer)
+                # Parse range strings
+                header_ids = parse_range_string(top_level_structure.header)
+                main_ids = parse_range_string(top_level_structure.main)
+                footer_ids = parse_range_string(top_level_structure.footer)
 
-    validate_tag_coverage(
-        header_ids=header_ids,
-        main_ids=main_ids,
-        footer_ids=footer_ids,
-        total_ids=len(content_blocks),
-    )
+                # Validate tag coverage
+                validate_tag_coverage(
+                    header_ids=header_ids,
+                    main_ids=main_ids,
+                    footer_ids=footer_ids,
+                    total_ids=len(content_blocks),
+                )
 
-    # Build result list, only including sections that have content
-    result = []
-    
-    if header_ids:
-        header_blocks = filter_blocks_by_numbers(content_blocks, header_ids)
-        result.append((TagName.HEADER, header_blocks))
-    
-    if main_ids:
-        main_blocks = filter_blocks_by_numbers(content_blocks, main_ids)
-        result.append((TagName.MAIN, main_blocks))
-    
-    if footer_ids:
-        footer_blocks = filter_blocks_by_numbers(content_blocks, footer_ids)
-        result.append((TagName.FOOTER, footer_blocks))
+                # Build result list, only including sections that have content
+                result = []
+                
+                if header_ids:
+                    header_blocks = filter_blocks_by_numbers(content_blocks, header_ids)
+                    result.append((TagName.HEADER, header_blocks))
+                
+                if main_ids:
+                    main_blocks = filter_blocks_by_numbers(content_blocks, main_ids)
+                    result.append((TagName.MAIN, main_blocks))
+                
+                if footer_ids:
+                    footer_blocks = filter_blocks_by_numbers(content_blocks, footer_ids)
+                    result.append((TagName.FOOTER, footer_blocks))
 
-    return result
+                return result
+            except (ValidationError, ValueError) as e:
+                if attempt < max_validation_attempts - 1:
+                    logger.warning(f"Validation error (attempt {attempt+1}/{max_validation_attempts}): {e}")
+                    # Append error message and retry
+                    messages.append(response.choices[0].message.model_dump())
+                    messages.append({
+                        "role": "user",
+                        "content": f"Your previous response had a validation error: {str(e)}. "
+                                    "Please correct your response to match the required schema and constraints."
+                    })
+                    return await detect_top_level_structure(content_blocks, router, messages, max_validation_attempts, attempt + 1)
+                else:
+                    raise ValueError(f"Validation error on final attempt: {e}")
+        else:
+            raise ValueError("No valid response from LLM")
+            
+    except Exception as e:
+        if attempt < max_validation_attempts - 1:
+            logger.warning(f"Error during structure detection (attempt {attempt+1}/{max_validation_attempts}): {e}")
+            return await detect_top_level_structure(content_blocks, router, messages, max_validation_attempts, attempt + 1)
+        else:
+            logger.error(f"Error during structure detection on final attempt: {e}")
+            raise
 
 
 if __name__ == "__main__":

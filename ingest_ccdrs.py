@@ -172,10 +172,13 @@ async def main() -> None:
         upload_structured_nodes_to_db(nested_structure, document_id)
         print("Structured nodes uploaded to database successfully!")
 
-        # 12. Enrich the database records by generating relations from anchor tags
+        # 12. Enrich the HTML sections with sectionType classifications
         # TODO: Implement this
 
-        # 13. Generate embeddings for each ContentData record
+        # 13. Enrich the database records by generating relations from anchor tags
+        # TODO: Implement this
+
+        # 14. Generate embeddings for each ContentData record
         # TODO: Implement this
         # TODO: For tables, explore embedding the table node's entire html content (add embeddingType for this?)
 
