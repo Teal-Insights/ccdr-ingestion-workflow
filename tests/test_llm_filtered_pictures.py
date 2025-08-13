@@ -14,7 +14,7 @@ import pytest
 from math import ceil
 
 from utils.schema import BoundingBox
-from transform.models import LayoutBlock
+from utils.models import LayoutBlock
 from transform.reclassify_blocks import find_visual_candidates_llm_filtered, create_router
 
 

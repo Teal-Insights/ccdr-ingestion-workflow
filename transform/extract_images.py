@@ -1,6 +1,6 @@
 import os
 import pymupdf
-from transform.models import ContentBlockBase, ContentBlock, BlockType
+from utils.models import ContentBlockBase, ContentBlock, BlockType
 from utils.aws import upload_image_to_s3
 
 

@@ -6,7 +6,7 @@ from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
 from litellm import Router
 
-from transform.models import ContentBlock
+from utils.models import ContentBlock
 from utils.schema import TagName
 from utils.litellm_router import create_router
 from utils.range_parser import parse_range_string

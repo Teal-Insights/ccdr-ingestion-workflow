@@ -8,7 +8,7 @@ from litellm import Choices, Router
 from litellm.files.main import ModelResponse
 from sqlmodel import Session, select
 
-from transform.models import ContentBlock, BlockType
+from utils.models import ContentBlock, BlockType
 from utils.schema import Publication, Document
 from utils.db import engine
 from utils.litellm_router import create_router

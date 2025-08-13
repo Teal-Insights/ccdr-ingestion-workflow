@@ -10,7 +10,7 @@ from litellm import Router, ModelResponse, Choices
 import pydantic
 import pymupdf
 
-from transform.models import LayoutBlock, BlockType, ContentBlockBase
+from utils.models import LayoutBlock, BlockType, ContentBlockBase
 from utils.schema import EmbeddingSource, PositionalData, BoundingBox
 
 

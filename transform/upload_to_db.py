@@ -1,4 +1,4 @@
-from transform.models import StructuredNode
+from utils.models import StructuredNode
 from sqlmodel import Session
 from utils.db import engine
 from utils.schema import Node as DBNode, ContentData, EmbeddingSource, NodeType, TagName
@@ -44,7 +44,7 @@ def upload_structured_nodes_to_db(nested_structure: list[StructuredNode], docume
 if __name__ == "__main__":
     import os
     import json
-    from transform.models import StructuredNode
+    from utils.models import StructuredNode
 
     # Load nested structure from JSON (for testing purposes)
     file_path = os.path.join("artifacts", "doc_601_nested_structure.json")

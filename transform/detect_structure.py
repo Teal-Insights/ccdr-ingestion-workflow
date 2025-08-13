@@ -13,7 +13,7 @@ from litellm.types.utils import Choices
 from pydantic import BaseModel, Field, ValidationError, field_validator
 import pymupdf
 
-from transform.models import ContentBlock, StructuredNode
+from utils.models import ContentBlock, StructuredNode
 from utils.schema import TagName, PositionalData, BoundingBox
 from utils.html import create_nodes_from_html
 from utils.json import de_fence

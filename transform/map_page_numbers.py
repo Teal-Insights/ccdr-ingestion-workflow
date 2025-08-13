@@ -11,7 +11,7 @@ from litellm.files.main import ModelResponse
 from litellm.types.utils import Choices
 from utils.litellm_router import create_router
 from pydantic import BaseModel, ValidationError
-from transform.models import ExtractedLayoutBlock, LayoutBlock, BlockType
+from utils.models import ExtractedLayoutBlock, LayoutBlock, BlockType
 from utils.json import de_fence
 from utils.positioning import is_header_or_footer_by_position
 from utils.schema import BoundingBox

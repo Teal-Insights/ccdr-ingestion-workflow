@@ -1,6 +1,6 @@
 # TODO: Aggregate same-page bounding boxes for the same output node
 
-from transform.models import ContentBlock, StructuredNode, BlockType
+from utils.models import ContentBlock, StructuredNode, BlockType
 from bs4 import BeautifulSoup, Tag, NavigableString
 from utils.schema import TagName
 from utils.range_parser import parse_range_string
@@ -126,7 +126,7 @@ def test_create_nodes_from_html_list_merging():
     which original content blocks each element came from.
     """
     from utils.schema import PositionalData, EmbeddingSource, TagName, BoundingBox
-    from transform.models import BlockType
+    from utils.models import BlockType
     
     # Create input ContentBlocks - two paragraphs with multiline text
     content_blocks = [

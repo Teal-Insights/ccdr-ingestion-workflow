@@ -23,7 +23,7 @@ from litellm import Router
 from transform.extract_layout import extract_layout
 from transform.map_page_numbers import add_logical_page_numbers
 from transform.reclassify_blocks import reclassify_block_types
-from transform.models import ExtractedLayoutBlock, BlockType, LayoutBlock, ContentBlockBase, ContentBlock, StructuredNode
+from utils.models import ExtractedLayoutBlock, BlockType, LayoutBlock, ContentBlockBase, ContentBlock, StructuredNode
 from transform.extract_images import extract_images_from_pdf
 from transform.describe_images import describe_images_with_vlm
 from transform.style_text_blocks import style_text_blocks

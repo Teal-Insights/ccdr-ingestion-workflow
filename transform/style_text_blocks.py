@@ -4,7 +4,7 @@ import pymupdf
 import re
 from typing import Dict, List, Tuple
 
-from transform.models import ContentBlock, BlockType
+from utils.models import ContentBlock, BlockType
 from utils.positioning import is_header_or_footer_by_position
 
 

@@ -1,7 +1,7 @@
 """Utilities for position-based layout analysis."""
 
 from utils.schema import BoundingBox
-from transform.models import BlockType
+from utils.models import BlockType
 
 
 def is_header_or_footer_by_position(bbox: BoundingBox, page_height: float) -> BlockType | None:
