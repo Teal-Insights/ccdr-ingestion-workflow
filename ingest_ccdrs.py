@@ -29,7 +29,7 @@ from transform.extract_images import extract_images_from_pdf
 from transform.describe_images import describe_images_with_vlm
 from transform.style_text_blocks import style_text_blocks
 from transform.restructure_with_CC import restructure_with_claude_code
-from transform.detect_structure import process_top_level_structure
+from transform.classify_section_types import classify_section_types
 from transform.upload_to_db import upload_structured_nodes_to_db
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
@@ -162,11 +162,15 @@ async def main() -> None:
         )
         print("Nested structure detected successfully!")
 
+        # 10. Enrich the HTML sections with sectionType classifications
+        nested_structure: list[StructuredNode] = await classify_section_types(router, nested_structure, "")
+        print("Section types classified successfully!")
+
         # 11. Convert the Pydantic models to our schema and ingest it into our database
         upload_structured_nodes_to_db(nested_structure, document_id)
         print("Structured nodes uploaded to database successfully!")
 
-        # 12. Enrich the HTML sections with sectionType classifications
+        # 12. Enrich the database records by generating relations from anchor tags
         # TODO: Implement this
 
         # 13. Enrich the database records by generating relations from anchor tags
