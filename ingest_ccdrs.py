@@ -31,6 +31,7 @@ from transform.style_text_blocks import style_text_blocks
 from transform.restructure_with_CC import restructure_with_claude_code
 from transform.classify_section_types import classify_section_types
 from transform.upload_to_db import upload_structured_nodes_to_db
+from transform.generate_embeddings import generate_embeddings
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
 from utils.aws import download_pdf_from_s3, upload_json_to_s3, verify_environment_variables
@@ -173,12 +174,9 @@ async def main() -> None:
         # 12. Enrich the database records by generating relations from anchor tags
         # TODO: Implement this
 
-        # 13. Enrich the database records by generating relations from anchor tags
-        # TODO: Implement this
-
-        # 14. Generate embeddings for each ContentData record
-        # TODO: Implement this
-        # TODO: For tables, explore embedding the table node's entire html content (add embeddingType for this?)
+    # 13. Generate embeddings for each ContentData record
+    generate_embeddings()
+    # TODO: For tables, explore embedding the table node's entire html content (add embeddingType for this?)
 
     print(f"Pipeline completed! All outputs in: {temp_dir}")
 
