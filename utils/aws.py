@@ -181,3 +181,31 @@ def upload_image_to_s3(
     logger.info(f"Upload complete. Storage URL: {storage_url}")
 
     return storage_url
+
+
+def sync_folder_to_s3(local_dir: str | Path, s3_dir: str) -> None:
+    """
+    Syncs a local folder to S3.
+    """
+    bucket_name, _ = verify_environment_variables()
+    s3_client = get_s3_client()
+    for file in os.listdir(local_dir):
+        s3_client.upload_file(os.path.join(local_dir, file), bucket_name, os.path.join(s3_dir, file))
+
+
+def sync_s3_to_folder(s3_dir: str, local_dir: str | Path, overwrite: bool = False) -> None:
+    """
+    Syncs a folder from S3 to a local folder.
+    """
+    bucket_name, _ = verify_environment_variables()
+    s3_client = get_s3_client()
+    response = s3_client.list_objects(Bucket=bucket_name, Prefix=s3_dir)
+    
+    # Check if any objects exist with this prefix
+    if "Contents" not in response:
+        print(f"No objects found in S3 with prefix: {s3_dir}")
+        return
+    
+    for file in response["Contents"]:
+        if overwrite or not os.path.exists(os.path.join(local_dir, file["Key"].split("/")[-1])):
+            s3_client.download_file(bucket_name, file["Key"], os.path.join(local_dir, file["Key"].split("/")[-1]))

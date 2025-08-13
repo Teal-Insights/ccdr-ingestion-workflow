@@ -13,6 +13,7 @@ temp/
 
 # Working files
 artifacts/
+data/
 
 # Virtual environments
 .venv

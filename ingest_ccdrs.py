@@ -34,16 +34,104 @@ from transform.upload_to_db import upload_structured_nodes_to_db
 from transform.generate_embeddings import generate_embeddings
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
-from utils.aws import download_pdf_from_s3, upload_json_to_s3, verify_environment_variables
+from utils.aws import (
+    download_pdf_from_s3, upload_json_to_s3, verify_environment_variables, sync_folder_to_s3, sync_s3_to_folder
+)
 from utils.litellm_router import create_router
+
+
+async def get_structured_nodes(
+    document_id: int, publication_id: int, storage_url: str,
+    download_url: str, working_dir: str, use_s3: bool,
+    router: Router
+) -> list[ContentBlock]:
+    layout_extractor_api_key: str = os.getenv("LAYOUT_EXTRACTOR_API_KEY", "")
+    assert layout_extractor_api_key, "LAYOUT_EXTRACTOR_API_KEY is not set"
+    layout_extractor_api_url: str = os.getenv("LAYOUT_EXTRACTOR_API_URL", "")
+    assert layout_extractor_api_url, "LAYOUT_EXTRACTOR_API_URL is not set"
+    
+    # 1. Download the PDF from S3 to a local temp file and save it to the temp directory
+    pdf_path: str | None
+    layout_path: str | None = None
+    if use_s3 and storage_url:
+        pdf_path, layout_path = download_pdf_from_s3(working_dir, (publication_id, document_id), storage_url)
+    else:
+        # Fall back to downloading directly from the World Bank
+        pdf_path = os.path.join(working_dir, "pdfs", f"{document_id}.pdf")
+        with open(pdf_path, "wb") as f:
+            f.write(requests.get(download_url).content)
+        print(f"Downloaded PDF to {pdf_path}")
+    assert pdf_path, "PDF path is None"
+
+    # 2. Extract layout JSON from the PDF using the Layout Extractor API
+    if not layout_path:
+        layout_path = extract_layout(
+            pdf_path,
+            os.path.join(working_dir, f"doc_{document_id}.json"),
+            layout_extractor_api_url,
+            layout_extractor_api_key
+        )
+        print(f"Extracted layout to {layout_path}")
+        upload_json_to_s3(working_dir, (publication_id, document_id))
+    else:
+        print(f"Skipping layout extraction and using downloaded layout at {layout_path}")
+
+    # Load the layout JSON from the file
+    with open(layout_path, "r") as f:
+        extracted_layout_blocks: list[ExtractedLayoutBlock] = [
+            ExtractedLayoutBlock.model_validate(block) for block in json.load(f)
+        ]
+
+    # 3. Use page numbers to label all blocks with logical page numbers, then discard page header and footer blocks
+    layout_blocks: list[LayoutBlock] = await add_logical_page_numbers(
+        extracted_layout_blocks, 
+        router,
+        pdf_path
+    )
+    filtered_layout_blocks: list[LayoutBlock] = [
+        block for block in layout_blocks if block.type not in [BlockType.PAGE_HEADER, BlockType.PAGE_FOOTER]
+    ]
+    print(f"Added logical page numbers to {len(layout_blocks)} blocks")
+
+    # 4. Re-label text blocks that are actually images or figures by detecting if there's an image or geometry in the bbox
+    content_blocks: list[ContentBlockBase] = await reclassify_block_types(
+        filtered_layout_blocks, pdf_path, router
+    )
+    print(f"Re-labeled {len(content_blocks)} blocks")
+
+    # 5. Extract images from the PDF
+    content_blocks_with_images: list[ContentBlock] = extract_images_from_pdf(
+        content_blocks, pdf_path, working_dir, publication_id, document_id
+    )
+    print("Images extracted successfully!")
+
+    # 6. Describe the images with a VLM (e.g., Gemini)
+    content_blocks_with_descriptions: list[ContentBlock] = await describe_images_with_vlm(
+        content_blocks_with_images, working_dir, document_id, router
+    )
+    print("Images described successfully!")
+
+    # 7. For spans in the pymupdf dict that have formatting flags, substring match to
+    # the LayoutLM-detected text content and add style tags to the matched substrings
+    styled_text_blocks: list[ContentBlock] = style_text_blocks(
+        content_blocks_with_descriptions, pdf_path, working_dir
+    )
+
+    return styled_text_blocks
 
 
 async def main() -> None:
     dotenv.load_dotenv(override=True)
 
     # Configure
-    LIMIT: int = 1
+    LIMIT: int = 10
     USE_S3: bool = True
+    working_dir: str = "./data"
+    content_blocks_dir: str = "./data/content_blocks"
+    os.makedirs(content_blocks_dir, exist_ok=True)
+    print(f"Using working directory: {working_dir}")
+
+    dotenv.load_dotenv(override=True)
 
     # Fail fast if required env vars are not set or DB schema is out of sync
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
@@ -54,131 +142,88 @@ async def main() -> None:
     assert openrouter_api_key, "OPENROUTER_API_KEY is not set"
     deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
     assert deepseek_api_key, "DEEPSEEK_API_KEY is not set"
-    layout_extractor_api_key: str = os.getenv("LAYOUT_EXTRACTOR_API_KEY", "")
-    assert layout_extractor_api_key, "LAYOUT_EXTRACTOR_API_KEY is not set"
-    layout_extractor_api_url: str = os.getenv("LAYOUT_EXTRACTOR_API_URL", "")
-    assert layout_extractor_api_url, "LAYOUT_EXTRACTOR_API_URL is not set"
     verify_environment_variables()
-    assert check_schema_sync(), "DB schema is out of sync."
-
+    check_schema_sync()
+    
     router: Router = create_router(gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key)
 
-    # Create a temporary working directory for the entire pipeline
-    # temp_dir: str = tempfile.mkdtemp(prefix="pdf_parsing_pipeline_")
-    # Temporarily use a permanent dir instead
-    temp_dir: str = "./artifacts/wkdir"
-    print(f"Using temporary directory: {temp_dir}")
-
-    # 1. Get Documents from the database where the count of child nodes is 0 (meaning they're unprocessed)
+    # Get Documents from the database where the count of child nodes is 0 (meaning nodes have not been uploaded yet)
     with Session(engine) as session:
-        get_unprocessed = (
-                select(Document.id, Document.publication_id, Document.storage_url, Document.download_url)
+        get_missing = (
+                select(Document)
                 .outerjoin(Node)
                 .where(Node.id == None)  # noqa: E711
             )
-        unproc_document_ids: Sequence[tuple[int | None, int | None, str | None, str]] = session.exec(get_unprocessed).all()
+        missing_documents: Sequence[Document] = session.exec(get_missing).all()
+
+    # TODO: Sync local files with S3 if USE_S3 is True
+    if USE_S3:
+        sync_folder_to_s3(content_blocks_dir, "content_blocks")
+
+    # Get document ids for which we don't already have a content blocks file locally
+    unproc_documents: list[Document] = [
+        document for document in missing_documents
+        if not (Path(content_blocks_dir) / f"doc_{document.id}_content_blocks.json").exists()
+    ]
 
     # Loop over the unprocessed documents and process them
     counter: int = 0
-    for document_id, publication_id, storage_url, download_url in unproc_document_ids:
+    for document in unproc_documents:
         if counter >= LIMIT:
             break
         counter += 1
 
-        if not document_id or not publication_id:
-            raise ValueError("Document ID and publication ID are required")
+        assert document.id, "Document ID is required"
+        assert document.publication_id, "Publication ID is required"
+        assert document.storage_url, "Storage URL is required"
+        assert document.download_url, "Download URL is required"
 
-        # 2. Download the PDF from S3 to a local temp file and save it to the temp directory
-        pdf_path: str | None
-        layout_path: str | None = None
-        if USE_S3 and storage_url:
-            pdf_path, layout_path = download_pdf_from_s3(temp_dir, (publication_id, document_id), storage_url)
-        else:
-            # Fall back to downloading directly from the World Bank
-            pdf_path = os.path.join(temp_dir, "pdfs", f"{document_id}.pdf")
-            with open(pdf_path, "wb") as f:
-                f.write(requests.get(download_url).content)
-            print(f"Downloaded PDF to {pdf_path}")
-        assert pdf_path, "PDF path is None"
+        # Get the structured nodes for the document
+        content_blocks: list[ContentBlock] = await get_structured_nodes(document.id, document.publication_id, document.storage_url, document.download_url, working_dir, USE_S3, router)
 
-        # 3. Extract layout JSON from the PDF using the Layout Extractor API
-        if not layout_path:
-            layout_path = extract_layout(
-                pdf_path,
-                os.path.join(temp_dir, f"doc_{document_id}.json"),
-                layout_extractor_api_url,
-                layout_extractor_api_key
-            )
-            print(f"Extracted layout to {layout_path}")
-            upload_json_to_s3(temp_dir, (publication_id, document_id))
-        else:
-            print(f"Skipping layout extraction and using downloaded layout at {layout_path}")
+        # Save the content blocks to a file
+        with open(Path(content_blocks_dir) / f"doc_{document.id}_content_blocks.json", "w") as f:
+            json.dump([node.model_dump() for node in content_blocks], f)
 
-        # Load the layout JSON from the file
-        with open(layout_path, "r") as f:
-            extracted_layout_blocks: list[ExtractedLayoutBlock] = [
-                ExtractedLayoutBlock.model_validate(block) for block in json.load(f)
-            ]
+    # Upload to S3 if USE_S3 is True
+    if USE_S3:
+        sync_s3_to_folder("content_blocks", content_blocks_dir)
 
-        # 4. Use page numbers to label all blocks with logical page numbers, then discard page header and footer blocks
-        layout_blocks: list[LayoutBlock] = await add_logical_page_numbers(
-            extracted_layout_blocks, 
-            router,
-            pdf_path
-        )
-        filtered_layout_blocks: list[LayoutBlock] = [
-            block for block in layout_blocks if block.type not in [BlockType.PAGE_HEADER, BlockType.PAGE_FOOTER]
-        ]
-        print(f"Added logical page numbers to {len(layout_blocks)} blocks")
+    # Restructure the content blocks and convert to structured nodes for upload to the database
+    counter: int = 0
+    for document in missing_documents:
+        if counter >= LIMIT:
+            break
+        counter += 1
 
-        # 5. Re-label text blocks that are actually images or figures by detecting if there's an image or geometry in the bbox
-        content_blocks: list[ContentBlockBase] = await reclassify_block_types(
-            filtered_layout_blocks, pdf_path, router
-        )
-        print(f"Re-labeled {len(content_blocks)} blocks")
+        # Load the content blocks from the file
+        with open(Path(content_blocks_dir) / f"doc_{document.id}_content_blocks.json", "r") as f:
+            content_blocks: list[ContentBlock] = [ContentBlock.model_validate(block) for block in json.load(f)]
 
-        # 6. Extract images from the PDF
-        content_blocks_with_images: list[ContentBlock] = extract_images_from_pdf(
-            content_blocks, pdf_path, temp_dir, publication_id, document_id
-        )
-        print("Images extracted successfully!")
-
-        # 7. Describe the images with a VLM (e.g., Gemini)
-        content_blocks_with_descriptions: list[ContentBlock] = await describe_images_with_vlm(
-            content_blocks_with_images, temp_dir, document_id, router
-        )
-        print("Images described successfully!")
-
-        # 8. For spans in the pymupdf dict that have formatting flags, substring match to
-        # the LayoutLM-detected text content and add style tags to the matched substrings
-        styled_text_blocks: list[ContentBlock] = style_text_blocks(
-            content_blocks_with_descriptions, pdf_path, temp_dir
-        )
-
-        # 9. Restructure the document with Claude Code
+        # 8. Restructure the document with Claude Code
         nested_structure: list[StructuredNode] = restructure_with_claude_code(
-            styled_text_blocks,
+            content_blocks,
             "output.html",
-            Path(f"./artifacts/doc_{document_id}")
+            Path(f"./artifacts/doc_{document.id}")
         )
         print("Nested structure detected successfully!")
 
-        # 10. Enrich the HTML sections with sectionType classifications
+        # 9. Enrich the HTML sections with sectionType classifications
         nested_structure: list[StructuredNode] = await classify_section_types(router, nested_structure, "")
         print("Section types classified successfully!")
 
-        # 11. Convert the Pydantic models to our schema and ingest it into our database
-        upload_structured_nodes_to_db(nested_structure, document_id)
+        # 10. Convert the Pydantic models to our schema and ingest it into our database
+        upload_structured_nodes_to_db(nested_structure, document.id)
         print("Structured nodes uploaded to database successfully!")
 
-        # 12. Enrich the database records by generating relations from anchor tags
-        # TODO: Implement this
+    # 11. Enrich the database records by generating relations from anchor tags
+    # TODO: Implement this
 
-    # 13. Generate embeddings for each ContentData record
-    generate_embeddings()
+    # 12. Generate embeddings for each ContentData record
     # TODO: For tables, explore embedding the table node's entire html content (add embeddingType for this?)
+    generate_embeddings()
 
-    print(f"Pipeline completed! All outputs in: {temp_dir}")
+    print(f"Pipeline completed! All outputs in: {working_dir}")
 
 
 if __name__ == "__main__":
