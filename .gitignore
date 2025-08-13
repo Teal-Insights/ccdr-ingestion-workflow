@@ -9,7 +9,6 @@ wheels/
 # Output files
 page_dumps/
 temp/
-*.json
 *.svg
 
 # Working files

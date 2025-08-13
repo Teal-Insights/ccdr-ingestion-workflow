@@ -117,6 +117,36 @@ def create_nodes_from_html(html: str, content_blocks: list[ContentBlock]) -> lis
     return nodes
 
 
+def validate_data_sources(input_html: str, output_html: str) -> tuple[set[int], set[int]]:
+    # Parse HTML
+    input_soup = BeautifulSoup(input_html, "html.parser")
+    output_soup = BeautifulSoup(output_html, "html.parser")
+
+    # Extract IDs from input
+    ids_in_input: set[int] = set()
+    for element in input_soup.find_all():
+        if "id" in element.attrs:
+            ids_in_input.add(int(element.attrs["id"]))
+
+    # Extract IDs from output data-sources attributes
+    ids_in_output: set[int] = set()
+    for element in output_soup.find_all():
+        if "data-sources" in element.attrs:
+            ids_in_output.update(parse_range_string(element["data-sources"]))
+
+    # Check coverage
+    missing_ids = ids_in_input - ids_in_output
+    extra_ids = ids_in_output - ids_in_input
+
+    if missing_ids or extra_ids:
+        error_msg = []
+        if missing_ids:
+            error_msg.append(f"IDs in input not covered in output: {sorted(missing_ids)}")
+        if extra_ids:
+            error_msg.append(f"IDs in output not present in input: {sorted(extra_ids)}")
+        return missing_ids, extra_ids
+
+
 def test_create_nodes_from_html_list_merging():
     """Test case for merging paragraph blocks into a list structure.
     

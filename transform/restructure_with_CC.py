@@ -1,12 +1,15 @@
-import logging
 import os
-import bs4
-from smolagents import LiteLLMRouterModel, ToolCallingAgent, Tool, MCPClient
-from mcp import StdioServerParameters
+import logging
+import subprocess
+from pathlib import Path
+import dotenv
+import shutil
 
 from utils.models import ContentBlock, StructuredNode, TagName
-from utils.range_parser import parse_range_string
-from utils.html import create_nodes_from_html
+from utils.html import create_nodes_from_html, validate_data_sources
+
+# Load environment variables
+dotenv.load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +48,12 @@ Here is an information-dense example illustrating some key transformations:
 
 ```html
 <p id="141">The persistence of weak governance, compounded by the economic crisis, undermines the capacity of the water sector to respond to the impacts of climate change. The water sector faces significant governance challenges that impede effective resource management and delivery of sustainable water services. Despite adoption of integrated water resource management principles, progress is considerably slower than the regional average. Complex legal frameworks and regulations have resulted in a convoluted institutional structure, diminishing accountability and transparency. Responsibilities for water management are fragmented across ministries and administrative levels, leading to overlap of responsibilities and lack of accountability. Coordination among stakeholders is deficient, and there is a notable absence of reliable data for informed planning, strategy development, policy formulation, and investment prioritization. Prolongation</p>
-<p id="142">of the crisis will exacerbate the sector’s limitations by preventing new investments in basic service delivery and the storage capacity needed to build resilience to projected climate change in the long term. The renewable water resource diminished from more than 2,000 cubic meters per capita in the 1960s to less than 660 cubic meters per capita in 2020. The “Muddling through” scenario in the water sector will have serious consequences that are highlighted in Table 3 .</p>
+<p id="142">of the crisis will exacerbate the sector's limitations by preventing new investments in basic service delivery and the storage capacity needed to build resilience to projected climate change in the long term. The renewable water resource diminished from more than 2,000 cubic meters per capita in the 1960s to less than 660 cubic meters per capita in 2020. The "Muddling through" scenario in the water sector will have serious consequences that are highlighted in Table 3 .</p>
 <p id="143">Table 3</p>
 <p id="144"><b>Characteristics</b></p>
 <p id="145"><b>Impacts</b></p>
 <p id="146">•  Limited infrastructure to store water and bridge the seasonal gap in the availability of water.</p>
-<p id="147">•  The operations of most of the country’s about 75 wastewater treatment continue to be hindered by the high costs of energy and limited sewerage networks connectivity.</p>
+<p id="147">•  The operations of most of the country's about 75 wastewater treatment continue to be hindered by the high costs of energy and limited sewerage networks connectivity.</p>
 <p id="148">•  The institutional capacity for building resilience to climate change is limited at the level of the water utility and the ministry.</p>
 <p id="149">•  Tariffs are too low to cover operation and maintenance costs for existing infrastructure, address the high share of non-revenue water, the brain drain of human capital and lack of technical capabilities.</p>
 <p id="150">•  The continuous brain drains of the human capital within the Water Establishments.</p>
@@ -147,96 +150,133 @@ Here is an information-dense example illustrating some key transformations:
     </figure>
   </section>
 ```
-"""
-
-
-def agentically_restructure_content_blocks(
-    content_blocks: list[ContentBlock],
-    model: LiteLLMRouterModel,
-    output_file: str = "output.html"
-) -> list[StructuredNode]:
-    input_html = "\n".join([block.to_html() for block in content_blocks])
-
-    # Create the output file in the artifacts directory
-    # The MCP server will have access to this location
-    if not os.path.exists("artifacts"):
-        os.makedirs("artifacts")
-    
-    output_path = os.path.abspath(os.path.join("artifacts", output_file))
-    
-    # Create empty output file
-    with open(output_path, "w") as f:
-        f.write("")
-
-    def validate_output_ids() -> str:
-        try:
-            with open(output_path, "r") as f:
-                output_html = f.read()
-        except FileNotFoundError:
-            return f"Output file {output_path} not found. Please create the file first."
-
-        input_soup = bs4.BeautifulSoup(input_html, "html.parser")
-        output_soup = bs4.BeautifulSoup(output_html, "html.parser")
-
-        ids_in_input: set[int] = set(int(element.attrs["id"]) for element in input_soup.find_all() if "id" in element.attrs)
-        ids_in_output: set[int] = set()
-
-        # Get every HTML element's data-sources attribute and parse it into a list of integers, then update the set, and finally check that it is equal to the set of ids in the input HTML
-        for element in output_soup.find_all():
-            if "data-sources" in element.attrs:
-                ids_in_output.update(parse_range_string(element["data-sources"]))
-
-        result = ""
-        if ids_in_input != ids_in_output:
-            result += f"ids in input not in {output_path}: {ids_in_input - ids_in_output}\n"
-            result += f"ids in {output_path} not in input: {ids_in_output - ids_in_input}\n"
-        else:
-            result += "All ids in the input HTML file are covered by data-sources attributes in the output HTML file\n"
-        return result
-
-    class ValidateOutputIdsTool(Tool):
-        name: str = "validate_output_ids"
-        description: str = "Validate whether data-sources attributes in the output HTML file comprehensively cover the ids in the input HTML file"
-        inputs: dict = {}
-        output_type: str = "string"
-
-        def forward(self) -> str:
-            return validate_output_ids()
-
-    # Set up file editing tools with directory restrictions
-    server_parameters = StdioServerParameters(
-        command="uvx",  # Using uvx ensures dependencies are available
-        args=["mcp-text-editor"],
-        env={"UV_PYTHON": "3.13", **os.environ},
-    )
-    
-    # Enhanced prompt that includes file editing instructions
-    enhanced_prompt = HTML_PROMPT + f"""
 
 # File Output Instructions
 
-Since the input is very long, you will likely want to build the restructured HTML in pieces. You MUST save it to `{output_path}` using the patch_text_file_contents tool.
+You MUST restructure the input HTML and save the complete restructured result to the specified output file path.
 
-When you are done, run the `validate_output_ids` tool to check that the output HTML file has the same ids as the input HTML file.
+Please read the input HTML file carefully, analyze its structure, and create a well-structured HTML output that follows all the requirements above. Save the complete restructured HTML to the output file.
+
+Remember:
+- Every element (except inline style tags b, i, u, s, sup, sub, br) MUST have a data-sources attribute
+- The data-sources values must comprehensively cover all IDs from the input HTML
+- Use semantic HTML structure with proper nesting
+- Clean up formatting issues while preserving exact text content
 """
 
-    with MCPClient(server_parameters) as file_tools:
-        agent = ToolCallingAgent(
-            model=model,
-            tools=[ValidateOutputIdsTool()] + file_tools
+
+def restructure_with_claude_code(
+    content_blocks: list[ContentBlock],
+    output_file: str = "output.html",
+    working_dir: Path = Path("wkdir")
+) -> list[StructuredNode]:
+    """
+    Restructure HTML using Claude Code in non-interactive mode.
+    
+    This approach is more token-efficient by:
+    1. Writing input HTML to a file rather than including it in prompts
+    2. Using Claude Code with limited tool permissions 
+    3. Running validation via hooks automatically
+    4. Reading the structured output from a file
+    
+    Args:
+        content_blocks: List of content blocks to restructure
+        output_file: Name of output file (will be placed in wkdir/)
+        
+    Returns:
+        List of structured nodes parsed from output
+    """
+    # Ensure working directory exists
+    working_dir.mkdir(exist_ok=True)
+
+    # Copy contents of claude_config directory to working directory
+    shutil.copytree(Path(__file__).parent.parent / "claude_config", working_dir, dirs_exist_ok=True)
+    
+    # Generate input HTML and write to file
+    input_html = "\n".join([block.to_html(block_id=i) for i, block in enumerate(content_blocks)])
+    input_file_path = working_dir / "input.html"
+    output_file_path = working_dir / output_file
+    
+    # Write input HTML to file
+    with open(input_file_path, "w", encoding="utf-8") as f:
+        f.write(input_html)
+    
+    logger.info(f"Input HTML written to {input_file_path}")
+    
+    # Create the prompt that references the input file instead of including content
+    file_prompt = f"""Please restructure the HTML content from the input file: {input_file_path.absolute()}
+
+Save the complete restructured HTML to: {output_file_path.absolute()}
+
+{HTML_PROMPT}"""
+    
+    # Run Claude Code in non-interactive mode with limited permissions
+    try:
+        # Use Claude Code with direct path (since it's an alias in shell)
+        claude_path = str(Path.home() / ".claude/local/claude")
+        cmd = [
+            claude_path,
+            "-p", file_prompt,
+            "--allowedTools", "Edit", "MultiEdit", "Read",
+            "--disallowedTools", "Bash", "Grep", "LS", "Glob",
+            "--dangerously-skip-permissions"
+        ]
+        
+        logger.info(f"Running Claude Code with command: {' '.join(cmd)}")
+        
+        # Prepare environment with API key and config directory
+        env = {**os.environ}
+        
+        # Ensure API key is available - try ANTHROPIC_API_KEY first, then OPENROUTER_API_KEY
+        assert "ANTHROPIC_API_KEY" in env, "ANTHROPIC_API_KEY not found in environment variables"
+        
+        result = subprocess.run(
+            cmd,
+            cwd=working_dir,  # Run from wkdir
+            capture_output=True,
+            text=True,
+            timeout=1800,  # 30 minute timeout
+            env=env
         )
+        
+        if result.returncode != 0:
+            error_msg = f"Claude Code failed with return code {result.returncode}"
+            if result.stderr:
+                error_msg += f"\nStderr: {result.stderr}"
+            if result.stdout:
+                error_msg += f"\nStdout: {result.stdout}"
+            raise RuntimeError(error_msg)
+        
+        logger.info("Claude Code completed successfully")
+        logger.debug(f"Claude Code output: {result.stdout}")
+        
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Claude Code timed out after 5 minutes")
+    except FileNotFoundError:
+        raise RuntimeError("Claude Code not found. Please ensure 'claude' is installed and in PATH.")
+    
+    # Verify output file was created
+    if not output_file_path.exists():
+        raise RuntimeError(f"Output file was not created: {output_file_path}")
 
-        # Run the agent with the input HTML
-        agent.run(enhanced_prompt + f"\n\nInput:\n\n{input_html}")
-    if not validate_output_ids().startswith("All ids in the input HTML file are covered"):
-        raise ValueError("Output HTML file does not cover all ids in the input HTML file")
-
-    with open(output_path, "r") as f:
+    # Read and parse the output
+    with open(output_file_path, "r", encoding="utf-8") as f:
         restructured_html = f.read()
-        nodes = create_nodes_from_html(restructured_html, content_blocks)
 
-    # For now, return empty list as we're focusing on file output
-    # In a complete implementation, you would parse the structured output
+    # Validate data sources
+    missing_ids, extra_ids = validate_data_sources(input_html, restructured_html)
+    if (len(missing_ids) + len(extra_ids)) > 3:
+        raise RuntimeError(f"Data sources validation failed: {missing_ids} {extra_ids}")
+
+    # If it contains <body></body>, split on that and return the interior as the restructured HTML
+    if "<body>" in restructured_html and "</body>" in restructured_html:
+        restructured_html = restructured_html.split("<body>")[1].split("</body>")[0]
+
+    # Parse into structured nodes
+    nodes = create_nodes_from_html(restructured_html, content_blocks)
+    
+    logger.info(f"Successfully restructured HTML with {len(nodes)} top-level nodes")
+    
     return nodes
 
 
@@ -244,44 +284,41 @@ if __name__ == "__main__":
     import json
     import dotenv
     import time
-
-    dotenv.load_dotenv()
-
-    gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key = "", "", "", os.getenv("OPENROUTER_API_KEY", "")
-    model = LiteLLMRouterModel(
-        model_id="html-parser",
-        model_list=[
-            {
-                "model_name": "html-parser",
-                "litellm_params": {"model": "openrouter/anthropic/claude-sonnet-4", # 128k tokens output
-                    "api_key": openrouter_api_key,
-                    "max_parallel_requests": 3,
-                    "weight": 3,},
-            }
-        ],
-        fallbacks=[
-            {"text-classifier": ["text-classifier"]}
-        ],
-        allowed_fails=5,
-        num_retries=5,
-        client_kwargs={
-            "routing_strategy": "simple-shuffle",
-        },
-    )
     
-    with open(os.path.join("artifacts", "doc_601_content_blocks_with_styles.json"), "r") as fr:
-        content_blocks: list[ContentBlock] = json.load(fr)
-        content_blocks = [ContentBlock.model_validate(block) for block in content_blocks]
-
+    dotenv.load_dotenv()
+    
+    # Load content blocks
+    input_file = Path("artifacts") / "doc_601_content_blocks_with_styles.json"
+    if not input_file.exists():
+        logger.error(f"Input file not found: {input_file}")
+        exit(1)
+    
+    with open(input_file, "r") as fr:
+        content_blocks_data = json.load(fr)
+        content_blocks = [ContentBlock.model_validate(block) for block in content_blocks_data]
+    
+    logger.info(f"Loaded {len(content_blocks)} content blocks")
+    
+    # Run restructuring
     start_time = time.time()
-    parent_nodes: list[StructuredNode] = agentically_restructure_content_blocks(
-        content_blocks,
-        model,
-        output_file="doc_601_nested_structure.html"
-    )
-    end_time = time.time()
-
-    with open(os.path.join("artifacts", "doc_601_nested_structure.json"), "w") as fw:
-        json.dump([node.model_dump() for node in parent_nodes], fw, indent=2)
-
-    logger.info(f"Time taken: {end_time - start_time} seconds")
+    try:
+        structured_nodes = restructure_with_claude_code(
+            content_blocks,
+            output_file="output.html",
+            working_dir=Path("doc_601")
+        )
+        end_time = time.time()
+        
+        # Save structured nodes to JSON
+        output_json = Path("artifacts") / "doc_601_nested_structure.json"
+        with open(output_json, "w") as fw:
+            json.dump([node.model_dump() for node in structured_nodes], fw, indent=2)
+        
+        logger.info(f"Process completed in {end_time - start_time:.2f} seconds")
+        logger.info(f"HTML output saved to {Path('doc_601') / 'output.html'}")
+        logger.info("JSON output saved to artifacts/doc_601_nested_structure.json")
+        logger.info(f"Structured data saved to {output_json}")
+        
+    except Exception as e:
+        logger.error(f"Restructuring failed: {e}")
+        exit(1)

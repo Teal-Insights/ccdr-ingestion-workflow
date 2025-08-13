@@ -17,6 +17,7 @@ import json
 import os
 import requests
 import asyncio
+from pathlib import Path
 from typing import Sequence
 from sqlmodel import Session, select
 from litellm import Router
@@ -27,11 +28,11 @@ from utils.models import ExtractedLayoutBlock, BlockType, LayoutBlock, ContentBl
 from transform.extract_images import extract_images_from_pdf
 from transform.describe_images import describe_images_with_vlm
 from transform.style_text_blocks import style_text_blocks
-from transform.detect_top_level_structure import detect_top_level_structure
+from transform.restructure_with_CC import restructure_with_claude_code
 from transform.detect_structure import process_top_level_structure
 from transform.upload_to_db import upload_structured_nodes_to_db
 from utils.db import engine, check_schema_sync
-from utils.schema import Document, Node, TagName
+from utils.schema import Document, Node
 from utils.aws import download_pdf_from_s3, upload_json_to_s3, verify_environment_variables
 from utils.litellm_router import create_router
 
@@ -153,19 +154,12 @@ async def main() -> None:
             content_blocks_with_descriptions, pdf_path, temp_dir
         )
 
-        # 9. Detect the top-level structure of the document
-        top_level_structure: list[tuple[TagName, list[ContentBlock]]] = await detect_top_level_structure(
-            styled_text_blocks, router
-            )
-        print("Structure detected successfully!")
-
-        # 10. Detect the nested structure of the document
-        nested_structure: list[StructuredNode] = await process_top_level_structure(
-            top_level_structure,
-            pdf_path,
-            router,
+        # 9. Restructure the document with Claude Code
+        nested_structure: list[StructuredNode] = restructure_with_claude_code(
+            styled_text_blocks,
+            "output.html",
+            Path(f"./artifacts/doc_{document_id}")
         )
-
         print("Nested structure detected successfully!")
 
         # 11. Convert the Pydantic models to our schema and ingest it into our database

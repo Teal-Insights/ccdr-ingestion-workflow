@@ -489,7 +489,7 @@ if __name__ == "__main__":
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
     assert OPENROUTER_API_KEY, "OPENROUTER_API_KEY is not set"
 
-    router: Router = create_router(openrouter_api_key=OPENROUTER_API_KEY)
+    router: Router = create_router("", "", "", openrouter_api_key=OPENROUTER_API_KEY)
 
     with open(os.path.join("artifacts", "doc_601_with_logical_page_numbers.json"), "r") as f:
         layout_blocks = json.load(f)
