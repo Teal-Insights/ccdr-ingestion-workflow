@@ -47,7 +47,7 @@ if __name__ == "__main__":
     from utils.models import StructuredNode
 
     # Load nested structure from JSON (for testing purposes)
-    file_path = os.path.join("artifacts", "doc_601_nested_structure.json")
+    file_path = os.path.join("artifacts", "doc_601_nested_structure_classified.json")
     with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     # Parse into StructuredNode objects

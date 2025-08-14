@@ -1,4 +1,3 @@
-import os
 import logging
 import subprocess
 from pathlib import Path
@@ -33,6 +32,9 @@ Only `header`, `main`, and/or `footer` are allowed at the top level; all other t
     - Otherwise maintain the identical wording/spelling of the text content and of image descriptions and source URLs
     - Assign elements a `data-sources` attribute with a comma-separated list of ids of the source elements (for attribute mapping and content validation). This can include ranges, e.g., `data-sources="0-5,7,9-12"`
         - Note: inline style tags `b`, `i`, `u`, `s`, `sup`, `sub`, and `br` do not need `data-sources`, but all other tags should have this attribute
+    - The `data-sources` MUST reference only IDs that actually exist in the input HTML. Do not invent IDs or include IDs outside the input's set
+    - When using ranges, both endpoints MUST exist in the input, and the range MUST NOT span missing IDs. If necessary, split into multiple valid ranges (e.g., `0-3,5,7-9`)
+    - Never extrapolate beyond the minimum/maximum ID present in the input; do not create ranges like `0-10` if the input only contains `0-4`
 
 # Example
 
@@ -196,7 +198,18 @@ def restructure_with_claude_code(
     input_html = "\n".join([block.to_html(block_id=i) for i, block in enumerate(content_blocks)])
     input_file_path = working_dir / "input.html"
     output_file_path = working_dir / output_file
-    
+
+    # If an output file already exists and passes validation, return it
+    if output_file_path.exists():
+        with open(output_file_path, "r", encoding="utf-8") as f:
+            restructured_html = f.read()
+        missing_ids, extra_ids = validate_data_sources(input_html, restructured_html)
+        if (len(missing_ids) + len(extra_ids)) <= 3:
+            logger.info(f"Output file {output_file_path} already exists and passes validation")
+            return create_nodes_from_html(restructured_html, content_blocks)
+        else:
+            logger.info(f"Output file {output_file_path} already exists but does not pass validation")
+
     # Write input HTML to file
     with open(input_file_path, "w", encoding="utf-8") as f:
         f.write(input_html)
@@ -209,51 +222,73 @@ def restructure_with_claude_code(
 Save the complete restructured HTML to: {output_file_path.absolute()}
 
 {HTML_PROMPT}"""
-    
-    # Run Claude Code in non-interactive mode with limited permissions
-    try:
-        # Use Claude Code with direct path (since it's an alias in shell)
-        claude_path = str(Path.home() / ".claude/local/claude")
-        cmd = [
-            claude_path,
-            "-p", file_prompt,
-            "--allowedTools", "Edit", "MultiEdit", "Read",
-            "--disallowedTools", "Bash", "Grep", "LS", "Glob",
-            "--dangerously-skip-permissions"
-        ]
+
+    # Use Claude Code with direct path (since it's an alias in shell)
+    claude_path = str(Path.home() / ".claude/local/claude")
+    cmd = [
+        claude_path,
+        "-p", file_prompt,
+        "--allowedTools", "Write", "Edit", "MultiEdit", "Read",
+        "--disallowedTools", "Bash", "Grep", "LS", "Glob",
+        "--dangerously-skip-permissions"
+    ]
+
+    logger.info(f"Running Claude Code with command: {' '.join(cmd)}")
+
+    # Use Popen for real-time output to see where it hangs
+    with subprocess.Popen(
+        cmd,
+        cwd=working_dir,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        universal_newlines=True
+    ) as process:
         
-        logger.info(f"Running Claude Code with command: {' '.join(cmd)}")
+        logger.info("Claude Code started, streaming output...")
         
-        # Prepare environment with API key and config directory
-        env = {**os.environ}
+        # Stream output line by line with timeout detection
+        stdout_lines = []
+        timeout_counter = 0
+        max_timeout = 900  # 15 minutes total timeout
+
+        while True:
+            line = process.stdout.readline()
+            if line:
+                # Print to console for real-time feedback
+                print(f"[Claude Code] {line.rstrip()}", flush=True)
+                stdout_lines.append(line)
+                timeout_counter = 0  # Reset timeout when we get output
+            elif process.poll() is not None:
+                # Process has terminated
+                break
+            else:
+                # No output and process still running
+                timeout_counter += 1
+                if timeout_counter > max_timeout:
+                    print(f"\n!!! No output for {max_timeout} seconds, terminating process !!!")
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    raise RuntimeError(f"Claude Code hung with no output for {max_timeout} seconds")
+                
+                import time
+                time.sleep(1)
         
-        # Ensure API key is available - try ANTHROPIC_API_KEY first, then OPENROUTER_API_KEY
-        assert "ANTHROPIC_API_KEY" in env, "ANTHROPIC_API_KEY not found in environment variables"
+        return_code = process.wait()
         
-        result = subprocess.run(
-            cmd,
-            cwd=working_dir,  # Run from wkdir
-            capture_output=True,
-            text=True,
-            timeout=1800,  # 30 minute timeout
-            env=env
-        )
-        
-        if result.returncode != 0:
-            error_msg = f"Claude Code failed with return code {result.returncode}"
-            if result.stderr:
-                error_msg += f"\nStderr: {result.stderr}"
-            if result.stdout:
-                error_msg += f"\nStdout: {result.stdout}"
+        if return_code != 0:
+            stdout_output = ''.join(stdout_lines)
+            error_msg = f"Claude Code failed with return code {return_code}"
+            if stdout_output:
+                error_msg += f"\nOutput: {stdout_output}"
             raise RuntimeError(error_msg)
         
         logger.info("Claude Code completed successfully")
-        logger.debug(f"Claude Code output: {result.stdout}")
-        
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("Claude Code timed out after 5 minutes")
-    except FileNotFoundError:
-        raise RuntimeError("Claude Code not found. Please ensure 'claude' is installed and in PATH.")
     
     # Verify output file was created
     if not output_file_path.exists():
@@ -305,7 +340,7 @@ if __name__ == "__main__":
         structured_nodes = restructure_with_claude_code(
             content_blocks,
             output_file="output.html",
-            working_dir=Path("doc_601")
+            working_dir=Path("artifacts") / "doc_601"
         )
         end_time = time.time()
         
@@ -315,7 +350,7 @@ if __name__ == "__main__":
             json.dump([node.model_dump() for node in structured_nodes], fw, indent=2)
         
         logger.info(f"Process completed in {end_time - start_time:.2f} seconds")
-        logger.info(f"HTML output saved to {Path('doc_601') / 'output.html'}")
+        logger.info(f"HTML output saved to {Path('artifacts') / 'doc_601' / 'output.html'}")
         logger.info("JSON output saved to artifacts/doc_601_nested_structure.json")
         logger.info(f"Structured data saved to {output_json}")
         

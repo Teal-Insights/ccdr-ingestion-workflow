@@ -124,7 +124,7 @@ async def main() -> None:
     dotenv.load_dotenv(override=True)
 
     # Configure
-    LIMIT: int = 10
+    LIMIT: int = 1
     USE_S3: bool = True
     working_dir: str = "./data"
     content_blocks_dir: str = "./data/content_blocks"
@@ -221,7 +221,7 @@ async def main() -> None:
 
     # 12. Generate embeddings for each ContentData record
     # TODO: For tables, explore embedding the table node's entire html content (add embeddingType for this?)
-    generate_embeddings()
+    # generate_embeddings()
 
     print(f"Pipeline completed! All outputs in: {working_dir}")
 

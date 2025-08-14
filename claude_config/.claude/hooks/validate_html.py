@@ -1,4 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.8"
+# dependencies = [
+#     "beautifulsoup4",
+# ]
+# ///
 """
 Validation script for HTML restructuring output.
 
@@ -7,7 +13,7 @@ This script validates that:
 2. All source IDs from input are covered by data-sources attributes in output
 3. No extra IDs are present in output that weren't in input
 
-Usage: uv run validate_html.py <input_html_file> <output_html_file>
+Usage: uv run --script validate_html.py <input_html_file> <output_html_file>
 """
 
 import sys
@@ -114,9 +120,18 @@ def validate_html_structure(input_file: Path, output_file: Path) -> tuple[bool, 
         if missing_ids or extra_ids:
             error_msg = []
             if missing_ids:
-                error_msg.append(f"IDs in input not covered in output: {sorted(missing_ids)}")
+                error_msg.append(
+                    "IDs in input not covered in output: "
+                    f"{sorted(missing_ids)}"
+                )
             if extra_ids:
-                error_msg.append(f"IDs in output not present in input: {sorted(extra_ids)}")
+                # Provide clarifying guidance when output references non-existent IDs
+                error_msg.append(
+                    "Output references IDs not present in input (invalid data-sources). "
+                    f"Extra IDs: {sorted(extra_ids)}. "
+                    "Ensure data-sources only contain IDs that exist in the input and split ranges "
+                    "to avoid spanning missing IDs."
+                )
             return False, "; ".join(error_msg)
         
         return True, "All IDs properly covered"
