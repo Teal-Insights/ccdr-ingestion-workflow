@@ -219,7 +219,7 @@ async def main() -> None:
 
     # 12. Generate embeddings for each ContentData record
     # TODO: For tables, explore embedding the table node's entire html content (add embeddingType for this?)
-    # generate_embeddings()
+    generate_embeddings(limit=1, api_key=openai_api_key)
 
     print(f"Pipeline completed! All outputs in: {working_dir}")
 

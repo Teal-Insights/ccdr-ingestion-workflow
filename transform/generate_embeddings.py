@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 DEFAULT_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "openai/text-embedding-3-small")
+BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))  # Adjust based on input sizes and provider
 
 def iter_content_without_embeddings(session: Session, document_ids: list[int] | None = None, limit: int | None = None):
     # Base filters for content that actually needs embeddings
@@ -65,32 +66,53 @@ def iter_content_without_embeddings(session: Session, document_ids: list[int] | 
     return session.exec(content_stmt)
 
 
-def generate_embedding(text: str, api_key: str) -> Tuple[List[float], str]:
-    """Generate an embedding vector and return (vector, model_name)."""
-    response: EmbeddingResponse = embedding(model=DEFAULT_EMBEDDING_MODEL, input=text, api_key=api_key)
-    assert len(response.data) == 1, "Expected a single embedding; got a batch."
-    vector: List[float] = response.data[0]["embedding"]
-    if response.model:
-        model_name: str = response.model
-    else:
-        model_name = DEFAULT_EMBEDDING_MODEL
-    return vector, model_name
+def generate_embeddings_batch(texts: List[str], api_key: str) -> Tuple[List[List[float]], str]:
+    """Generate embedding vectors for a batch of texts and return (vectors, model_name)."""
+    response: EmbeddingResponse = embedding(model=DEFAULT_EMBEDDING_MODEL, input=texts, api_key=api_key)
+    # Sort by index to preserve input order
+    vectors: List[List[float]] = [item["embedding"] for item in sorted(response.data, key=lambda d: d["index"])]
+    model_name: str = response.model if response.model else DEFAULT_EMBEDDING_MODEL
+    return vectors, model_name
+
+
+def batch_items(items: List, size: int) -> List[List]:
+    """Split a list into batches of specified size."""
+    return [items[i:i+size] for i in range(0, len(items), size)]
 
 
 def generate_embeddings(document_ids: list[int] | None = None, limit: int | None = None, api_key: str | None = None) -> None:
     """Generate and persist embeddings for all content without embeddings."""
     with Session(engine) as session:
-        for cd in iter_content_without_embeddings(session, document_ids, limit):
-            if cd.embedding_source == EmbeddingSource.TEXT_CONTENT:
-                text = cd.text_content
-            elif cd.embedding_source == EmbeddingSource.DESCRIPTION:
-                text = cd.description
-            else:
-                text = cd.caption
+        # Collect all content items that need embeddings
+        content_items = list(iter_content_without_embeddings(session, document_ids, limit))
+        
+        if not content_items:
+            logger.info("No content items need embeddings")
+            return
+        
+        # Process in batches
+        for batch in batch_items(content_items, BATCH_SIZE):
+            # Extract texts from content items
+            texts = []
+            for cd in batch:
+                if cd.embedding_source == EmbeddingSource.TEXT_CONTENT:
+                    texts.append(cd.text_content)
+                elif cd.embedding_source == EmbeddingSource.DESCRIPTION:
+                    texts.append(cd.description)
+                else:
+                    texts.append(cd.caption)
+            
+            # Generate embeddings for the batch
+            vectors, model_name = generate_embeddings_batch(texts, api_key)
 
-            vector, model_name = generate_embedding(text, api_key)
-            session.add(Embedding(content_data_id=cd.id, embedding_vector=vector, model_name=model_name))
+            # Create Embedding objects maintaining one-to-one relationship
+            for cd, vector in zip(batch, vectors):
+                session.add(Embedding(content_data_id=cd.id, embedding_vector=vector, model_name=model_name))
+            
+            logger.info(f"Generated embeddings for batch of {len(batch)} items")
+        
         session.commit()
+        logger.info(f"Successfully generated embeddings for {len(content_items)} content items")
 
 
 if __name__ == "__main__":
