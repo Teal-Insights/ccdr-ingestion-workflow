@@ -1,5 +1,3 @@
-# TODO: Coordinate router creation and use more parallelization at the top level of the pipeline?
-
 """CCDR Ingestion Pipeline
 
 Main orchestration script for the CCDR (Country and Climate Development Reports) ingestion workflow.
@@ -40,7 +38,7 @@ from utils.aws import (
 from utils.litellm_router import create_router
 
 
-async def get_structured_nodes(
+async def get_content_blocks(
     document_id: int, publication_id: int, storage_url: str,
     download_url: str, working_dir: str, use_s3: bool,
     router: Router
@@ -179,7 +177,7 @@ async def main() -> None:
         assert document.download_url, "Download URL is required"
 
         # Get the structured nodes for the document
-        content_blocks: list[ContentBlock] = await get_structured_nodes(document.id, document.publication_id, document.storage_url, document.download_url, working_dir, USE_S3, router)
+        content_blocks: list[ContentBlock] = await get_content_blocks(document.id, document.publication_id, document.storage_url, document.download_url, working_dir, USE_S3, router)
 
         # Save the content blocks to a file
         with open(Path(content_blocks_dir) / f"doc_{document.id}_content_blocks.json", "w") as f:

@@ -151,11 +151,13 @@ def main():
     is_valid, message = validate_html_structure(input_file, output_file)
     
     if is_valid:
-        print("Good news! All ids from the input file are present as data-sources in the output file! This doesn't necessarily mean you're done, but it's a good sign. Once you've checked that the output HTML is well structured with semantic tags and all meaningful content is well-represented by leaf nodes in the output file, you can mark your task complete.")
-        sys.exit(0)
+        # Use exit code 3 (non-blocking) so the success message is visible to Claude
+        # According to docs: "Other exit codes: Non-blocking error. stderr is shown to the user and execution continues."
+        print("✅ VALIDATION SUCCESS: All ids from the input file are present as data-sources in the output file! This doesn't necessarily mean you're done, but it's a good sign. Once you've checked that the output HTML is well structured with semantic tags and all meaningful content is well-represented by leaf nodes in the output file, you can mark your task complete.", file=sys.stderr)
+        sys.exit(3)  # Non-blocking exit code that shows stderr to user and continues
     else:
         print(f"We're making progress! 😊 But there's still work to do. {message}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(2)  # Blocking error - shows stderr to Claude
 
 
 if __name__ == "__main__":

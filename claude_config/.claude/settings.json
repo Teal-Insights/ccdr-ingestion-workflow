@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --script $CLAUDE_PROJECT_DIR/.claude/hooks/validate_html.py input.html output.html"
+            "command": "uv run --script $CLAUDE_PROJECT_DIR/.claude/hooks/validate_html.py $CLAUDE_PROJECT_DIR/input.html $CLAUDE_PROJECT_DIR/output.html"
           }
         ]
       }

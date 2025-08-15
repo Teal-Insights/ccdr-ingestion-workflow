@@ -35,6 +35,9 @@ Only `header`, `main`, and/or `footer` are allowed at the top level; all other t
     - The `data-sources` MUST reference only IDs that actually exist in the input HTML. Do not invent IDs or include IDs outside the input's set
     - When using ranges, both endpoints MUST exist in the input, and the range MUST NOT span missing IDs. If necessary, split into multiple valid ranges (e.g., `0-3,5,7-9`)
     - Never extrapolate beyond the minimum/maximum ID present in the input; do not create ranges like `0-10` if the input only contains `0-4`
+- You may find it helpful to make small-to-medium-sized edits rather than very large ones.
+    - If, for example, `main` spans many tens of thousands of characters, you might create the top level container first and then incrementally populate it over the course of several edits.
+    - Outputting more than 32,000 tokens at a time may cause your session to crash.
 
 # Example
 
@@ -230,7 +233,7 @@ Save the complete restructured HTML to: {output_file_path.absolute()}
         "-p", file_prompt,
         "--allowedTools", "Write", "Edit", "MultiEdit", "Read",
         "--disallowedTools", "Bash", "Grep", "LS", "Glob",
-        "--dangerously-skip-permissions"
+        "--debug"
     ]
 
     logger.info(f"Running Claude Code with command: {' '.join(cmd)}")
