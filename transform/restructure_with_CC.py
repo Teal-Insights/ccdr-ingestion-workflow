@@ -232,7 +232,7 @@ Save the complete restructured HTML to: {output_file_path.absolute()}
     cmd = [
         claude_path,
         "-p", file_prompt,
-        "--allowedTools", "Write", "Edit", "MultiEdit", "Read", "Grep"
+        "--allowedTools", "Write", "Edit", "MultiEdit", "Read", "Grep",
         "--disallowedTools", "Bash", "LS", "Glob",
         "--debug"
     ]
