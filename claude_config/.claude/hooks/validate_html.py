@@ -16,9 +16,23 @@ This script validates that:
 Usage: uv run --script validate_html.py <input_html_file> <output_html_file>
 """
 
+# TODO: On validation success, we need to check whether any output has been truncated or replaced with a placeholder, e.g.,
+#             <div class="references" style="font-size: 0.8em;">
+#                 <p><i>Additional references continue with similar formatting through ID 561...</i></p>
+#             </div>
+# We can use a small, long-context model to check for this, and to return structured output with a list of truncated sections.
+
 import sys
 import bs4
 from pathlib import Path
+
+ALLOWED_TAGS = [
+    "header", "main", "footer", "figure", "figcaption",
+    "table", "thead", "tbody", "tfoot", "th", "tr", "td", "caption",
+    "section", "nav", "aside", "p", "ul", "ol", "li", "h1",
+    "h2", "h3", "h4", "h5", "h6", "img", "math", "code",
+    "cite", "blockquote", "b", "i", "u", "s", "sup", "sub", "br"
+]
 
 def parse_range_string(range_str: str) -> list[int]:
     """
@@ -88,6 +102,21 @@ def validate_html_structure(input_file: Path, output_file: Path) -> tuple[bool, 
         with open(output_file, "r", encoding="utf-8") as f:
             output_html = f.read()
         
+        # Replace <em> with <i> and <strong> with <b> in output
+        replacements_made = []
+        if "<em>" in output_html or "</em>" in output_html:
+            output_html = output_html.replace("<em>", "<i>").replace("</em>", "</i>")
+            replacements_made.append("<em> → <i>")
+        if "<strong>" in output_html or "</strong>" in output_html:
+            output_html = output_html.replace("<strong>", "<b>").replace("</strong>", "</b>")
+            replacements_made.append("<strong> → <b>")
+        
+        # Write back the modified output if replacements were made
+        if replacements_made:
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(output_html)
+            print(f"📝 Auto-replaced tags: {', '.join(replacements_made)}", file=sys.stderr)
+        
         # Parse HTML
         try:
             input_soup = bs4.BeautifulSoup(input_html, "html.parser")
@@ -104,6 +133,19 @@ def validate_html_structure(input_file: Path, output_file: Path) -> tuple[bool, 
                 except ValueError:
                     return False, f"Non-numeric ID found in input: {element.attrs['id']}"
         
+        # Check for disallowed tags in output (only within body)
+        disallowed_tags: set[str] = set()
+        body = output_soup.find("body")
+        if body:
+            for element in body.find_all():
+                if element.name and element.name not in ALLOWED_TAGS:
+                    disallowed_tags.add(element.name)
+        else:
+            # If no body, check all elements
+            for element in output_soup.find_all():
+                if element.name and element.name not in ALLOWED_TAGS:
+                    disallowed_tags.add(element.name)
+        
         # Extract IDs from output data-sources attributes
         ids_in_output: set[int] = set()
         for element in output_soup.find_all():
@@ -117,8 +159,14 @@ def validate_html_structure(input_file: Path, output_file: Path) -> tuple[bool, 
         missing_ids = ids_in_input - ids_in_output
         extra_ids = ids_in_output - ids_in_input
         
-        if missing_ids or extra_ids:
+        if disallowed_tags or missing_ids or extra_ids:
             error_msg = []
+            if disallowed_tags:
+                error_msg.append(
+                    f"You've used some HTML tags that are not allowed: {sorted(disallowed_tags)}.\n"
+                    f"The allowed tags are: {', '.join(ALLOWED_TAGS)}.\n"
+                    "Fix these tags and keep going! You're doing great!"
+                )
             if missing_ids:
                 error_msg.append(
                     "IDs in input not covered in output: "
@@ -152,12 +200,15 @@ def main():
     
     if is_valid:
         # Use exit code 3 (non-blocking) so the success message is visible to Claude
-        # According to docs: "Other exit codes: Non-blocking error. stderr is shown to the user and execution continues."
-        print("✅ VALIDATION SUCCESS: All ids from the input file are present as data-sources in the output file! This doesn't necessarily mean you're done, but it's a good sign. Once you've checked that the output HTML is well structured with semantic tags and all meaningful content is well-represented by leaf nodes in the output file, you can mark your task complete.", file=sys.stderr)
-        sys.exit(3)  # Non-blocking exit code that shows stderr to user and continues
+        print(
+            "✅ VALIDATION SUCCESS: All ids from the input file are present as data-sources in the output file and all tags are valid!\n"
+            "This doesn't necessarily mean you're done, but it's a good sign.\n"
+            "Once you've checked that the output HTML is well structured with semantic tags and all meaningful content is well-represented "
+            "by leaf nodes in the output file, you can mark your task complete.", file=sys.stderr)
+        sys.exit(3)  # Non-blocking exit code that shows stderr to Claude and continues
     else:
-        print(f"We're making progress! 😊 But there's still work to do. {message}", file=sys.stderr)
-        sys.exit(2)  # Blocking error - shows stderr to Claude
+        print(f"We're making progress! 😊 {message}", file=sys.stderr)
+        sys.exit(3)  # Non-blocking exit code that shows stderr to Claude and continues
 
 
 if __name__ == "__main__":

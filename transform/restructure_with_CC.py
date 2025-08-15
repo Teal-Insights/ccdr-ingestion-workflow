@@ -27,6 +27,7 @@ Only `header`, `main`, and/or `footer` are allowed at the top level; all other t
     - `header`: Front matter (title pages, table of contents, preface, etc.)
     - `main`: Body content (main chapters, sections, core content)
     - `footer`: Back matter (appendices, bibliography, index, etc.)
+- Styling is not in your purview, and styles in your output will be ignored.
 - You may split, merge, or replace structural containers as necessary, but you should make an effort to:
     - Clean up any whitespace, encoding, redundant style tags, or other formatting issues
     - Otherwise maintain the identical wording/spelling of the text content and of image descriptions and source URLs
@@ -231,8 +232,8 @@ Save the complete restructured HTML to: {output_file_path.absolute()}
     cmd = [
         claude_path,
         "-p", file_prompt,
-        "--allowedTools", "Write", "Edit", "MultiEdit", "Read",
-        "--disallowedTools", "Bash", "Grep", "LS", "Glob",
+        "--allowedTools", "Write", "Edit", "MultiEdit", "Read", "Grep"
+        "--disallowedTools", "Bash", "LS", "Glob",
         "--debug"
     ]
 
