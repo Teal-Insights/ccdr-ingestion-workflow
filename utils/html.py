@@ -138,13 +138,8 @@ def validate_data_sources(input_html: str, output_html: str) -> tuple[set[int], 
     missing_ids = ids_in_input - ids_in_output
     extra_ids = ids_in_output - ids_in_input
 
-    if missing_ids or extra_ids:
-        error_msg = []
-        if missing_ids:
-            error_msg.append(f"IDs in input not covered in output: {sorted(missing_ids)}")
-        if extra_ids:
-            error_msg.append(f"IDs in output not present in input: {sorted(extra_ids)}")
-        return missing_ids, extra_ids
+    # Always return the sets, regardless of whether they're empty or not
+    return missing_ids, extra_ids
 
 
 def test_create_nodes_from_html_list_merging():

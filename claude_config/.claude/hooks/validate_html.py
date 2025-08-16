@@ -19,7 +19,7 @@ Options:
     --block    Use blocking error codes (exit 2) for failures instead of non-blocking (exit 3)
 """
 
-
+import re
 import sys
 import argparse
 import bs4
@@ -219,8 +219,29 @@ This script validates that:
     is_valid, message = validate_html_structure(args.input_file, args.output_file)
     
     if is_valid:
+        # Read the output file to check for placeholders
+        with open(args.output_file, 'r', encoding='utf-8') as f:
+            output_html = f.read()
+        
+        possible_placeholders = []
+        for line_num, line in enumerate(output_html.splitlines(), 1):
+            if re.search(r'placeholder|<!--|\.\.\.', line):
+                possible_placeholders.append(f"Line {line_num}: {line.strip()}")
+        if possible_placeholders:
+            print(f"🔍 All ids from the {args.input_file} file are present as data-sources in the {args.output_file} file and all tags are valid.\n")
+            print("This *might* mean you're done, **BUT**! Please review the following lines to make sure you haven't hacked the validation check by using placeholders or truncated content.")
+            print(f"🔍 Possible placeholders found in the {args.output_file} file:\n" + "\n".join(possible_placeholders), file=sys.stderr)
+
+        with open(args.input_file, 'r', encoding='utf-8') as f:
+            input_html = f.read()
+        
+        # If output file is <85% the length of the input file, print a warning
+        if len(output_html) < 0.85 * len(input_html):
+            print("🔍 The output file passed a validation check showing all input ids are present as data-sources, but it's suspiciously short compared to the input file, so you've probably cheated by using placeholders or truncated content.")
+            print("Please review the output file to make sure it actually contains all the input content.")
+
         print(
-            f"✅ VALIDATION SUCCESS: All ids from the {args.input_file} file are present as data-sources in the {args.output_file} file and all tags are valid!\n"
+            f"✅ All ids from the {args.input_file} file are present as data-sources in the {args.output_file} file and all tags are valid.\n"
             "This doesn't necessarily mean you're done, but it's a good sign.\n"
             "Once you've checked that the output HTML is well structured with semantic tags and all meaningful content is well-represented "
             f"by leaf nodes in the {args.output_file} file, you can mark your task complete.", file=sys.stderr)
