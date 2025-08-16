@@ -13,11 +13,15 @@ This script validates that:
 2. All source IDs from input are covered by data-sources attributes in output
 3. No extra IDs are present in output that weren't in input
 
-Usage: uv run --script validate_html.py <input_html_file> <output_html_file>
+Usage: uv run --script validate_html.py [--block] <input_html_file> <output_html_file>
+
+Options:
+    --block    Use blocking error codes (exit 2) for failures instead of non-blocking (exit 3)
 """
 
 
 import sys
+import argparse
 import bs4
 from pathlib import Path
 
@@ -161,12 +165,12 @@ def validate_html_structure(input_file: Path, output_file: Path) -> tuple[bool, 
             error_msg = []
             if disallowed_tags:
                 error_msg.append(
-                    f"You've used some HTML tags that are not allowed: {sorted(disallowed_tags)}.\n"
+                    f"You've used some HTML tags in the {output_file} file that are not allowed: {sorted(disallowed_tags)}.\n"
                     f"The allowed tags are: {', '.join(ALLOWED_TAGS)}.\n"
                     "Fix these tags and keep going! You're doing great!"
                 )
             if missing_ids:
-                missing_msg = f"IDs in input not covered in output: {sorted(missing_ids)}"
+                missing_msg = f"IDs in the {input_file} file not yet covered by leaf nodes in the {output_file} file: {sorted(missing_ids)}. You'll need to add more leaf nodes (or make sure all existing leaf nodes have data-sources) that cover these ids."
                 if len(missing_ids) < 20:
                     missing_msg += (
                         "\n\nNote: if any input nodes are empty or contain garbage characters "
@@ -192,26 +196,41 @@ def validate_html_structure(input_file: Path, output_file: Path) -> tuple[bool, 
 
 
 def main():
-    if len(sys.argv) != 3:
-        print("Usage: uv run validate_html.py <input_html_file> <output_html_file>", file=sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Validate HTML restructuring output",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+This script validates that:
+1. The output HTML file contains valid HTML
+2. All source IDs from input are covered by data-sources attributes in output
+3. No extra IDs are present in output that weren't in input
+        """
+    )
+    parser.add_argument("input_file", type=Path, help="Input HTML file path")
+    parser.add_argument("output_file", type=Path, help="Output HTML file path")
+    parser.add_argument(
+        "--block", 
+        action="store_true", 
+        help="Use blocking error codes (exit 2) for failures instead of non-blocking (exit 3)"
+    )
     
-    input_file = Path(sys.argv[1])
-    output_file = Path(sys.argv[2])
+    args = parser.parse_args()
     
-    is_valid, message = validate_html_structure(input_file, output_file)
+    is_valid, message = validate_html_structure(args.input_file, args.output_file)
     
     if is_valid:
-        # Use exit code 3 (non-blocking) so the success message is visible to Claude
         print(
-            "✅ VALIDATION SUCCESS: All ids from the input file are present as data-sources in the output file and all tags are valid!\n"
+            f"✅ VALIDATION SUCCESS: All ids from the {args.input_file} file are present as data-sources in the {args.output_file} file and all tags are valid!\n"
             "This doesn't necessarily mean you're done, but it's a good sign.\n"
             "Once you've checked that the output HTML is well structured with semantic tags and all meaningful content is well-represented "
-            "by leaf nodes in the output file, you can mark your task complete.", file=sys.stderr)
-        sys.exit(3)  # Non-blocking exit code that shows stderr to Claude and continues
+            f"by leaf nodes in the {args.output_file} file, you can mark your task complete.", file=sys.stderr)
+        # Use non-blocking exit code so the success message is visible to Claude
+        sys.exit(3)
     else:
         print(f"We're making progress! 😊 {message}", file=sys.stderr)
-        sys.exit(3)  # Non-blocking exit code that shows stderr to Claude and continues
+        # Use blocking or non-blocking exit code based on --block flag
+        exit_code = 2 if args.block else 3
+        sys.exit(exit_code)
 
 
 if __name__ == "__main__":
