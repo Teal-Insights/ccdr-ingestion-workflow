@@ -210,6 +210,9 @@ def restructure_with_claude_code(
         missing_ids, extra_ids = validate_data_sources(input_html, restructured_html)
         if (len(missing_ids) + len(extra_ids)) <= 3:
             logger.info(f"Output file {output_file_path} already exists and passes validation")
+            # Extract body contents if present
+            if "<body>" in restructured_html and "</body>" in restructured_html:
+                restructured_html = restructured_html.split("<body>")[1].split("</body>")[0]
             return create_nodes_from_html(restructured_html, content_blocks)
         else:
             logger.info(f"Output file {output_file_path} already exists but does not pass validation")
@@ -257,8 +260,13 @@ Save the complete restructured HTML to: {output_file_path.absolute()}
         timeout_counter = 0
         max_timeout = 900  # 15 minutes total timeout
 
+        # Guard against Optional stdout for type-checkers
+        stdout_stream = process.stdout
+        if stdout_stream is None:
+            raise RuntimeError("Failed to capture subprocess stdout stream")
+
         while True:
-            line = process.stdout.readline()
+            line = stdout_stream.readline()
             if line:
                 # Print to console for real-time feedback
                 print(f"[Claude Code] {line.rstrip()}", flush=True)
