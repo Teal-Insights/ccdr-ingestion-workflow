@@ -16,11 +16,6 @@ This script validates that:
 Usage: uv run --script validate_html.py <input_html_file> <output_html_file>
 """
 
-# TODO: On validation success, we need to check whether any output has been truncated or replaced with a placeholder, e.g.,
-#             <div class="references" style="font-size: 0.8em;">
-#                 <p><i>Additional references continue with similar formatting through ID 561...</i></p>
-#             </div>
-# We can use a small, long-context model to check for this, and to return structured output with a list of truncated sections.
 
 import sys
 import bs4
@@ -146,14 +141,17 @@ def validate_html_structure(input_file: Path, output_file: Path) -> tuple[bool, 
                 if element.name and element.name not in ALLOWED_TAGS:
                     disallowed_tags.add(element.name)
         
-        # Extract IDs from output data-sources attributes
+        # Extract IDs from output data-sources attributes (leaf nodes only)
         ids_in_output: set[int] = set()
         for element in output_soup.find_all():
             if "data-sources" in element.attrs:
-                try:
-                    ids_in_output.update(parse_range_string(element["data-sources"]))
-                except Exception as e:
-                    return False, f"Failed to parse data-sources '{element['data-sources']}': {e}"
+                # Check if this is a leaf node (has no child elements with tags)
+                has_child_elements = any(child.name for child in element.children if hasattr(child, 'name'))
+                if not has_child_elements:
+                    try:
+                        ids_in_output.update(parse_range_string(element["data-sources"]))
+                    except Exception as e:
+                        return False, f"Failed to parse data-sources '{element['data-sources']}': {e}"
         
         # Check coverage
         missing_ids = ids_in_input - ids_in_output
@@ -168,10 +166,15 @@ def validate_html_structure(input_file: Path, output_file: Path) -> tuple[bool, 
                     "Fix these tags and keep going! You're doing great!"
                 )
             if missing_ids:
-                error_msg.append(
-                    "IDs in input not covered in output: "
-                    f"{sorted(missing_ids)}"
-                )
+                missing_msg = f"IDs in input not covered in output: {sorted(missing_ids)}"
+                if len(missing_ids) < 20:
+                    missing_msg += (
+                        "\n\nNote: if any input nodes are empty or contain garbage characters "
+                        "you think shouldn't be in the final output, you may attach their ids "
+                        "as data-sources to neighboring output nodes to pass the id validation "
+                        "check. Please do this sparingly."
+                    )
+                error_msg.append(missing_msg)
             if extra_ids:
                 # Provide clarifying guidance when output references non-existent IDs
                 error_msg.append(
