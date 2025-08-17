@@ -171,7 +171,7 @@ def validate_html_structure(input_file: Path, output_file: Path) -> tuple[bool, 
                 )
             if missing_ids:
                 missing_msg = f"IDs in the {input_file} file not yet covered by leaf nodes in the {output_file} file: {sorted(missing_ids)}. You'll need to add more leaf nodes (or make sure all existing leaf nodes have data-sources) that cover these ids."
-                if len(missing_ids) < 20:
+                if len(missing_ids) < 30:
                     missing_msg += (
                         "\n\nNote: if any input nodes are empty or contain garbage characters "
                         "you think shouldn't be in the final output, you may attach their ids "
@@ -213,16 +213,16 @@ This script validates that:
         action="store_true", 
         help="Use blocking error codes (exit 2) for failures instead of non-blocking (exit 3)"
     )
-    
+
     args = parser.parse_args()
-    
+
     is_valid, message = validate_html_structure(args.input_file, args.output_file)
-    
+
     if is_valid:
         # Read the output file to check for placeholders
         with open(args.output_file, 'r', encoding='utf-8') as f:
             output_html = f.read()
-        
+
         possible_placeholders = []
         for line_num, line in enumerate(output_html.splitlines(), 1):
             if re.search(r'placeholder|<!--|\.\.\.', line):
@@ -234,7 +234,7 @@ This script validates that:
 
         with open(args.input_file, 'r', encoding='utf-8') as f:
             input_html = f.read()
-        
+
         # If output file is <85% the length of the input file, print a warning
         if len(output_html) < 0.85 * len(input_html):
             print("🔍 The output file passed a validation check showing all input ids are present as data-sources, but it's suspiciously short compared to the input file, so you've probably cheated by using placeholders or truncated content.")
@@ -256,4 +256,3 @@ This script validates that:
 
 if __name__ == "__main__":
     main()
-
