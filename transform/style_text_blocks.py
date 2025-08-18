@@ -187,7 +187,9 @@ def style_text_blocks(content_blocks: list[ContentBlock], pdf_path: str, temp_di
                         
                         if exact_matches:
                             # Exact match found - use regex replacement
-                            styled_text = re.sub(escaped_original, styled_span_text.strip(), styled_text, flags=re.IGNORECASE)
+                            # Escape backslashes in replacement to prevent backreference errors
+                            escaped_replacement = styled_span_text.strip().replace('\\', '\\\\')
+                            styled_text = re.sub(escaped_original, escaped_replacement, styled_text, flags=re.IGNORECASE)
                             spans_used_in_block.add(original_span_text)
                             used_spans.add(original_span_text)
                             
