@@ -5,6 +5,8 @@ from bs4 import BeautifulSoup, Tag, NavigableString
 from utils.schema import TagName
 from utils.range_parser import parse_range_string
 
+ALLOWED_TAGS = [tag.value for tag in TagName] + ["b", "i", "u", "s", "sup", "sub", "br"]
+
 def create_nodes_from_html(html: str, content_blocks: list[ContentBlock]) -> list[StructuredNode]:
     """Helper to create StructuredNodes from an HTML string
     
@@ -140,6 +142,35 @@ def validate_data_sources(input_html: str, output_html: str) -> tuple[set[int], 
 
     # Always return the sets, regardless of whether they're empty or not
     return missing_ids, extra_ids
+
+
+def validate_html_tags(html: str) -> tuple[bool, list[str]]:
+    """Validate that HTML is well-formed and contains only allowed tags.
+    
+    Args:
+        html: HTML string to validate (can be a full document or partial)
+        
+    Returns:
+        Tuple of (is_valid, invalid_tags) where:
+        - is_valid: True if HTML parses and all tags are valid
+        - invalid_tags: List of disallowed tag names found in the HTML
+    """
+    try:
+        # Try to parse the HTML
+        soup = BeautifulSoup(html, "html.parser")
+    except Exception:
+        # If parsing fails, HTML is not valid
+        return False, []
+    
+    # Check for disallowed tags
+    disallowed_tags: set[str] = set()
+    for element in soup.find_all():
+        if element.name and element.name.lower() not in ALLOWED_TAGS:
+            disallowed_tags.add(element.name.lower())
+    
+    # Return validation result
+    is_valid = len(disallowed_tags) == 0
+    return is_valid, sorted(list(disallowed_tags))
 
 
 def test_create_nodes_from_html_list_merging():
@@ -278,10 +309,45 @@ def test_create_nodes_from_html_list_merging():
     assert result_img.positional_data == expected_img.positional_data, "IMG positional data mismatch"
 
 
+def test_validate_html_tags():
+    """Test cases for the validate_html_tags function."""
+    
+    # Test valid HTML
+    valid_html = "<p>Hello <b>world</b></p><ul><li>Item 1</li></ul>"
+    is_valid, invalid_tags = validate_html_tags(valid_html)
+    assert is_valid, "Valid HTML should pass validation"
+    assert invalid_tags == [], f"Valid HTML should have no invalid tags, got {invalid_tags}"
+    
+    # Test invalid HTML with disallowed tags
+    invalid_html = "<div><span>Hello</span><p>World</p></div>"
+    is_valid, invalid_tags = validate_html_tags(invalid_html)
+    assert not is_valid, "Invalid HTML should fail validation"
+    assert set(invalid_tags) == {"div", "span"}, f"Expected ['div', 'span'], got {invalid_tags}"
+    
+    # Test empty HTML
+    empty_html = ""
+    is_valid, invalid_tags = validate_html_tags(empty_html)
+    assert is_valid, "Empty HTML should be valid"
+    assert invalid_tags == [], "Empty HTML should have no invalid tags"
+    
+    # Test HTML with only text (no tags)
+    text_only = "Just some text"
+    is_valid, invalid_tags = validate_html_tags(text_only)
+    assert is_valid, "Text-only content should be valid"
+    assert invalid_tags == [], "Text-only content should have no invalid tags"
+    
+    print("✅ validate_html_tags tests passed!")
+
+
 if __name__ == "__main__":
     try:
         test_create_nodes_from_html_list_merging()
-        print("✅ Test passed!")
+        print("✅ create_nodes_from_html test passed!")
+        
+        test_validate_html_tags()
+        print("✅ validate_html_tags test passed!")
+        
+        print("✅ All tests passed!")
     except Exception as e:
         print(f"❌ Test failed: {e}")
         import traceback
