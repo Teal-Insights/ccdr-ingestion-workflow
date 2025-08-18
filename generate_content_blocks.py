@@ -149,9 +149,9 @@ async def main() -> None:
             )
         missing_documents: Sequence[Document] = session.exec(get_missing).all()
 
-    # Sync local files with S3 if USE_S3 is True
+    # Sync any content blocks files from S3 to the local directory that aren't already present
     if USE_S3:
-        sync_folder_to_s3(content_blocks_dir, "content_blocks")
+        sync_s3_to_folder("content_blocks", content_blocks_dir)
 
     # Get document ids for which we don't already have a content blocks file locally
     unproc_documents: list[Document] = [
@@ -186,9 +186,9 @@ async def main() -> None:
         
         print(f"Saved content blocks for document {document.id} to {output_file}")
 
-    # Upload to S3 if USE_S3 is True
+    # Upload all content blocks files from the local directory to S3
     if USE_S3:
-        sync_s3_to_folder("content_blocks", content_blocks_dir)
+        sync_folder_to_s3(content_blocks_dir, "content_blocks")
 
     print(f"Content blocks generation completed! Output in: {content_blocks_dir}")
 
