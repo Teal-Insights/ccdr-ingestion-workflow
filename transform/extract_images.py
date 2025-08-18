@@ -25,6 +25,7 @@ def extract_images_from_pdf(
 
         # Use positional data to get pixmap for the page and crop to the bbox
         page: pymupdf.Page = pdf[content_block.positional_data.page_pdf - 1]
+
         rect_like_bbox = (
             content_block.positional_data.bbox.x1,
             content_block.positional_data.bbox.y1,
@@ -33,16 +34,35 @@ def extract_images_from_pdf(
         )
         image = page.get_pixmap(clip=rect_like_bbox)
 
-        # Save image to local temp dir, creating the images directory if it doesn't exist
-        os.makedirs(os.path.join(temp_dir, "images"), exist_ok=True)
-        image_path = os.path.join(temp_dir, "images", f"doc_{document_id}_{i}.webp")
-        image.pil_save(image_path, format="WebP", optimize=True, quality=85)
+        try:
+            # Save image to local temp dir, creating the images directory if it doesn't exist
+            os.makedirs(os.path.join(temp_dir, "images"), exist_ok=True)
+            image_path = os.path.join(temp_dir, "images", f"doc_{document_id}_{i}.webp")
+            image.pil_save(image_path, format="WebP", optimize=True, quality=85)
 
-        # Save image to S3
-        storage_url = upload_image_to_s3(temp_dir, (publication_id, document_id), i, "webp")
+            # Save image to S3
+            storage_url = upload_image_to_s3(temp_dir, (publication_id, document_id), i, "webp")
 
-        content_block.storage_url = storage_url
-        content_blocks_with_images.append(content_block)
+            content_block.storage_url = storage_url
+            content_blocks_with_images.append(content_block)
+        except MemoryError as e:
+            has_meaningful_text = bool(content_block.text_content and content_block.text_content.strip())
+            if has_meaningful_text:
+                # Reclassify to TEXT (keep block, but not as an image)
+                print(
+                    f"Reclassifying block {i} (doc_{document_id}) from PICTURE to TEXT due to invalid bbox: "
+                    f"{str(content_block.positional_data.bbox)}"
+                )
+                content_block.block_type = BlockType.TEXT
+                content_block.storage_url = None
+                content_blocks_with_images.append(content_block)
+                continue
+            else:
+                print(
+                    f"Dropping picture block {i} (doc_{document_id}) due to invalid bbox and no text: "
+                    f"{str(content_block.positional_data.bbox)}"
+                )
+                continue
 
     pdf.close()
 
