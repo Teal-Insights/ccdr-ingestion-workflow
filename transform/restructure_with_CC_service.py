@@ -3,8 +3,8 @@ import json
 import time
 from pathlib import Path
 
-from utils.models import ContentBlock, StructuredNode
-from utils.html import create_nodes_from_html, validate_data_sources, validate_html_tags, ALLOWED_TAGS
+from utils.models import ContentBlock
+from utils.html import validate_data_sources, validate_html_tags, ALLOWED_TAGS
 from utils.claude_code_client import ClaudeCodeClient, FileInput
 
 logger = logging.getLogger(__name__)
@@ -48,11 +48,11 @@ Remember:
 """
 
 
-def restructure_with_claude_code(
-    content_blocks: list[ContentBlock],
+async def restructure_with_claude_code(
+    input_html: str,
     output_file: str = "output.html",
     timeout_seconds: int = 3600  # 60 minutes default for document restructuring
-) -> list[StructuredNode]:
+) -> str:
     """
     Restructure HTML using Claude Code API service.
     
@@ -64,9 +64,6 @@ def restructure_with_claude_code(
     Returns:
         List of structured nodes parsed from output
     """
-    
-    # Generate input HTML
-    input_html = "\n".join([block.to_html(block_id=i) for i, block in enumerate(content_blocks)])
     
     # Create the prompt that references the input file
     file_prompt = f"""You were asked to restructure the HTML content from the input file: input.html.
@@ -162,22 +159,14 @@ Please review current_output.html and fix the tags to ensure the HTML contains o
     if invalid_tags:
         raise ValueError(f"Invalid tags: {invalid_tags}")
 
-    # Extract body contents if present
-    if "<body>" in restructured_html and "</body>" in restructured_html:
-        restructured_html = restructured_html.split("<body>")[1].split("</body>")[0]
-    
-    # Parse into structured nodes
-    nodes = create_nodes_from_html(restructured_html, content_blocks)
-    
-    logger.info(f"Successfully restructured HTML with {len(nodes)} top-level nodes")
-    
-    return nodes
+    return restructured_html
 
 
 if __name__ == "__main__":
     import json
     import dotenv
     import time
+    import asyncio
     
     dotenv.load_dotenv()
     
@@ -193,23 +182,26 @@ if __name__ == "__main__":
     
     logger.info(f"Loaded {len(content_blocks)} content blocks")
     
+    # Generate input HTML
+    input_html = "\n".join([block.to_html(block_id=i) for i, block in enumerate(content_blocks)])
+
     # Run restructuring
     start_time = time.time()
     try:
-        structured_nodes = restructure_with_claude_code(
-            content_blocks,
+        restructured_html = asyncio.run(restructure_with_claude_code(
+            input_html,
             output_file="output.html",
             timeout_seconds=3600  # 60 minutes for complex document restructuring
-        )
+        ))
         end_time = time.time()
         
         # Save structured nodes to JSON
-        output_json = Path("artifacts") / "doc_601_nested_structure.json"
-        with open(output_json, "w") as fw:
-            json.dump([node.model_dump() for node in structured_nodes], fw, indent=2)
-        
+        output_html_file = Path("artifacts") / "doc_601.html"
+        with open(output_html_file, "w") as fw:
+            fw.write(restructured_html)
+
         logger.info(f"Process completed in {end_time - start_time:.2f} seconds")
-        logger.info(f"Structured data saved to {output_json}")
+        logger.info(f"Structured data saved to {output_html_file}")
         
     except Exception as e:
         logger.error(f"Restructuring failed: {e}")

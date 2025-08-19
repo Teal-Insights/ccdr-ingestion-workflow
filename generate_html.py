@@ -1,10 +1,3 @@
-# TODO: We will:
-# 1. Load the content blocks from file/AWS
-# 2. Restructure the content blocks to HTML and return the HTML
-# 3. Save the HTML to file/AWS alongside the content blocks
-# 4. Handle conversion to structured nodes, upload to DB, and embedding in a different script (generate_structured_nodes.py)
-# This will require moving some of the logic from transform/restructure_with_CC.py to that script, and its HTML saving to this script
-
 """CCDR Content Blocks Processing
 
 Processes content blocks into structured nodes and uploads them to the database.
@@ -20,41 +13,15 @@ classification, database upload, and embedding generation.
 
 import dotenv
 import json
-import os
 import asyncio
 from pathlib import Path
 from typing import Sequence
 from sqlmodel import Session, select
-from litellm import Router
-from utils.models import ContentBlock, StructuredNode
-from transform.restructure_with_CC import restructure_with_claude_code
-from transform.classify_section_types import classify_section_types
-from transform.upload_to_db import upload_structured_nodes_to_db
-from transform.generate_embeddings import generate_embeddings
+from utils.models import ContentBlock
+from transform.restructure_with_CC_service import restructure_with_claude_code
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
-from utils.aws import verify_environment_variables, sync_folder_to_s3
-from utils.litellm_router import create_router
-
-
-async def process_document_content_blocks(
-    document_id: int, content_blocks: list[ContentBlock], router: Router
-) -> list[StructuredNode]:
-    """Process content blocks for a single document into structured nodes."""
-    
-    # 8. Restructure the document with Claude Code
-    nested_structure: list[StructuredNode] = restructure_with_claude_code(
-        content_blocks,
-        "output.html",
-        Path(f"./artifacts/doc_{document_id}")
-    )
-    print(f"Document {document_id}: Nested structure detected successfully!")
-
-    # 9. Enrich the HTML sections with sectionType classifications
-    nested_structure = await classify_section_types(router, nested_structure, "")
-    print(f"Document {document_id}: Section types classified successfully!")
-
-    return nested_structure
+from utils.aws import sync_s3_to_folder, sync_folder_to_s3
 
 
 async def main() -> None:
@@ -64,21 +31,11 @@ async def main() -> None:
     LIMIT: int = 1
     USE_S3: bool = True
     content_blocks_dir: str = "./data/content_blocks"
+    html_dir: str = "./data/html"
     
-    # Fail fast if required env vars are not set or DB schema is out of sync
-    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    assert gemini_api_key, "GEMINI_API_KEY is not set"
-    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
-    assert openai_api_key, "OPENAI_API_KEY is not set"
-    openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
-    assert openrouter_api_key, "OPENROUTER_API_KEY is not set"
-    deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
-    assert deepseek_api_key, "DEEPSEEK_API_KEY is not set"
-    verify_environment_variables()
+    # Fail fast if DB schema is out of sync
     check_schema_sync()
     
-    router: Router = create_router(gemini_api_key, openai_api_key, deepseek_api_key, openrouter_api_key)
-
     # Get Documents from the database where the count of child nodes is 0 (meaning nodes have not been uploaded yet)
     with Session(engine) as session:
         get_missing = (
@@ -90,9 +47,10 @@ async def main() -> None:
 
     # Sync with S3 if USE_S3 is True
     if USE_S3:
-        sync_folder_to_s3("content_blocks", content_blocks_dir)
+        sync_s3_to_folder("content_blocks", content_blocks_dir)
+        sync_s3_to_folder("html", html_dir)
 
-    # Get documents that have content blocks files but haven't been processed to database yet
+    # Get documents that have content blocks files but not HTML files yet
     processable_documents: list[Document] = [
         document for document in missing_documents
         if (Path(content_blocks_dir) / f"doc_{document.id}_content_blocks.json").exists()
@@ -102,8 +60,10 @@ async def main() -> None:
         print("No documents with content blocks found to process. Run generate_content_blocks.py first.")
         return
 
-    # Process the documents
+    # Convert the content blocks into HTML
     counter: int = 0
+    tasks: list[asyncio.Task] = []
+    doc_ids: list[int] = []
     for document in processable_documents:
         if counter >= LIMIT:
             break
@@ -121,23 +81,31 @@ async def main() -> None:
                 ContentBlock.model_validate(block) for block in content_blocks_data
             ]
 
-        # Process the content blocks into structured nodes
-        nested_structure: list[StructuredNode] = await process_document_content_blocks(
-            document.id, content_blocks, router
+        # Generate input HTML
+        input_html = "\n".join([block.to_html(block_id=i) for i, block in enumerate(content_blocks)])
+        doc_ids.append(int(document.id))
+        tasks.append(
+            asyncio.create_task(
+                restructure_with_claude_code(
+                    input_html=input_html,
+                    output_file="output.html",
+                    timeout_seconds=3600,
+                )
+            )
         )
 
-        # 10. Convert the Pydantic models to our schema and ingest it into our database
-        upload_structured_nodes_to_db(nested_structure, document.id)
-        print(f"Document {document.id}: Structured nodes uploaded to database successfully!")
+    # Wait for all tasks to complete
+    html_files = await asyncio.gather(*tasks)
 
-    # 11. Enrich the database records by generating relations from anchor tags
-    # TODO: Implement this
+    # Save the HTML to files mapped to their corresponding document IDs
+    for doc_id, html_file in zip(doc_ids, html_files):
+        output_file = Path(html_dir) / f"doc_{doc_id}_html.html"
+        with open(output_file, "w") as f:
+            f.write(html_file)
 
-    # 12. Generate embeddings for each ContentData record
-    # TODO: For tables, explore embedding the table node's entire html content (add embeddingType for this?)
-    print("Generating embeddings...")
-    generate_embeddings(limit=LIMIT, api_key=openai_api_key)
-    print("Embeddings generated successfully!")
+    # Upload the HTML to S3
+    if USE_S3:
+        sync_folder_to_s3(html_dir, "html")
 
     print("Content blocks processing completed!")
 

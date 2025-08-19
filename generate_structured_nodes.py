@@ -11,6 +11,7 @@ The script loads content blocks from JSON files and processes them through restr
 classification, database upload, and embedding generation.
 """
 
+import logging
 import dotenv
 import json
 import os
@@ -20,7 +21,7 @@ from typing import Sequence
 from sqlmodel import Session, select
 from litellm import Router
 from utils.models import ContentBlock, StructuredNode
-from transform.restructure_with_CC import restructure_with_claude_code
+from utils.html import create_nodes_from_html
 from transform.classify_section_types import classify_section_types
 from transform.upload_to_db import upload_structured_nodes_to_db
 from transform.generate_embeddings import generate_embeddings
@@ -29,25 +30,7 @@ from utils.schema import Document, Node
 from utils.aws import verify_environment_variables, sync_folder_to_s3
 from utils.litellm_router import create_router
 
-
-async def process_document_content_blocks(
-    document_id: int, content_blocks: list[ContentBlock], router: Router
-) -> list[StructuredNode]:
-    """Process content blocks for a single document into structured nodes."""
-    
-    # 8. Restructure the document with Claude Code
-    nested_structure: list[StructuredNode] = restructure_with_claude_code(
-        content_blocks,
-        "output.html",
-        Path(f"./artifacts/doc_{document_id}")
-    )
-    print(f"Document {document_id}: Nested structure detected successfully!")
-
-    # 9. Enrich the HTML sections with sectionType classifications
-    nested_structure = await classify_section_types(router, nested_structure, "")
-    print(f"Document {document_id}: Section types classified successfully!")
-
-    return nested_structure
+logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
@@ -57,6 +40,7 @@ async def main() -> None:
     LIMIT: int = 1
     USE_S3: bool = True
     content_blocks_dir: str = "./data/content_blocks"
+    html_dir: str = "./data/html"
     
     # Fail fast if required env vars are not set or DB schema is out of sync
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
@@ -85,14 +69,15 @@ async def main() -> None:
     if USE_S3:
         sync_folder_to_s3("content_blocks", content_blocks_dir)
 
-    # Get documents that have content blocks files but haven't been processed to database yet
+    # Get documents that have content blocks and html files but haven't been processed to database yet
     processable_documents: list[Document] = [
         document for document in missing_documents
         if (Path(content_blocks_dir) / f"doc_{document.id}_content_blocks.json").exists()
+        and (Path(html_dir) / f"doc_{document.id}.html").exists()
     ]
 
     if not processable_documents:
-        print("No documents with content blocks found to process. Run generate_content_blocks.py first.")
+        print("No documents with content blocks found to process. Run generate_content_blocks.py and generate_html.py first.")
         return
 
     # Process the documents
@@ -114,10 +99,22 @@ async def main() -> None:
                 ContentBlock.model_validate(block) for block in content_blocks_data
             ]
 
+        # Load the html from the file
+        html_file = Path(html_dir) / f"doc_{document.id}.html"
+        with open(html_file, "r") as f:
+            html = f.read()
+
         # Process the content blocks into structured nodes
-        nested_structure: list[StructuredNode] = await process_document_content_blocks(
-            document.id, content_blocks, router
-        )
+        if "<body>" in html and "</body>" in html:
+            html = html.split("<body>")[1].split("</body>")[0]
+    
+        # Parse into structured nodes
+        nodes = create_nodes_from_html(html, content_blocks)
+        logger.info(f"Successfully restructured HTML with {len(nodes)} top-level nodes")
+    
+        # 9. Enrich the HTML sections with sectionType classifications
+        nested_structure: list[StructuredNode] = await classify_section_types(router, nodes, "")
+        logger.info(f"Document {document.id}: Section types classified successfully!")
 
         # 10. Convert the Pydantic models to our schema and ingest it into our database
         upload_structured_nodes_to_db(nested_structure, document.id)

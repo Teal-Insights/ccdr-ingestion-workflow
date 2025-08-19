@@ -41,7 +41,7 @@ class SessionCreateResponse(BaseModel):
 
 class JobRunRequest(BaseModel):
     prompt: str
-    timeout_s: int = Field(600, gt=0, le=1800)
+    timeout_s: int = Field(600, gt=0, le=3600)
 
 class JobRunResponse(BaseModel):
     job_id: str
@@ -316,7 +316,7 @@ class ClaudeCodeClient:
         prompt: str,
         output_file: str = "output.html",
         config_files: Optional[List[FileInput]] = None,
-        timeout_s: int = 1800
+        timeout_s: int = 3600
     ) -> str:
         """
         Execute a complete restructuring job with session management.
@@ -348,7 +348,7 @@ class ClaudeCodeClient:
         
         try:
             # Create session
-            session_id = self.create_session(files, ttl_seconds=max(timeout_s * 2, 3600))
+            self.create_session(files, ttl_seconds=max(timeout_s * 2, 3600))
             
             # Run job
             job_id = self.run_job(prompt, timeout_s)
@@ -385,7 +385,7 @@ class ClaudeCodeClient:
         fixup_prompt: str,
         output_file: str = "output.html",
         config_files: Optional[List[FileInput]] = None,
-        timeout_s: int = 600
+        timeout_s: int = 3600
     ) -> str:
         """
         Execute a fixup job to correct issues in existing output.
@@ -417,7 +417,7 @@ class ClaudeCodeClient:
         
         try:
             # Create session
-            session_id = self.create_session(files, ttl_seconds=max(timeout_s * 2, 3600))
+            self.create_session(files, ttl_seconds=max(timeout_s * 2, 3600))
             
             # Run fixup job
             job_id = self.run_job(fixup_prompt, timeout_s)

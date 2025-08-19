@@ -77,22 +77,12 @@ You were given the following prompt:
 
 {HTML_PROMPT}"""
 
-    # Load the configuration files for OpenCode
-    with open("opencode_config/.opencode/plugin/validate_html.ts", "r") as fr:
-        validate_html_content = fr.read()
-
-    # Prepare configuration files
-    config_files = [
-        FileInput(path=".opencode/plugin/validate_html.ts", content=validate_html_content)
-    ]
-
     # Execute the restructuring job using the client
     with OpenCodeClient() as client:
         restructured_html = client.execute_restructuring_job(
             input_html=input_html,
             prompt=file_prompt,
             output_file=output_file,
-            config_files=config_files,
             model=model,
             timeout_s=timeout_seconds
         )
@@ -145,7 +135,6 @@ Please review current_output.html and fix the tags to ensure the HTML contains o
                 current_output=restructured_html,
                 fixup_prompt=fixup_prompt,
                 output_file=output_file,
-                config_files=config_files,
                 model=model,
                 timeout_s=600  # Shorter timeout for fixup
             )

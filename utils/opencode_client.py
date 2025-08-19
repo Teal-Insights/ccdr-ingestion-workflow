@@ -42,7 +42,7 @@ class SessionCreateResponse(BaseModel):
 class JobRunRequest(BaseModel):
     prompt: str
     model: Optional[str] = Field("openai/gpt-5", description="Provider-prefixed AI model to use")
-    timeout_s: int = Field(600, gt=0, le=1800)
+    timeout_s: int = Field(600, gt=0, le=3600)
 
 class JobRunResponse(BaseModel):
     job_id: str
@@ -326,7 +326,7 @@ class OpenCodeClient:
         output_file: str = "output.html",
         config_files: Optional[List[FileInput]] = None,
         model: str = "openai/gpt-5",
-        timeout_s: int = 1800
+        timeout_s: int = 3600
     ) -> str:
         """
         Execute a complete restructuring job with session management.
@@ -359,7 +359,7 @@ class OpenCodeClient:
         
         try:
             # Create session
-            session_id = self.create_session(files, ttl_seconds=max(timeout_s * 2, 3600))
+            self.create_session(files, ttl_seconds=max(timeout_s * 2, 3600))
             
             # Run job
             job_id = self.run_job(prompt, model, timeout_s)
@@ -430,7 +430,7 @@ class OpenCodeClient:
         
         try:
             # Create session
-            session_id = self.create_session(files, ttl_seconds=max(timeout_s * 2, 3600))
+            self.create_session(files, ttl_seconds=max(timeout_s * 2, 3600))
             
             # Run fixup job
             job_id = self.run_job(fixup_prompt, model, timeout_s)
