@@ -185,16 +185,21 @@ def style_text_blocks(content_blocks: list[ContentBlock], pdf_path: str, temp_di
                         escaped_original = re.escape(original_span_text.strip())
                         exact_matches = re.findall(escaped_original, styled_text, re.IGNORECASE)
                         
+                        # TODO: probably want to skip regex replacement for single-character spans or spans with more than a couple exact matches
                         if exact_matches:
-                            # Exact match found - use regex replacement
-                            # Escape backslashes in replacement to prevent backreference errors
-                            escaped_replacement = styled_span_text.strip().replace('\\', '\\\\')
-                            styled_text = re.sub(escaped_original, escaped_replacement, styled_text, flags=re.IGNORECASE)
-                            spans_used_in_block.add(original_span_text)
-                            used_spans.add(original_span_text)
-                            
-                            if len(exact_matches) > 1:
-                                print(f"Warning: Multiple matches ({len(exact_matches)}) found for styled span: '{original_span_text.strip()}'")
+                            if len(exact_matches) == 1:
+                                # Exact single match found - safe to replace
+                                # Escape backslashes in replacement to prevent backreference errors
+                                escaped_replacement = styled_span_text.strip().replace('\\', '\\\\')
+                                styled_text = re.sub(escaped_original, escaped_replacement, styled_text, flags=re.IGNORECASE)
+                                spans_used_in_block.add(original_span_text)
+                                used_spans.add(original_span_text)
+                            else:
+                                # Ambiguous: multiple matches found - skip replacement
+                                print(f"Skipping replacement: Multiple matches ({len(exact_matches)}) for styled span: '{original_span_text.strip()}'")
+                                # Mark as used to avoid misleading 'No match found' warnings
+                                spans_used_in_block.add(original_span_text)
+                                used_spans.add(original_span_text)
                         else:
                             # Fuzzy match found but no exact replacement possible
                             # Mark as used to avoid warning, but don't modify text
