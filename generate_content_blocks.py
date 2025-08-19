@@ -20,13 +20,13 @@ from pathlib import Path
 from typing import Sequence
 from sqlmodel import Session, select
 from litellm import Router
-from transform.extract_layout import extract_layout
-from transform.map_page_numbers import add_logical_page_numbers
-from transform.reclassify_blocks import reclassify_block_types
+from blocks_maker.extract_layout import extract_layout
+from blocks_maker.map_page_numbers import add_logical_page_numbers
+from blocks_maker.reclassify_blocks import reclassify_block_types
 from utils.models import ExtractedLayoutBlock, BlockType, LayoutBlock, ContentBlockBase, ContentBlock
-from transform.extract_images import extract_images_from_pdf
-from transform.describe_images import describe_images_with_vlm
-from transform.style_text_blocks import style_text_blocks
+from blocks_maker.extract_images import extract_images_from_pdf
+from blocks_maker.describe_images import describe_images_with_vlm
+from blocks_maker.style_text_blocks import style_text_blocks
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
 from utils.aws import (

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Sequence
 from sqlmodel import Session, select
 from utils.models import ContentBlock
-from transform.restructure_with_CC_service import restructure_with_claude_code
+from html_maker.restructure_with_CC_service import restructure_with_claude_code
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
 from utils.aws import sync_s3_to_folder, sync_folder_to_s3

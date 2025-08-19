@@ -22,9 +22,9 @@ from sqlmodel import Session, select
 from litellm import Router
 from utils.models import ContentBlock, StructuredNode
 from utils.html import create_nodes_from_html
-from transform.classify_section_types import classify_section_types
-from transform.upload_to_db import upload_structured_nodes_to_db
-from transform.generate_embeddings import generate_embeddings
+from nodes_maker.classify_section_types import classify_section_types
+from nodes_maker.upload_to_db import upload_structured_nodes_to_db
+from nodes_maker.generate_embeddings import generate_embeddings
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
 from utils.aws import verify_environment_variables, sync_folder_to_s3
