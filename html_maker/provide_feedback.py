@@ -6,8 +6,7 @@ from utils.html import ALLOWED_TAGS
 
 class Feedback(BaseModel):
     message: str = Field(description="A human-readable description of the issue")
-    output_lines: list[int] = Field(description="A numerical range of line numbers in the output file that are affected by the issue")
-    input_lines: list[int] = Field(description="A numerical range of line numbers in the input file that are salient to the issue")
+    affected_ids: list[int] = Field(description="Element IDs from the input file that are affected by the issue")
     severity: Literal["critical", "minor"] = Field(description="The severity of the issue")
 
 
