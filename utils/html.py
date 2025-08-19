@@ -147,13 +147,17 @@ def validate_data_sources(input_html: str, output_html: str) -> tuple[set[int], 
 def validate_html_tags(html: str) -> tuple[bool, list[str]]:
     """Validate that HTML is well-formed and contains only allowed tags.
     
+    Behavior:
+    - If a <body> element exists, validate only the tags inside the body.
+    - Otherwise, validate against the whole content (useful for HTML partials).
+    
     Args:
         html: HTML string to validate (can be a full document or partial)
         
     Returns:
         Tuple of (is_valid, invalid_tags) where:
         - is_valid: True if HTML parses and all tags are valid
-        - invalid_tags: List of disallowed tag names found in the HTML
+        - invalid_tags: List of disallowed tag names found in the validated scope
     """
     try:
         # Try to parse the HTML
@@ -162,9 +166,16 @@ def validate_html_tags(html: str) -> tuple[bool, list[str]]:
         # If parsing fails, HTML is not valid
         return False, []
     
-    # Check for disallowed tags
+    # Determine scope: prefer body descendants when body exists
+    scope_elements = []
+    if soup.body is not None:
+        scope_elements = soup.body.find_all()
+    else:
+        scope_elements = soup.find_all()
+    
+    # Check for disallowed tags within the chosen scope
     disallowed_tags: set[str] = set()
-    for element in soup.find_all():
+    for element in scope_elements:
         if element.name and element.name.lower() not in ALLOWED_TAGS:
             disallowed_tags.add(element.name.lower())
     
