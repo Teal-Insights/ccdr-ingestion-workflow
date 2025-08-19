@@ -33,6 +33,9 @@ ALLOWED_TAGS = [
     "cite", "blockquote", "b", "i", "u", "s", "sup", "sub", "br"
 ]
 
+# Inline style tags that don't affect leaf node status
+INLINE_STYLE_TAGS = {"b", "i", "u", "s", "sup", "sub", "code", "cite", "br"}
+
 def parse_range_string(range_str: str) -> list[int]:
     """
     Parse a comma-separated range string into a list of integers.
@@ -149,8 +152,12 @@ def validate_html_structure(input_file: Path, output_file: Path) -> tuple[bool, 
         ids_in_output: set[int] = set()
         for element in output_soup.find_all():
             if "data-sources" in element.attrs:
-                # Check if this is a leaf node (has no child elements with tags)
-                has_child_elements = any(child.name for child in element.children if hasattr(child, 'name'))
+                # Check if this is a leaf node (has no child elements with tags, excluding inline style tags)
+                has_child_elements = any(
+                    child.name and child.name not in INLINE_STYLE_TAGS 
+                    for child in element.children 
+                    if hasattr(child, 'name')
+                )
                 if not has_child_elements:
                     try:
                         ids_in_output.update(parse_range_string(element["data-sources"]))
