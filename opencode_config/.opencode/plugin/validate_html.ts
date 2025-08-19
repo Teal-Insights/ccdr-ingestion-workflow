@@ -1,9 +1,6 @@
-/// <reference types="bun" />
-/// <reference lib="dom" />
 import type { Plugin } from "@opencode-ai/plugin"
 import { readFile, writeFile } from "fs/promises"
 import { existsSync } from "fs"
-import { resolve } from "path"
 
 const ALLOWED_TAGS = [
   "header", "main", "footer", "figure", "figcaption",
@@ -12,6 +9,9 @@ const ALLOWED_TAGS = [
   "h2", "h3", "h4", "h5", "h6", "img", "math", "code",
   "cite", "blockquote", "b", "i", "u", "s", "sup", "sub", "br"
 ]
+
+// Inline style tags that don't affect leaf node status
+const INLINE_STYLE_TAGS = new Set(["b", "i", "u", "s", "sup", "sub", "code", "cite", "br"])
 
 /**
  * Parse a comma-separated range string into a list of integers.
@@ -75,7 +75,7 @@ function parseHTML(html: string) {
   }> = []
   
   // Find all opening tags (both self-closing and regular)
-  const openingTagRegex = /<(\w+)([^>]*?)(?:\s*\/?>)/g
+  const openingTagRegex = /<(\w+)([^>]*?)(?:\s*\/>)/g
   let match
   
   while ((match = openingTagRegex.exec(html)) !== null) {
@@ -102,6 +102,88 @@ function parseHTML(html: string) {
   }
   
   return elements
+}
+
+/**
+ * Lightweight HTML tree parser sufficient for validation needs
+ */
+type ElementNode = {
+  name: string
+  attrs: Record<string, string>
+  children: ElementNode[]
+  parent?: ElementNode
+}
+
+function parseHTMLTree(html: string): { root: ElementNode, allNodes: ElementNode[], bodyNode?: ElementNode } {
+  const root: ElementNode = { name: "__root__", attrs: {}, children: [] }
+  const allNodes: ElementNode[] = []
+
+  const tagRegex = /<\/?([a-zA-Z][\w:-]*)([^>]*?)\/?\s*>/g
+  const attrRegex = /([\w-]+)=["']([^"']*)["']/g
+  const voidElements = new Set(['img', 'br', 'hr', 'meta', 'link', 'area', 'base', 'col', 'embed', 'input', 'source', 'track', 'wbr'])
+
+  const stack: ElementNode[] = [root]
+  let matchTree: RegExpExecArray | null
+
+  while ((matchTree = tagRegex.exec(html)) !== null) {
+    const full = matchTree[0]
+    const rawName = matchTree[1] || ""
+    const tagName = rawName.toLowerCase()
+    const attrsStr = matchTree[2] || ""
+    const isClosing = full.startsWith("</")
+    const isSelfClosing = full.endsWith("/>") || voidElements.has(tagName)
+
+    if (isClosing) {
+      // Pop until matching tag or root
+      for (let i = stack.length - 1; i > 0; i--) {
+        if (stack[i].name === tagName) {
+          stack.length = i // pop matched element
+          break
+        }
+      }
+      continue
+    }
+
+    // Opening or self-closing tag
+    const attrs: Record<string, string> = {}
+    let am: RegExpExecArray | null
+    while ((am = attrRegex.exec(attrsStr)) !== null) {
+      attrs[am[1]] = am[2]
+    }
+
+    const node: ElementNode = { name: tagName, attrs, children: [], parent: stack[stack.length - 1] }
+    stack[stack.length - 1].children.push(node)
+    allNodes.push(node)
+
+    if (!isSelfClosing) {
+      stack.push(node)
+    }
+  }
+
+  // Find body node if present
+  let bodyNode: ElementNode | undefined
+  for (const n of allNodes) {
+    if (n.name === "body") { bodyNode = n; break }
+  }
+
+  return { root, allNodes, bodyNode }
+}
+
+/**
+ * Collect all nodes in a subtree starting from the given root.
+ */
+function collectSubtree(root: ElementNode): ElementNode[] {
+  const collected: ElementNode[] = []
+  const stack: ElementNode[] = [root]
+  while (stack.length > 0) {
+    const current = stack.pop()
+    if (!current) continue
+    collected.push(current)
+    for (let i = current.children.length - 1; i >= 0; i--) {
+      stack.push(current.children[i])
+    }
+  }
+  return collected
 }
 
 /**
@@ -143,12 +225,12 @@ async function validateHTMLStructure(inputFile: string, outputFile: string): Pro
     }
     
     // Parse HTML
-    const inputElements = parseHTML(inputHTML)
-    const outputElements = parseHTML(outputHTML)
-    
+    const inputTree = parseHTMLTree(inputHTML)
+    const outputTree = parseHTMLTree(outputHTML)
+  
     // Extract IDs from input
     const idsInInput = new Set<number>()
-    for (const element of inputElements) {
+    for (const element of inputTree.allNodes) {
       if (element.attrs.id) {
         const id = parseInt(element.attrs.id)
         if (isNaN(id)) {
@@ -160,7 +242,12 @@ async function validateHTMLStructure(inputFile: string, outputFile: string): Pro
     
     // Check for disallowed tags in output
     const disallowedTags = new Set<string>()
-    for (const element of outputElements) {
+    // Only validate tags INSIDE <body> (exclude the <body> element itself).
+    // If there's no <body>, fall back to validating the full document tree.
+    const nodesToCheck: ElementNode[] = outputTree.bodyNode
+      ? outputTree.bodyNode.children.flatMap(child => collectSubtree(child))
+      : outputTree.allNodes
+    for (const element of nodesToCheck) {
       if (!ALLOWED_TAGS.includes(element.name)) {
         disallowedTags.add(element.name)
       }
@@ -168,15 +255,19 @@ async function validateHTMLStructure(inputFile: string, outputFile: string): Pro
     
     // Extract IDs from output data-sources attributes (leaf nodes only)
     const idsInOutput = new Set<number>()
-    for (const element of outputElements) {
-      if (element.attrs["data-sources"] && element.isLeafNode) {
-        try {
-          const ids = parseRangeString(element.attrs["data-sources"])
-          ids.forEach(id => idsInOutput.add(id))
-        } catch (error) {
-          return { 
-            isValid: false, 
-            message: `Failed to parse data-sources '${element.attrs["data-sources"]}': ${error}` 
+    for (const element of outputTree.allNodes) {
+      const dataSources = element.attrs["data-sources"]
+      if (dataSources) {
+        const hasNonInlineChild = element.children.some(child => !INLINE_STYLE_TAGS.has(child.name))
+        if (!hasNonInlineChild) {
+          try {
+            const ids = parseRangeString(dataSources)
+            ids.forEach(id => idsInOutput.add(id))
+          } catch (error) {
+            return { 
+              isValid: false, 
+              message: `Failed to parse data-sources '${dataSources}': ${error}` 
+            }
           }
         }
       }
@@ -233,82 +324,54 @@ export const ValidateHtmlPlugin: Plugin = async ({ app, client, $ }) => {
   console.log("HTML Validation Plugin initialized!")
 
   return {
-    "tool.execute.after": async (input, output) => {
+    "tool.execute.after": async ({ tool, sessionID, callID }, output) => {
       // Only validate when HTML files are written
-      if (input.tool === "write" && (output as any).args?.file_path?.endsWith(".html")) {
-        const outputFile = resolve((output as any).args.file_path)
-        
-        // Look for a corresponding input file
-        // Try common patterns: input.html, original.html, or same directory with "input" prefix
-        const outputDir = outputFile.substring(0, outputFile.lastIndexOf("/"))
-        const possibleInputFiles = [
-          resolve(outputDir, "input.html"),
-          resolve(outputDir, "original.html"),
-          outputFile.replace(/\/([^/]+)\.html$/, "/input.html"),
-          outputFile.replace(/\/output\.html$/, "/input.html")
-        ]
-        
-        let inputFile: string | null = null
-        for (const candidate of possibleInputFiles) {
-          if (existsSync(candidate)) {
-            inputFile = candidate
-            break
-          }
-        }
-        
-        if (!inputFile) {
-          // Don't error if no input file found - this might not be a restructuring task
-          return
-        }
-        
-        const result = await validateHTMLStructure(inputFile, outputFile)
-        
-        let validationMessage = `🔍 **HTML Validation**: Checking restructuring of \`${inputFile}\` → \`${outputFile}\`\n\n`
-        
-        if (result.isValid) {
-          // Check for placeholders and length
-          const outputHTML = await readFile(outputFile, "utf-8")
-          const inputHTML = await readFile(inputFile, "utf-8")
-          
-          const possiblePlaceholders: string[] = []
-          const lines = outputHTML.split("\n")
-          for (let i = 0; i < lines.length; i++) {
-            if (/placeholder|<!--|\.\.\./.test(lines[i])) {
-              possiblePlaceholders.push(`Line ${i + 1}: ${lines[i].trim()}`)
-            }
-          }
-          
-          validationMessage += `✅ **Validation Passed!** All IDs from input are present as data-sources in output and all tags are valid.`
-          
-          if (possiblePlaceholders.length > 0) {
-            validationMessage += `\n\n⚠️ **Warning**: Possible placeholders detected. Please review these lines:\n${possiblePlaceholders.map(line => `- ${line}`).join("\n")}`
-          }
-          
-          // If output file is <85% the length of the input file, add warning
-          if (outputHTML.length < 0.85 * inputHTML.length) {
-            validationMessage += `\n\n⚠️ **Length Warning**: Output is suspiciously short (${Math.round((outputHTML.length / inputHTML.length) * 100)}% of input length). Verify all content is properly represented.`
-          }
-          
-          validationMessage += `\n\n**Next Steps**: Review the output HTML structure and semantic tags. If satisfied, mark the task complete.`
-        } else {
-          validationMessage += `📝 **Validation In Progress**: ${result.message}\n\nKeep going! You're making progress toward a valid HTML restructuring.`
-        }
-        
-        // Use system-reminder tag to ensure the LLM pays attention to validation feedback
-        const systemReminder = `<system-reminder>${validationMessage}</system-reminder>`
-        
-        // Modify the tool output to include validation results
-        output.output = `${output.output}\n\n${systemReminder}`
-        output.metadata = {
-          ...output.metadata,
-          htmlValidation: {
-            isValid: result.isValid,
-            message: result.message,
-            inputFile,
-            outputFile
-          }
-        }
+      if (tool !== "write" && tool !== "edit") {
+        console.log("Skipping HTML validation for non-write or edit tool", tool)
+        return
       }
+      
+      const inputFile: string = "input.html"
+      const outputFile: string = "output.html"
+      
+      const result = await validateHTMLStructure(inputFile, outputFile)
+      
+      let validationMessage = `🔍 **HTML Validation**: Checking restructuring of \`${inputFile}\` → \`${outputFile}\`\n\n`
+      
+      if (result.isValid) {
+        // Check for placeholders and length
+        const outputHTML = await readFile(outputFile, "utf-8")
+        const inputHTML = await readFile(inputFile, "utf-8")
+        
+        const possiblePlaceholders: string[] = []
+        const lines = outputHTML.split("\n")
+        for (let i = 0; i < lines.length; i++) {
+          if (/placeholder|<!--|\.\.\./.test(lines[i])) {
+            possiblePlaceholders.push(`Line ${i + 1}: ${lines[i].trim()}`)
+          }
+        }
+        
+        validationMessage += `✅ **Validation Passed!** All IDs from input are present as data-sources in output and all tags are valid.`
+        
+        if (possiblePlaceholders.length > 0) {
+          validationMessage += `\n\n⚠️ **Warning**: Possible placeholders detected. Please review these lines:\n${possiblePlaceholders.map(line => `- ${line}`).join("\n")}`
+        }
+        
+        // If output file is <85% the length of the input file, add warning
+        if (outputHTML.length < 0.85 * inputHTML.length) {
+          validationMessage += `\n\n⚠️ **Length Warning**: Output is suspiciously short (${Math.round((outputHTML.length / inputHTML.length) * 100)}% of input length). Verify all content is properly represented.`
+        }
+        
+        validationMessage += `\n\n**Next Steps**: Review the output HTML structure and semantic tags. If satisfied, mark the task complete.`
+      } else {
+        validationMessage += `📝 **Validation In Progress**: ${result.message}\n\nKeep going! You're making progress toward a valid HTML restructuring.`
+      }
+      
+      // Modify the tool's displayed result instead of sending a new chat message
+      console.log("Modifying tool's displayed result", validationMessage)
+      output.title = "HTML Validation"
+      output.output = `${output.output ?? ""}\n\n${validationMessage}`
+      output.metadata = { ...(output.metadata || {}), htmlValidation: { inputFile, outputFile, isValid: result.isValid } }
     }
   }
 }
