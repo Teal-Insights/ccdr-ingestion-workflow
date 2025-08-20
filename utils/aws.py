@@ -6,6 +6,7 @@ from types_boto3_s3 import S3Client
 from botocore.exceptions import NoCredentialsError
 from dotenv import load_dotenv
 import logging
+import mimetypes
 
 # Load environment variables
 load_dotenv()
@@ -189,8 +190,28 @@ def sync_folder_to_s3(local_dir: str | Path, s3_dir: str) -> None:
     """
     bucket_name, _ = verify_environment_variables()
     s3_client = get_s3_client()
-    for file in os.listdir(local_dir):
-        s3_client.upload_file(os.path.join(local_dir, file), bucket_name, os.path.join(s3_dir, file))
+
+    root_path = Path(local_dir)
+    if not root_path.exists():
+        logger.warning(f"Local directory does not exist: {root_path}")
+        return
+
+    # Walk directory tree and upload files preserving relative paths
+    for current_dir, _subdirs, filenames in os.walk(root_path):
+        for filename in filenames:
+            local_file_path = Path(current_dir) / filename
+            # Compute S3 key relative to the root folder
+            relative_path = local_file_path.relative_to(root_path).as_posix()
+            s3_key = f"{s3_dir.rstrip('/')}/{relative_path}" if s3_dir else relative_path
+
+            # Guess content type for better serving in browsers
+            content_type, _ = mimetypes.guess_type(str(local_file_path))
+            extra_args = {"ContentType": content_type} if content_type else None
+
+            if extra_args:
+                s3_client.upload_file(str(local_file_path), bucket_name, s3_key, ExtraArgs=extra_args)
+            else:
+                s3_client.upload_file(str(local_file_path), bucket_name, s3_key)
 
 
 def sync_s3_to_folder(s3_dir: str, local_dir: str | Path, overwrite: bool = False) -> None:
