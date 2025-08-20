@@ -12,6 +12,7 @@ classification, database upload, and embedding generation.
 """
 
 import dotenv
+import os
 import json
 import asyncio
 from pathlib import Path
@@ -20,10 +21,13 @@ from sqlmodel import Session, select
 from utils.models import ContentBlock
 from html_maker.first_pass import run_first_pass
 from html_maker.fixup_pass import run_fixup_pass
+from html_maker.provide_feedback import provide_feedback, Feedback
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
 from utils.aws import sync_s3_to_folder, sync_folder_to_s3
 from utils.html import validate_data_sources, validate_html_tags
+from litellm import Router
+from utils.litellm_router import create_router
 
 
 def file_starts_with(path: Path, prefix: str, encoding: str = "utf-8") -> bool:
@@ -47,6 +51,18 @@ async def main() -> None:
     
     # Fail fast if DB schema is out of sync
     check_schema_sync()
+
+    # Setup LLM router
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+    openai_api_key = os.getenv("OPENAI_API_KEY", "")
+    deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
+    openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
+    router: Router = create_router(
+        gemini_api_key=gemini_api_key,
+        openai_api_key=openai_api_key,
+        deepseek_api_key=deepseek_api_key,
+        openrouter_api_key=openrouter_api_key,
+    )
     
     # Get Documents from the database where the count of child nodes is 0 (meaning nodes have not been uploaded yet)
     with Session(engine) as session:
@@ -117,45 +133,64 @@ async def main() -> None:
             with open(output_html_path, "r") as rf:
                 current_html = rf.read()
 
-        # Validate and, if needed, iterate fixups up to 5 times
-        missing_ids, extra_ids = validate_data_sources(input_html, current_html)
-        is_valid_html, invalid_tags = validate_html_tags(current_html)
-
-        if current_html and not current_html.startswith("<!-- Approved -->") and not len(missing_ids) + len(extra_ids) > 0 and is_valid_html and not invalid_tags:
-            current_html = "<!-- Approved -->\n" + current_html
-            with open(output_html_path, "w") as wf:
-                wf.write(current_html)
-            return
-
+        # Validate and iterate fixups up to 5 times, incorporating Gemini feedback when mechanical checks pass
         fixup_attempt: int = 0
-        while (
-            (len(missing_ids) + len(extra_ids) > 0 or not is_valid_html or bool(invalid_tags))
-            and fixup_attempt < 5
-        ):
-            fixup_attempt += 1
-            current_html = await asyncio.to_thread(
-                run_fixup_pass,
-                input_html,
-                current_html,
-                str(output_html_path),
-                missing_ids,
-                extra_ids,
-                not is_valid_html,
-                invalid_tags,
-                3600,
-            )
-
-            # Re-validate
+        while fixup_attempt < 5:
             missing_ids, extra_ids = validate_data_sources(input_html, current_html)
             is_valid_html, invalid_tags = validate_html_tags(current_html)
 
-            if current_html and not current_html.startswith("<!-- Approved -->") and not len(missing_ids) + len(extra_ids) > 0 and is_valid_html and not invalid_tags:
-                current_html = "<!-- Approved -->\n" + current_html
+            # If mechanical checks pass, request Gemini feedback
+            gemini_feedback_text: str | None = None
+            if (
+                current_html
+                and len(missing_ids) + len(extra_ids) == 0
+                and is_valid_html
+                and not invalid_tags
+            ):
+                try:
+                    gemini_feedback: list[Feedback] = await provide_feedback(
+                        input_html=input_html, output_html=current_html, router=router
+                    )
+                except Exception:
+                    gemini_feedback = []
 
-            # Persist after each fixup, but only if we got back text (don't overwrite if we errored!)
-            if current_html:
-                with open(output_html_path, "w") as wf:
-                    wf.write(current_html)
+                # Parse feedback and filter critical items
+                gemini_criticals: list[Feedback] = [item for item in gemini_feedback if item.severity == "critical"]
+                if not gemini_criticals:
+                    if not current_html.startswith("<!-- Approved -->"):
+                        current_html = "<!-- Approved -->\n" + current_html
+                    with open(output_html_path, "w") as wf:
+                        wf.write(current_html)
+                    return
+
+                # Build feedback text for fixup prompt
+                feedback_lines: list[str] = []
+                for item in gemini_criticals:
+                    msg = str(item.message)
+                    ids = item.affected_ids
+                    ids_repr = f" affected_ids={ids}" if ids else ""
+                    feedback_lines.append(f"- {msg}{ids_repr}")
+                gemini_feedback_text = "\n".join(feedback_lines)
+
+                fixup_attempt += 1
+                current_html = await asyncio.to_thread(
+                    run_fixup_pass,
+                    input_html,
+                    current_html,
+                    str(output_html_path),
+                    missing_ids,
+                    extra_ids,
+                    not is_valid_html,
+                    invalid_tags,
+                    gemini_feedback_text,
+                    3600,
+                )
+
+                # Only persist if we got back text (don't overwrite if we errored!)
+                if current_html:
+                    with open(output_html_path, "w") as wf:
+                        wf.write(current_html)
+                continue
 
     # Convert the content blocks into HTML for up to LIMIT docs concurrently
     tasks: list[asyncio.Task] = []

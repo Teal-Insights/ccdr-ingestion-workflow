@@ -1,5 +1,6 @@
+import json
 from typing import Literal, Any, cast
-from litellm import Router
+from litellm import Router, ModelResponse, Choices
 from pydantic import BaseModel, Field
 from utils.html import ALLOWED_TAGS
 
@@ -8,6 +9,9 @@ class Feedback(BaseModel):
     message: str = Field(description="A human-readable description of the issue")
     affected_ids: list[int] = Field(description="Element IDs from the input file that are affected by the issue")
     severity: Literal["critical", "minor"] = Field(description="The severity of the issue")
+
+class FeedbackResponse(BaseModel):
+    feedback: list[Feedback] = Field(description="A list of feedback items")
 
 
 PROMPT: str = f"""# Task
@@ -42,7 +46,7 @@ async def provide_feedback(
     input_html: str,
     output_html: str,
     router: Router,
-) -> str:
+) -> list[Feedback]:
     input_lines: list[str] = [str(i + 1) + ": " + line for i, line in enumerate(input_html.split("\n"))]
     output_lines: list[str] = [str(i + 1) + ": " + line for i, line in enumerate(output_html.split("\n"))]
 
@@ -66,11 +70,19 @@ async def provide_feedback(
     response: Any = await router.acompletion(
         model="gemini/gemini-2.5-flash",
         messages=cast(Any, messages),
-        response_format=Feedback,
+        response_format=FeedbackResponse,
         stream=False,
     )
 
-    content = response.choices[0].message.content
-    if isinstance(content, str):
-        return content
-    return str(content) if content is not None else ""
+    if (
+            response
+            and isinstance(response, ModelResponse)
+            and isinstance(response.choices[0], Choices)
+            and response.choices[0].message.content
+        ):
+        try:
+            return [feedback for feedback in FeedbackResponse.model_validate(json.loads(response.choices[0].message.content)).feedback]
+        except Exception:
+            return []
+    else:
+        return []

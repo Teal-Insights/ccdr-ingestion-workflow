@@ -13,6 +13,7 @@ def _build_fixup_prompt(
     extra_ids: Iterable[int] | None,
     html_invalid: bool,
     invalid_tags: list[str] | None,
+    gemini_feedback: str | None = None,
 ) -> str:
     prompt = "You were given the following prompt:\n\n" + HTML_PROMPT + "\n\nYou wrote your output to output.html, but it did not pass validation checks. Please fix the remaining issues in output.html.\n\nThe validation found these problems:"
 
@@ -41,6 +42,12 @@ def _build_fixup_prompt(
             f"{', '.join(ALLOWED_TAGS)}"
         )
 
+    if gemini_feedback:
+        prompt += (
+            "\n\n- Gemini feedback (critical issues to address):\n"
+            f"{gemini_feedback}"
+        )
+
     return prompt
 
 
@@ -52,6 +59,7 @@ def run_fixup_pass(
     extra_ids: Iterable[int] | None = None,
     html_invalid: bool = False,
     invalid_tags: list[str] | None = None,
+    gemini_feedback: str | None = None,
     timeout_seconds: int = 600,
 ) -> str:
     """Execute a single fixup pass using the Claude Code service and return updated HTML."""
@@ -72,6 +80,7 @@ def run_fixup_pass(
         extra_ids=extra_ids or [],
         html_invalid=html_invalid,
         invalid_tags=invalid_tags or [],
+        gemini_feedback=gemini_feedback,
     )
 
     with ClaudeCodeClient() as client:
