@@ -29,6 +29,7 @@ from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
 from utils.aws import verify_environment_variables, sync_folder_to_s3
 from utils.litellm_router import create_router
+from utils.file_editor import file_starts_with
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ async def main() -> None:
     dotenv.load_dotenv(override=True)
 
     # Configure
-    LIMIT: int = 1
+    LIMIT: int = 5
     USE_S3: bool = True
     content_blocks_dir: str = "./data/content_blocks"
     html_dir: str = "./data/html"
@@ -69,11 +70,12 @@ async def main() -> None:
     if USE_S3:
         sync_folder_to_s3("content_blocks", content_blocks_dir)
 
-    # Get documents that have content blocks and html files but haven't been processed to database yet
+    # Get documents that have content blocks and approved html files but haven't been processed to database yet
     processable_documents: list[Document] = [
         document for document in missing_documents
         if (Path(content_blocks_dir) / f"doc_{document.id}_content_blocks.json").exists()
-        and (Path(html_dir) / f"doc_{document.id}.html").exists()
+        and (Path(html_dir) / f"doc_{document.id}" / "output.html").exists()
+        and file_starts_with((Path(html_dir) / f"doc_{document.id}" / "output.html"), "<!-- Approved -->")
     ]
 
     if not processable_documents:
@@ -100,7 +102,7 @@ async def main() -> None:
             ]
 
         # Load the html from the file
-        html_file = Path(html_dir) / f"doc_{document.id}.html"
+        html_file = Path(html_dir) / f"doc_{document.id}" / "output.html"
         with open(html_file, "r") as f:
             html = f.read()
 

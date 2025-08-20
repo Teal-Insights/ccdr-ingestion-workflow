@@ -267,7 +267,8 @@ class ClaudeCodeClient:
         """
         if not self.session_id:
             raise RuntimeError("No active session")
-        
+
+        logger.info(f"Downloading file {file_path} from session {self.session_id}")
         response = requests.get(
             f"{self.base_url}/download",
             headers=self.headers,
