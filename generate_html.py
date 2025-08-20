@@ -26,6 +26,16 @@ from utils.aws import sync_s3_to_folder, sync_folder_to_s3
 from utils.html import validate_data_sources, validate_html_tags
 
 
+def file_starts_with(path: Path, prefix: str, encoding: str = "utf-8") -> bool:
+    """Memory-efficient helper to check if a file starts with a given prefix"""
+    prefix_bytes = prefix.encode(encoding)
+    try:
+        with path.open("rb") as f:
+            return f.read(len(prefix_bytes)) == prefix_bytes
+    except FileNotFoundError:
+        return False
+
+
 async def main() -> None:
     dotenv.load_dotenv(override=True)
 
@@ -52,14 +62,21 @@ async def main() -> None:
         sync_s3_to_folder("content_blocks", content_blocks_dir)
         sync_s3_to_folder("html", html_dir)
 
+    # Get non-approved documents (HTML files that don't start with "<!-- Approved -->")
+    non_approved_documents: list[Document] = [
+        document for document in missing_documents
+        if not (Path(html_dir) / f"doc_{document.id}" / "output.html").exists()
+        or not file_starts_with((Path(html_dir) / f"doc_{document.id}" / "output.html"), "<!-- Approved -->")
+    ]
+
     # Get documents that have content blocks files but not HTML files yet
     processable_documents: list[Document] = [
-        document for document in missing_documents
+        document for document in non_approved_documents
         if (Path(content_blocks_dir) / f"doc_{document.id}_content_blocks.json").exists()
     ]
 
     if not processable_documents:
-        print("No documents with content blocks found to process. Run generate_content_blocks.py first.")
+        print("No non-approved documents with content blocks found to process. Run generate_content_blocks.py first.")
         return
 
     async def process_document(document: Document) -> None:
@@ -73,19 +90,19 @@ async def main() -> None:
         doc_output_dir.mkdir(parents=True, exist_ok=True)
         output_html_path = doc_output_dir / "output.html"
 
-        # If output.html exists, skip first pass; otherwise run first pass
-        if not output_html_path.exists():
-            # Load the content blocks from the file
-            content_blocks_file = Path(content_blocks_dir) / f"doc_{doc_id}_content_blocks.json"
-            with open(content_blocks_file, "r") as f:
-                content_blocks_data = json.load(f)
-                content_blocks: list[ContentBlock] = [
-                    ContentBlock.model_validate(block) for block in content_blocks_data
-                ]
+        # Load the content blocks from the file
+        content_blocks_file = Path(content_blocks_dir) / f"doc_{doc_id}_content_blocks.json"
+        with open(content_blocks_file, "r") as f:
+            content_blocks_data = json.load(f)
+            content_blocks: list[ContentBlock] = [
+                ContentBlock.model_validate(block) for block in content_blocks_data
+            ]
 
-            # Generate input HTML
-            input_html = "\n".join([block.to_html(block_id=i) for i, block in enumerate(content_blocks)])
-            
+        # Generate input HTML
+        input_html = "\n".join([block.to_html(block_id=i) for i, block in enumerate(content_blocks)])
+
+        # If output.html exists, skip first pass; otherwise run first pass
+        if not output_html_path.exists():            
             current_html = await run_first_pass(
                 input_html=input_html,
                 output_file=str(output_html_path),
@@ -103,6 +120,12 @@ async def main() -> None:
         # Validate and, if needed, iterate fixups up to 5 times
         missing_ids, extra_ids = validate_data_sources(input_html, current_html)
         is_valid_html, invalid_tags = validate_html_tags(current_html)
+
+        if current_html and not current_html.startswith("<!-- Approved -->") and not len(missing_ids) + len(extra_ids) > 0 and is_valid_html and not invalid_tags:
+            current_html = "<!-- Approved -->\n" + current_html
+            with open(output_html_path, "w") as wf:
+                wf.write(current_html)
+            return
 
         fixup_attempt: int = 0
         while (
@@ -122,14 +145,17 @@ async def main() -> None:
                 3600,
             )
 
+            # Re-validate
+            missing_ids, extra_ids = validate_data_sources(input_html, current_html)
+            is_valid_html, invalid_tags = validate_html_tags(current_html)
+
+            if current_html and not current_html.startswith("<!-- Approved -->") and not len(missing_ids) + len(extra_ids) > 0 and is_valid_html and not invalid_tags:
+                current_html = "<!-- Approved -->\n" + current_html
+
             # Persist after each fixup, but only if we got back text (don't overwrite if we errored!)
             if current_html:
                 with open(output_html_path, "w") as wf:
                     wf.write(current_html)
-
-            # Re-validate
-            missing_ids, extra_ids = validate_data_sources(input_html, current_html)
-            is_valid_html, invalid_tags = validate_html_tags(current_html)
 
     # Convert the content blocks into HTML for up to LIMIT docs concurrently
     tasks: list[asyncio.Task] = []
