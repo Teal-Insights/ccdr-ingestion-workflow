@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Any, cast
 from litellm import Router
 from pydantic import BaseModel, Field
 from utils.html import ALLOWED_TAGS
@@ -43,11 +43,11 @@ async def provide_feedback(
     output_html: str,
     router: Router,
 ) -> str:
-    input_lines: list[int] = [str(i + 1) + ": " + line for i, line in enumerate(input_html.split("\n"))]
-    output_lines: list[int] = [str(i + 1) + ": " + line for i, line in enumerate(output_html.split("\n"))]
+    input_lines: list[str] = [str(i + 1) + ": " + line for i, line in enumerate(input_html.split("\n"))]
+    output_lines: list[str] = [str(i + 1) + ": " + line for i, line in enumerate(output_html.split("\n"))]
 
     # Create message content with text and image
-    messages = [
+    messages: list[dict[str, Any]] = [
         {
             "role": "system",
             "content": f"<prompt>\n{PROMPT}\n</prompt>"
@@ -63,10 +63,14 @@ async def provide_feedback(
         }
     ]
 
-    response = await router.acompletion(
+    response: Any = await router.acompletion(
         model="gemini/gemini-2.5-flash",
-        messages=messages,
+        messages=cast(Any, messages),
         response_format=Feedback,
+        stream=False,
     )
 
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    if isinstance(content, str):
+        return content
+    return str(content) if content is not None else ""

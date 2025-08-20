@@ -1,6 +1,6 @@
 import os
 from io import StringIO
-from svgelements import SVG, Rect, SVGElement
+from svgelements import SVG, Rect, SVGElement  # type: ignore[import-untyped]
 from utils.schema import BoundingBox
 
 def extract_geometries_in_bbox(svg_content: str, bbox: BoundingBox) -> list[SVGElement]:

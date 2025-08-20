@@ -87,12 +87,15 @@ class ClaudeCodeClient:
             api_key: API key for authentication. Defaults to CLAUDE_CODE_API_KEY env var.
             base_url: Base URL for the API. Defaults to CLAUDE_CODE_BASE_URL env var.
         """
-        self.api_key = api_key or os.getenv("CLAUDE_CODE_API_KEY")
-        self.base_url = (base_url or os.getenv("CLAUDE_CODE_BASE_URL", "")).rstrip("/")
-        
-        if not self.api_key or not self.base_url:
+        api_key_value = api_key or os.getenv("CLAUDE_CODE_API_KEY")
+        base_url_value = base_url or os.getenv("CLAUDE_CODE_BASE_URL")
+
+        if not api_key_value or not base_url_value:
             raise ValueError("CLAUDE_CODE_API_KEY and CLAUDE_CODE_BASE_URL must be set")
-        
+
+        self.api_key: str = api_key_value
+        self.base_url: str = base_url_value.rstrip("/")
+
         self.headers = {
             "X-API-Key": self.api_key,
             "Content-Type": "application/json"

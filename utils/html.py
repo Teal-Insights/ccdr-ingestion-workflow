@@ -127,14 +127,23 @@ def validate_data_sources(input_html: str, output_html: str) -> tuple[set[int], 
     # Extract IDs from input
     ids_in_input: set[int] = set()
     for element in input_soup.find_all():
-        if "id" in element.attrs:
-            ids_in_input.add(int(element.attrs["id"]))
+        if not isinstance(element, Tag):
+            continue
+        id_attr = element.get("id")
+        if isinstance(id_attr, str):
+            try:
+                ids_in_input.add(int(id_attr))
+            except ValueError:
+                pass
 
     # Extract IDs from output data-sources attributes
     ids_in_output: set[int] = set()
     for element in output_soup.find_all():
-        if "data-sources" in element.attrs:
-            ids_in_output.update(parse_range_string(element["data-sources"]))
+        if not isinstance(element, Tag):
+            continue
+        data_sources = element.get("data-sources")
+        if isinstance(data_sources, str):
+            ids_in_output.update(parse_range_string(data_sources))
 
     # Check coverage
     missing_ids = ids_in_input - ids_in_output
@@ -167,11 +176,11 @@ def validate_html_tags(html: str) -> tuple[bool, list[str]]:
         return False, []
     
     # Determine scope: prefer body descendants when body exists
-    scope_elements = []
+    scope_elements: list[Tag] = []
     if soup.body is not None:
-        scope_elements = soup.body.find_all()
+        scope_elements = [el for el in soup.body.find_all() if isinstance(el, Tag)]
     else:
-        scope_elements = soup.find_all()
+        scope_elements = [el for el in soup.find_all() if isinstance(el, Tag)]
     
     # Check for disallowed tags within the chosen scope
     disallowed_tags: set[str] = set()

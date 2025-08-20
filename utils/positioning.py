@@ -1,5 +1,7 @@
 """Utilities for position-based layout analysis."""
 
+from typing import TypedDict
+
 from utils.schema import BoundingBox
 from utils.models import BlockType
 
@@ -37,7 +39,19 @@ def is_header_or_footer_by_position(bbox: BoundingBox, page_height: float) -> Bl
 
 
 if __name__ == "__main__":
-    block = {
+    class DemoBlock(TypedDict):
+        left: float
+        top: float
+        width: float
+        height: float
+        page_number: int
+        page_width: float
+        page_height: float
+        text: str
+        type: str
+        logical_page_number: str
+
+    block: DemoBlock = {
         "left": 68.0,
         "top": 748.0,
         "width": 56.0,
@@ -50,6 +64,11 @@ if __name__ == "__main__":
         "logical_page_number": "null"
     }
     
-    bbox = BoundingBox(x1=block['left'], y1=block['top'], x2=block['left'] + block['width'], y2=block['top'] + block['height'])
-    page_height = block['page_height']
+    bbox = BoundingBox(
+        x1=block["left"],
+        y1=block["top"],
+        x2=block["left"] + block["width"],
+        y2=block["top"] + block["height"],
+    )
+    page_height = block["page_height"]
     print(is_header_or_footer_by_position(bbox, page_height))
