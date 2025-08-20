@@ -216,17 +216,42 @@ def sync_folder_to_s3(local_dir: str | Path, s3_dir: str) -> None:
 
 def sync_s3_to_folder(s3_dir: str, local_dir: str | Path, overwrite: bool = False) -> None:
     """
-    Syncs a folder from S3 to a local folder.
+    Syncs a folder from S3 to a local folder, preserving directory structure under the provided prefix.
+    Local files are treated as the source of truth and are not overwritten unless `overwrite=True`.
     """
     bucket_name, _ = verify_environment_variables()
     s3_client = get_s3_client()
-    response = s3_client.list_objects(Bucket=bucket_name, Prefix=s3_dir)
-    
-    # Check if any objects exist with this prefix
-    if "Contents" not in response:
+
+    root_path = Path(local_dir)
+    root_path.mkdir(parents=True, exist_ok=True)
+
+    # Ensure we can compute a relative path from the prefix
+    prefix_with_slash = s3_dir.rstrip("/") + "/" if s3_dir else ""
+
+    paginator = s3_client.get_paginator("list_objects_v2")
+    pages = paginator.paginate(Bucket=bucket_name, Prefix=s3_dir)
+
+    found_any = False
+    for page in pages:
+        contents = page.get("Contents", [])
+        if contents:
+            found_any = True
+        for obj in contents:
+            key = obj["Key"]
+            # Skip directory placeholders
+            if key.endswith("/"):
+                continue
+
+            # Compute the path relative to the prefix so we preserve subfolders locally
+            relative_key = key[len(prefix_with_slash):] if prefix_with_slash and key.startswith(prefix_with_slash) else key
+            local_path = root_path / relative_key
+
+            # Respect local-as-source-of-truth unless overwrite=True
+            if not overwrite and local_path.exists():
+                continue
+
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            s3_client.download_file(bucket_name, key, str(local_path))
+
+    if not found_any:
         print(f"No objects found in S3 with prefix: {s3_dir}")
-        return
-    
-    for file in response["Contents"]:
-        if overwrite or not os.path.exists(os.path.join(local_dir, file["Key"].split("/")[-1])):
-            s3_client.download_file(bucket_name, file["Key"], os.path.join(local_dir, file["Key"].split("/")[-1]))
