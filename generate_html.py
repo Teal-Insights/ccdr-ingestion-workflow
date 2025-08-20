@@ -104,7 +104,8 @@ async def main() -> None:
         # Per-document output location
         doc_output_dir = Path(html_dir) / f"doc_{doc_id}"
         doc_output_dir.mkdir(parents=True, exist_ok=True)
-        output_html_path = doc_output_dir / "output.html"
+        output_file_name: str = "output.html"
+        output_html_path = doc_output_dir / output_file_name
 
         # Load the content blocks from the file
         content_blocks_file = Path(content_blocks_dir) / f"doc_{doc_id}_content_blocks.json"
@@ -121,7 +122,7 @@ async def main() -> None:
         if not output_html_path.exists():            
             current_html = await run_first_pass(
                 input_html=input_html,
-                output_file=str(output_html_path),
+                output_file=output_file_name,
                 timeout_seconds=3600,
             )
 
@@ -177,7 +178,7 @@ async def main() -> None:
                     run_fixup_pass,
                     input_html,
                     current_html,
-                    str(output_html_path),
+                    output_file_name,
                     missing_ids,
                     extra_ids,
                     not is_valid_html,

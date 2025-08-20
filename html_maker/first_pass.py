@@ -55,7 +55,7 @@ async def run_first_pass(
 
     Returns the restructured HTML string. Also writes to `output_file` via the service.
     """
-    file_prompt: str = HTML_PROMPT + f"\n\nThe input HTML is in input.html. Write the output to {output_file}."
+    file_prompt: str = HTML_PROMPT + "\n\nThe input HTML is in input.html. Write the output to {output_file}."
 
     # Load configuration files for the Claude Code service
     with open("claude_config/.claude/settings.json", "r") as fr:
