@@ -95,9 +95,7 @@ You were given the following prompt:
         )
 
     # Create fixup prompt to address validation issues
-    fixup_prompt = """
-
-Please fix the data-sources validation issues in current_output.html.
+    fixup_prompt = """Please fix the data-sources validation issues in current_output.html.
 
 The validation found these problems:"""
 
@@ -153,7 +151,6 @@ Please review current_output.html and fix the tags to ensure the HTML contains o
             logger.warning(f"Validation issues remain after fixup - Missing: {missing_ids}, Extra: {extra_ids}")
         else:
             logger.info("Validation issues resolved after fixup")
-
     if not is_valid:
         raise ValueError("Invalid HTML")
     if invalid_tags:

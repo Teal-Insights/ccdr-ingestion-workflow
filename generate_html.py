@@ -18,10 +18,12 @@ from pathlib import Path
 from typing import Sequence
 from sqlmodel import Session, select
 from utils.models import ContentBlock
-from html_maker.restructure_with_CC_service import restructure_with_claude_code
+from html_maker.first_pass import run_first_pass
+from html_maker.fixup_pass import run_fixup_pass
 from utils.db import engine, check_schema_sync
 from utils.schema import Document, Node
 from utils.aws import sync_s3_to_folder, sync_folder_to_s3
+from utils.html import validate_data_sources, validate_html_tags
 
 
 async def main() -> None:
@@ -60,48 +62,85 @@ async def main() -> None:
         print("No documents with content blocks found to process. Run generate_content_blocks.py first.")
         return
 
-    # Convert the content blocks into HTML
-    counter: int = 0
+    async def process_document(document: Document) -> None:
+        assert document.id, "Document ID is required"
+        doc_id: int = int(document.id)
+
+        print(f"Processing content blocks for document {doc_id}...")
+
+        # Per-document output location
+        doc_output_dir = Path(html_dir) / f"doc_{doc_id}"
+        doc_output_dir.mkdir(parents=True, exist_ok=True)
+        output_html_path = doc_output_dir / "output.html"
+
+        # If output.html exists, skip first pass; otherwise run first pass
+        if not output_html_path.exists():
+            # Load the content blocks from the file
+            content_blocks_file = Path(content_blocks_dir) / f"doc_{doc_id}_content_blocks.json"
+            with open(content_blocks_file, "r") as f:
+                content_blocks_data = json.load(f)
+                content_blocks: list[ContentBlock] = [
+                    ContentBlock.model_validate(block) for block in content_blocks_data
+                ]
+
+            # Generate input HTML
+            input_html = "\n".join([block.to_html(block_id=i) for i, block in enumerate(content_blocks)])
+            
+            current_html = await run_first_pass(
+                input_html=input_html,
+                output_file=str(output_html_path),
+                timeout_seconds=3600,
+            )
+
+            # Persist to file
+            with open(output_html_path, "w") as wf:
+                wf.write(current_html)
+
+        else:
+            with open(output_html_path, "r") as rf:
+                current_html = rf.read()
+
+        # Validate and, if needed, iterate fixups up to 5 times
+        missing_ids, extra_ids = validate_data_sources(input_html, current_html)
+        is_valid_html, invalid_tags = validate_html_tags(current_html)
+
+        fixup_attempt: int = 0
+        while (
+            (len(missing_ids) + len(extra_ids) > 0 or not is_valid_html or bool(invalid_tags))
+            and fixup_attempt < 5
+        ):
+            fixup_attempt += 1
+            current_html = await asyncio.to_thread(
+                run_fixup_pass,
+                input_html,
+                current_html,
+                str(output_html_path),
+                missing_ids,
+                extra_ids,
+                not is_valid_html,
+                invalid_tags,
+                3600,
+            )
+
+            # Persist after each fixup, but only if we got back text (don't overwrite if we errored!)
+            if current_html:
+                with open(output_html_path, "w") as wf:
+                    wf.write(current_html)
+
+            # Re-validate
+            missing_ids, extra_ids = validate_data_sources(input_html, current_html)
+            is_valid_html, invalid_tags = validate_html_tags(current_html)
+
+    # Convert the content blocks into HTML for up to LIMIT docs concurrently
     tasks: list[asyncio.Task] = []
-    doc_ids: list[int] = []
+    counter: int = 0
     for document in processable_documents:
         if counter >= LIMIT:
             break
         counter += 1
+        tasks.append(asyncio.create_task(process_document(document)))
 
-        assert document.id, "Document ID is required"
-        
-        print(f"Processing content blocks for document {document.id}...")
-
-        # Load the content blocks from the file
-        content_blocks_file = Path(content_blocks_dir) / f"doc_{document.id}_content_blocks.json"
-        with open(content_blocks_file, "r") as f:
-            content_blocks_data = json.load(f)
-            content_blocks: list[ContentBlock] = [
-                ContentBlock.model_validate(block) for block in content_blocks_data
-            ]
-
-        # Generate input HTML
-        input_html = "\n".join([block.to_html(block_id=i) for i, block in enumerate(content_blocks)])
-        doc_ids.append(int(document.id))
-        tasks.append(
-            asyncio.create_task(
-                restructure_with_claude_code(
-                    input_html=input_html,
-                    output_file="output.html",
-                    timeout_seconds=3600,
-                )
-            )
-        )
-
-    # Wait for all tasks to complete
-    html_files = await asyncio.gather(*tasks)
-
-    # Save the HTML to files mapped to their corresponding document IDs
-    for doc_id, html_file in zip(doc_ids, html_files):
-        output_file = Path(html_dir) / f"doc_{doc_id}_html.html"
-        with open(output_file, "w") as f:
-            f.write(html_file)
+    await asyncio.gather(*tasks)
 
     # Upload the HTML to S3
     if USE_S3:

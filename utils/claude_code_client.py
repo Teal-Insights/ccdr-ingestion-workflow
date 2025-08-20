@@ -411,8 +411,8 @@ class ClaudeCodeClient:
         
         # Prepare input files - include both original and current output for context
         files = [
-            FileInput(path="original_input.html", content=original_html),
-            FileInput(path="current_output.html", content=current_output)
+            FileInput(path="input.html", content=original_html),
+            FileInput(path="output.html", content=current_output)
         ] + config_files
         
         try:
