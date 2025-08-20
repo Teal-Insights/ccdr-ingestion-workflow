@@ -1,6 +1,17 @@
 import hashlib
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+def file_starts_with(path: Path, prefix: str, encoding: str = "utf-8") -> bool:
+    """Memory-efficient helper to check if a file starts with a given prefix"""
+    prefix_bytes = prefix.encode(encoding)
+    try:
+        with path.open("rb") as f:
+            return f.read(len(prefix_bytes)) == prefix_bytes
+    except FileNotFoundError:
+        return False
 
 
 class GetTextFileContentsRequest(BaseModel):

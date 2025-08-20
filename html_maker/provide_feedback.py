@@ -31,8 +31,11 @@ An AI agent was asked to convert an HTML partial with a flat structure comprised
 Issues to flag:
 
 - Very badly formed HTML (for instance, table of contents items massed with line breaks into a single `p` tag rather than represented as list items)
+- Content split across multiple elements that should be consolidated into a single element with a `data-sources` range (e.g., what is clearly a single paragraph is split between two `p` tags)
 - Missing content (e.g., use of truncated text or placeholder text in output rather than the full original text)
 - Incorrect content (e.g., text that is not in the original document or has been significantly altered from the original)
+
+Note that the original agent was instructed to include every input id as a data source on at least one leaf node (even if the input element was empty or garbage), so we allow empty/garbage input ids to be tacked onto a neighboring element as a data source to satisfy this constraint.
 
 ## Output format
 

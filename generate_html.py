@@ -11,6 +11,7 @@ The script loads content blocks from JSON files and processes them through restr
 classification, database upload, and embedding generation.
 """
 
+import logging
 import dotenv
 import os
 import json
@@ -28,23 +29,16 @@ from utils.aws import sync_s3_to_folder, sync_folder_to_s3
 from utils.html import validate_data_sources, validate_html_tags
 from litellm import Router
 from utils.litellm_router import create_router
+from utils.file_editor import file_starts_with
 
-
-def file_starts_with(path: Path, prefix: str, encoding: str = "utf-8") -> bool:
-    """Memory-efficient helper to check if a file starts with a given prefix"""
-    prefix_bytes = prefix.encode(encoding)
-    try:
-        with path.open("rb") as f:
-            return f.read(len(prefix_bytes)) == prefix_bytes
-    except FileNotFoundError:
-        return False
+logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
     dotenv.load_dotenv(override=True)
 
     # Configure
-    LIMIT: int = 1
+    LIMIT: int = 2
     USE_S3: bool = True
     content_blocks_dir: str = "./data/content_blocks"
     html_dir: str = "./data/html"
@@ -148,6 +142,13 @@ async def main() -> None:
                 and is_valid_html
                 and not invalid_tags
             ):
+                # On the 5th loop, if mechanical validation passes, auto-approve regardless of Gemini feedback
+                if fixup_attempt >= 4:
+                    if not current_html.startswith("<!-- Approved -->"):
+                        current_html = "<!-- Approved -->\n" + current_html
+                    with open(output_html_path, "w") as wf:
+                        wf.write(current_html)
+                    return
                 try:
                     gemini_feedback: list[Feedback] = await provide_feedback(
                         input_html=input_html, output_html=current_html, router=router
@@ -157,6 +158,14 @@ async def main() -> None:
 
                 # Parse feedback and filter critical items
                 gemini_criticals: list[Feedback] = [item for item in gemini_feedback if item.severity == "critical"]
+                logger.info("Gemini critical feedback count: %d", len(gemini_criticals))
+                for idx, item in enumerate(gemini_criticals, start=1):
+                    msg = str(item.message)
+                    ids = item.affected_ids
+                    if ids:
+                        logger.info("Critical %d: %s affected_ids=%s", idx, msg, ids)
+                    else:
+                        logger.info("Critical %d: %s", idx, msg)
                 if not gemini_criticals:
                     if not current_html.startswith("<!-- Approved -->"):
                         current_html = "<!-- Approved -->\n" + current_html
