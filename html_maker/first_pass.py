@@ -50,6 +50,7 @@ async def run_first_pass(
     input_html: str,
     output_file: str,
     timeout_seconds: int = 3600,
+    doc_id: int | None = None,
 ) -> str:
     """Run the initial restructuring pass via the Claude Code service.
 
@@ -81,6 +82,7 @@ async def run_first_pass(
             output_file=output_file,
             config_files=config_files,
             timeout_s=timeout_seconds,
+            doc_id=doc_id,
         )
 
     return restructured_html

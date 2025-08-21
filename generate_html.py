@@ -118,6 +118,7 @@ async def main() -> None:
                 input_html=input_html,
                 output_file=output_file_name,
                 timeout_seconds=3600,
+                doc_id=doc_id,
             )
 
             # Persist to file
@@ -194,6 +195,7 @@ async def main() -> None:
                     invalid_tags,
                     gemini_feedback_text,
                     3600,
+                    doc_id,
                 )
 
                 # Only persist if we got back text (don't overwrite if we errored!)

@@ -13,6 +13,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import dotenv
 from pydantic import BaseModel, Field
+from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
 
 # Load environment variables
 dotenv.load_dotenv()
@@ -28,6 +29,7 @@ class FileInput(BaseModel):
 class SessionCreateRequest(BaseModel):
     files: List[FileInput]
     ttl_seconds: int = Field(3600, gt=0)
+    env: Optional[Dict[str, str]] = Field(default=None, description="Environment variables to apply for this session")
 
 class FileInfo(BaseModel):
     path: str
@@ -103,7 +105,7 @@ class ClaudeCodeClient:
         self.cleanup_on_exit = cleanup_on_exit
         self.session_id: Optional[str] = None
     
-    def create_session(self, files: List[FileInput], ttl_seconds: int = 3600) -> str:
+    def create_session(self, files: List[FileInput], ttl_seconds: int = 3600, use_deepseek: bool = False) -> str:
         """
         Create a new session with the provided files.
         
@@ -119,9 +121,39 @@ class ClaudeCodeClient:
         """
         logger.info("Creating session on Claude Code API service...")
         
+        env_vars: Dict[str, str] = {}
+
+        # Optional DeepSeek via Anthropic-compatible endpoint
+        # If DEEPSEEK_API_KEY is present, configure Claude Code to use DeepSeek
+        if use_deepseek:
+            deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
+            if not deepseek_api_key:
+                logger.warning("DEEPSEEK_API_KEY is not set, falling back to Anthropic")
+                use_deepseek = False
+            else:
+                env_vars.update({
+                    # Allow override via env, otherwise default to DeepSeek base URL
+                    "ANTHROPIC_BASE_URL": os.getenv("ANTHROPIC_BASE_URL", "https://api.deepseek.com/anthropic"),
+                    # DeepSeek requires ANTHROPIC_AUTH_TOKEN
+                    "ANTHROPIC_AUTH_TOKEN": deepseek_api_key,
+                    # Default DeepSeek models; allow override if caller sets them
+                    "ANTHROPIC_MODEL": os.getenv("ANTHROPIC_MODEL", "deepseek-chat"),
+                    "ANTHROPIC_SMALL_FAST_MODEL": os.getenv("ANTHROPIC_SMALL_FAST_MODEL", "deepseek-chat"),
+                })
+        if not use_deepseek:
+            # Standard Anthropic API key if available
+            anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+            if anthropic_api_key:
+                env_vars["ANTHROPIC_API_KEY"] = anthropic_api_key
+
+        # Use None if we have no env to send
+        if not env_vars:
+            env_vars = None
+
         session_request = SessionCreateRequest(
             files=files,
-            ttl_seconds=ttl_seconds
+            ttl_seconds=ttl_seconds,
+            env=env_vars
         )
         
         response = requests.post(
@@ -248,10 +280,50 @@ class ClaudeCodeClient:
         
         session_results = SessionResultsResponse.model_validate(response.json())
         if session_results.result_json:
-            logger.info(f"Response from Claude Code API service: {session_results.result_json}")
+            # Best-effort labeling of provider vs workspace session IDs to avoid confusion in logs
+            provider_session_id = None
+            try:
+                provider_session_id = session_results.result_json.get("session_id")  # type: ignore[attr-defined]
+            except Exception:
+                provider_session_id = None
+            logger.info(
+                "Response from Claude Code API service: provider_session_id=%s workspace_session_id=%s payload=%s",
+                provider_session_id,
+                self.session_id,
+                session_results.result_json,
+            )
         
         return session_results
     
+    class TransientDownloadError(Exception):
+        pass
+
+    @retry(
+        reraise=True,
+        stop=stop_after_attempt(4),
+        wait=wait_random_exponential(multiplier=0.75, max=10),
+        retry=retry_if_exception_type((requests.exceptions.RequestException, TransientDownloadError))
+    )
+    def _download_text_with_retry(self, file_path: str) -> str:
+        response = requests.get(
+            f"{self.base_url}/download",
+            headers=self.headers,
+            params={
+                "session_id": self.session_id,
+                "file_path": file_path
+            },
+            timeout=60,
+        )
+        if 500 <= response.status_code < 600:
+            raise self.TransientDownloadError(
+                f"Failed to download output: {response.status_code} - {response.text}"
+            )
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Failed to download output: {response.status_code} - {response.text}"
+            )
+        return response.text
+
     def download_file(self, file_path: str) -> str:
         """
         Download a file from the current session.
@@ -269,19 +341,14 @@ class ClaudeCodeClient:
             raise RuntimeError("No active session")
 
         logger.info(f"Downloading file {file_path} from session {self.session_id}")
-        response = requests.get(
-            f"{self.base_url}/download",
-            headers=self.headers,
-            params={
-                "session_id": self.session_id,
-                "file_path": file_path
-            }
-        )
-        
-        if response.status_code != 200:
-            raise RuntimeError(f"Failed to download output: {response.status_code} - {response.text}")
-        
-        return response.text
+        try:
+            text = self._download_text_with_retry(file_path)
+            logger.info(
+                f"Downloaded file {file_path} from session {self.session_id} (size={len(text)} chars)"
+            )
+            return text
+        except Exception as e:
+            raise RuntimeError(f"Failed to download output after retries: {e}")
     
     def delete_session(self) -> None:
         """
@@ -320,7 +387,8 @@ class ClaudeCodeClient:
         prompt: str,
         output_file: str = "output.html",
         config_files: Optional[List[FileInput]] = None,
-        timeout_s: int = 3600
+        timeout_s: int = 3600,
+        doc_id: Optional[int] = None,
     ) -> str:
         """
         Execute a complete restructuring job with session management.
@@ -351,18 +419,32 @@ class ClaudeCodeClient:
         files = [FileInput(path="input.html", content=input_html)] + config_files
         
         try:
+            logger.info(
+                "doc_id=%s: Starting execute_restructuring_job output_file=%s timeout_s=%s",
+                doc_id,
+                output_file,
+                timeout_s,
+            )
             # Create session
             self.create_session(files, ttl_seconds=max(timeout_s * 2, 3600))
+            logger.info("doc_id=%s: Session created session_id=%s", doc_id, self.session_id)
             
             # Run job
             job_id = self.run_job(prompt, timeout_s)
+            logger.info("doc_id=%s: Job started job_id=%s", doc_id, job_id)
             
             # Wait for completion
             self.wait_for_job_completion(job_id, timeout_s)
+            logger.info("doc_id=%s: Job completed successfully job_id=%s", doc_id, job_id)
             
             # Get results and verify output file exists
             results = self.get_session_results()
             output_files = results.output_files
+            logger.info(
+                "doc_id=%s: Retrieved session results files_count=%s",
+                doc_id,
+                len(output_files) if output_files is not None else 0,
+            )
             
             # Find the output file
             output_html_file = None
@@ -376,10 +458,12 @@ class ClaudeCodeClient:
                 raise RuntimeError(f"Output file '{output_file}' not found in results. Available files: {available_files}")
             
             # Download the output
+            logger.info("doc_id=%s: Downloading output_file=%s", doc_id, output_file)
             return self.download_file(output_file)
             
         finally:
             # Always clean up
+            logger.info("doc_id=%s: Cleaning up session session_id=%s", doc_id, self.session_id)
             self.delete_session()
     
     def execute_fixup_job(
@@ -389,7 +473,8 @@ class ClaudeCodeClient:
         fixup_prompt: str,
         output_file: str = "output.html",
         config_files: Optional[List[FileInput]] = None,
-        timeout_s: int = 3600
+        timeout_s: int = 3600,
+        doc_id: Optional[int] = None,
     ) -> str:
         """
         Execute a fixup job to correct issues in existing output.
@@ -420,18 +505,32 @@ class ClaudeCodeClient:
         ] + config_files
         
         try:
+            logger.info(
+                "doc_id=%s: Starting execute_fixup_job output_file=%s timeout_s=%s",
+                doc_id,
+                output_file,
+                timeout_s,
+            )
             # Create session
             self.create_session(files, ttl_seconds=max(timeout_s * 2, 3600))
+            logger.info("doc_id=%s: Session created session_id=%s", doc_id, self.session_id)
             
             # Run fixup job
             job_id = self.run_job(fixup_prompt, timeout_s)
+            logger.info("doc_id=%s: Fixup job started job_id=%s", doc_id, job_id)
             
             # Wait for completion
             self.wait_for_job_completion(job_id, timeout_s)
+            logger.info("doc_id=%s: Fixup job completed successfully job_id=%s", doc_id, job_id)
             
             # Get results and verify output file exists
             results = self.get_session_results()
             output_files = results.output_files
+            logger.info(
+                "doc_id=%s: Retrieved session results files_count=%s",
+                doc_id,
+                len(output_files) if output_files is not None else 0,
+            )
             
             # Find the output file
             output_html_file = None
@@ -445,10 +544,12 @@ class ClaudeCodeClient:
                 raise RuntimeError(f"Output file '{output_file}' not found in results. Available files: {available_files}")
             
             # Download the output
+            logger.info("doc_id=%s: Downloading output_file=%s", doc_id, output_file)
             return self.download_file(output_file)
             
         finally:
             # Always clean up
+            logger.info("doc_id=%s: Cleaning up session session_id=%s", doc_id, self.session_id)
             self.delete_session()
     
     def __enter__(self):

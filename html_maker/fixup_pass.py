@@ -61,6 +61,7 @@ def run_fixup_pass(
     invalid_tags: list[str] | None = None,
     gemini_feedback: str | None = None,
     timeout_seconds: int = 600,
+    doc_id: int | None = None,
 ) -> str:
     """Execute a single fixup pass using the Claude Code service and return updated HTML."""
 
@@ -91,6 +92,7 @@ def run_fixup_pass(
             output_file=output_file,
             config_files=config_files,
             timeout_s=timeout_seconds,
+            doc_id=doc_id,
         )
 
     return updated_html
