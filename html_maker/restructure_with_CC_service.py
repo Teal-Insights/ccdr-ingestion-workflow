@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 from utils.models import ContentBlock
-from utils.html import validate_data_sources, validate_html_tags, ALLOWED_TAGS
+from utils.html import validate_data_sources, validate_html_tags, ALLOWED_TAGS, pretty_print_html
 from utils.claude_code_client import ClaudeCodeClient, FileInput
 
 logger = logging.getLogger(__name__)
@@ -195,7 +195,7 @@ if __name__ == "__main__":
         # Save structured nodes to JSON
         output_html_file = Path("artifacts") / "doc_601.html"
         with open(output_html_file, "w") as fw:
-            fw.write(restructured_html)
+            fw.write(pretty_print_html(restructured_html))
 
         logger.info(f"Process completed in {end_time - start_time:.2f} seconds")
         logger.info(f"Structured data saved to {output_html_file}")

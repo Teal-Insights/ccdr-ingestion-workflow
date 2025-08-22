@@ -4,8 +4,185 @@ from utils.models import ContentBlock, StructuredNode, BlockType
 from bs4 import BeautifulSoup, Tag, NavigableString
 from utils.schema import TagName
 from utils.range_parser import parse_range_string
+from dataclasses import dataclass
+from typing import Any, Iterable
 
 ALLOWED_TAGS = [tag.value for tag in TagName] + ["b", "i", "u", "s", "sup", "sub", "br"]
+
+INLINE_STYLE = {"b","i","u","s","sup","sub","br"}
+
+@dataclass(frozen=True)
+class ValidationIssue:
+    code: str
+    message: str
+    node: str | None = None  # e.g., "<section data-children='...'>"
+    path: str | None = None  # optional CSS-like path
+
+def parse_input_ids(input_html: str) -> set[int]:
+    """Extract IDs from input HTML elements."""
+    soup = BeautifulSoup(input_html, "html.parser")
+    ids_in_input: set[int] = set()
+    for element in soup.find_all():
+        if not isinstance(element, Tag):
+            continue
+        id_attr = element.get("id")
+        if isinstance(id_attr, str):
+            try:
+                ids_in_input.add(int(id_attr))
+            except ValueError:
+                pass
+    return ids_in_input
+
+def collect_output_ranges(output_soup: BeautifulSoup) -> dict[str, Any]:
+    """Collect IDs and nodes from data-sources and data-children attributes."""
+    ids_from_sources: set[int] = set()
+    ids_from_children: set[int] = set()
+    nodes_with_both: list[Tag] = []
+    children_nodes: list[Tag] = []
+    source_nodes: list[Tag] = []
+
+    for element in output_soup.find_all():
+        if not isinstance(element, Tag):
+            continue
+
+        data_sources = element.get("data-sources")
+        data_children = element.get("data-children")
+
+        has_sources = isinstance(data_sources, str)
+        has_children_attr = isinstance(data_children, str)
+
+        if has_sources:
+            ids_from_sources.update(parse_range_string(data_sources))
+            source_nodes.append(element)
+
+        if has_children_attr:
+            ids_from_children.update(parse_range_string(data_children))
+            children_nodes.append(element)
+
+        if has_sources and has_children_attr:
+            nodes_with_both.append(element)
+
+    return {
+        "ids_from_sources": ids_from_sources,
+        "ids_from_children": ids_from_children,
+        "nodes_with_both": nodes_with_both,
+        "children_nodes": children_nodes,
+        "source_nodes": source_nodes,
+    }
+
+def validate_coverage(ids_in_input: set[int], ids_from_sources: set[int], ids_from_children: set[int]) -> list[ValidationIssue]:
+    """Check if all input IDs are covered by data-sources or children."""
+    missing_ids = ids_in_input - (ids_from_sources | ids_from_children)
+    issues: list[ValidationIssue] = []
+    for missing_id in missing_ids:
+        issues.append(ValidationIssue(
+            code="MISSING_COVERAGE",
+            message=f"ID {missing_id} is not covered by data-sources or children.",
+            node=f"<element id='{missing_id}' />"
+        ))
+    return issues
+
+def validate_disjoint(ids_from_sources: set[int], ids_from_children: set[int]) -> list[ValidationIssue]:
+    """Check if data-sources and children overlap."""
+    overlapping_ids = ids_from_sources & ids_from_children
+    issues: list[ValidationIssue] = []
+    for overlapping_id in overlapping_ids:
+        issues.append(ValidationIssue(
+            code="DISJOINT_SOURCES_AND_CHILDREN",
+            message=f"ID {overlapping_id} is present in both data-sources and children.",
+            node=f"<element id='{overlapping_id}' />"
+        ))
+    return issues
+
+def validate_mutual_exclusive_attrs(output_soup: BeautifulSoup) -> list[ValidationIssue]:
+    """Check that no element has both data-sources and data-children attributes."""
+    issues: list[ValidationIssue] = []
+    for element in output_soup.find_all():
+        if not isinstance(element, Tag):
+            continue
+        if isinstance(element.get("data-sources"), str) and isinstance(element.get("data-children"), str):
+            issues.append(ValidationIssue(
+                code="MUTUAL_EXCLUSIVE_ATTRS",
+                message=f"Element must not have both data-sources and data-children: {element.name}",
+                node=f"<{element.name} data-sources='...' data-children='...'>"
+            ))
+    return issues
+
+def validate_children_empty(children_nodes: list[Tag]) -> list[ValidationIssue]:
+    """Check that all nodes with data-children are empty containers (no text or child elements)."""
+    issues: list[ValidationIssue] = []
+    for child in children_nodes:
+        has_text = bool(child.get_text(strip=True))
+        has_elements = any(isinstance(c, Tag) for c in child.contents)
+        if has_text or has_elements:
+            issues.append(ValidationIssue(
+                code="CHILDREN_MUST_BE_EMPTY",
+                message=f"data-children node must be empty: {child.name}",
+                node=f"<{child.name}>"
+            ))
+    return issues
+
+def _has_meaningful_content(node: Tag) -> bool:
+    """Determine if a node has meaningful content (text with non-whitespace or non-inline children)."""
+    if node.string and node.string.strip():
+        return True
+    for child in node.children:
+        if isinstance(child, NavigableString):
+            if child.strip():
+                return True
+        elif isinstance(child, Tag) and child.name.lower() not in INLINE_STYLE:
+            return True
+    return False
+
+def validate_sources_populated(source_nodes: list[Tag]) -> list[ValidationIssue]:
+    """Check if source nodes have meaningful content or are images."""
+    issues: list[ValidationIssue] = []
+    for source in source_nodes:
+        if not _has_meaningful_content(source):
+            # Allow img tags to be empty if they are sources
+            if source.name.lower() == "img":
+                continue
+            issues.append(ValidationIssue(
+                code="SOURCES_EMPTY",
+                message=f"Source node with no meaningful content: {source.name}",
+                node=f"<{source.name}>"
+            ))
+    return issues
+
+def validate_sources_and_children(input_html: str, output_html: str) -> tuple[bool, list[ValidationIssue], dict[str, Any]]:
+    """Orchestrates validation of data-sources and children attributes."""
+    in_ids = parse_input_ids(input_html)
+    out_soup = BeautifulSoup(output_html, "html.parser")
+
+    coll = collect_output_ranges(out_soup)
+    issues: list[ValidationIssue] = []
+    issues += validate_coverage(in_ids, coll["ids_from_sources"], coll["ids_from_children"])
+    issues += validate_disjoint(coll["ids_from_sources"], coll["ids_from_children"])
+    issues += validate_mutual_exclusive_attrs(out_soup)
+    issues += validate_children_empty(coll["children_nodes"])
+    issues += validate_sources_populated(coll["source_nodes"])
+
+    is_valid = len(issues) == 0
+    meta = {
+        "input_id_count": len(in_ids),
+        "covered_by_sources": len(coll["ids_from_sources"]),
+        "covered_by_children": len(coll["ids_from_children"]),
+    }
+    return is_valid, issues, meta
+
+
+def pretty_print_html(html: str) -> str:
+    """Return a prettified HTML string using BeautifulSoup.
+
+    Uses formatter="minimal" to avoid over-escaping inline content.
+    Falls back to original string on parse errors.
+    """
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        # prettify adds newlines and indentation
+        return soup.prettify(formatter="minimal")
+    except Exception:
+        return html
 
 def create_nodes_from_html(html: str, content_blocks: list[ContentBlock]) -> list[StructuredNode]:
     """Helper to create StructuredNodes from an HTML string
@@ -153,7 +330,7 @@ def validate_data_sources(input_html: str, output_html: str) -> tuple[set[int], 
     return missing_ids, extra_ids
 
 
-def validate_html_tags(html: str) -> tuple[bool, list[str]]:
+def validate_html_tags(html: str, exclude: Iterable[str] | None = None) -> tuple[bool, list[str]]:
     """Validate that HTML is well-formed and contains only allowed tags.
     
     Behavior:
@@ -162,6 +339,8 @@ def validate_html_tags(html: str) -> tuple[bool, list[str]]:
     
     Args:
         html: HTML string to validate (can be a full document or partial)
+        exclude: Optional iterable of tag names to treat as disallowed even if
+            they appear in the global allowed list (case-insensitive)
         
     Returns:
         Tuple of (is_valid, invalid_tags) where:
@@ -182,10 +361,16 @@ def validate_html_tags(html: str) -> tuple[bool, list[str]]:
     else:
         scope_elements = [el for el in soup.find_all() if isinstance(el, Tag)]
     
+    # Build effective allowed set with optional exclusions
+    allowed_set = {t.lower() for t in ALLOWED_TAGS}
+    if exclude is not None:
+        excluded = {t.lower() for t in exclude}
+        allowed_set = allowed_set - excluded
+
     # Check for disallowed tags within the chosen scope
     disallowed_tags: set[str] = set()
     for element in scope_elements:
-        if element.name and element.name.lower() not in ALLOWED_TAGS:
+        if element.name and element.name.lower() not in allowed_set:
             disallowed_tags.add(element.name.lower())
     
     # Return validation result
@@ -366,6 +551,32 @@ if __name__ == "__main__":
         
         test_validate_html_tags()
         print("✅ validate_html_tags test passed!")
+
+        # Ad hoc tests for sources/children validation
+        flat_input = """
+<p id="1">A</p>
+<p id="2">B</p>
+<p id="3">C</p>
+""".strip()
+
+        # Happy path: data-children covers 1-2, data-sources covers 3, disjoint, empty children nodes
+        good_output = """
+<section data-children="1-2"></section>
+<p data-sources="3">C</p>
+""".strip()
+        ok, issues, meta = validate_sources_and_children(flat_input, good_output)
+        assert ok, f"Expected valid, got issues: {[i.code for i in issues]}"
+        print("✅ sources/children happy path passed!")
+
+        # Violations: overlap ids, children not empty, node has both, sources empty
+        bad_output = """
+<section data-children="1-2">Not empty</section>
+<div data-sources="2-3" data-children="1"></div>
+<p data-sources="3"></p>
+""".strip()
+        ok2, issues2, meta2 = validate_sources_and_children(flat_input, bad_output)
+        assert not ok2 and len(issues2) > 0, "Expected violations in bad output"
+        print("✅ sources/children violation case surfaced issues:", ", ".join(sorted({i.code for i in issues2})))
         
         print("✅ All tests passed!")
     except Exception as e:

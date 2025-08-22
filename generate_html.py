@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import Sequence
 from sqlmodel import Session, select
 from utils.models import ContentBlock
-from html_maker.first_pass import run_first_pass
+from html_maker.restructure_with_recursion import detect_nested_structure, Context
+# from html_maker.first_pass import run_first_pass
 from html_maker.fixup_pass import run_fixup_pass
 from html_maker.provide_feedback import provide_feedback, Feedback
 from utils.db import engine, check_schema_sync
@@ -114,12 +115,11 @@ async def main() -> None:
 
         # If output.html exists, skip first pass; otherwise run first pass
         if not output_html_path.exists():
-            current_html = await run_first_pass(
-                input_html=input_html,
-                output_file=output_file_name,
-                timeout_seconds=3600,
-                doc_id=doc_id,
-                use_deepseek=False,
+            current_html = await detect_nested_structure(
+                flat_html=input_html,
+                context=Context(),
+                router=router,
+                max_depth=7,
             )
 
             # Persist to file
