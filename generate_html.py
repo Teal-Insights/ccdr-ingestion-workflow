@@ -113,12 +113,13 @@ async def main() -> None:
         input_html = "\n".join([block.to_html(block_id=i) for i, block in enumerate(content_blocks)])
 
         # If output.html exists, skip first pass; otherwise run first pass
-        if not output_html_path.exists():            
+        if not output_html_path.exists():
             current_html = await run_first_pass(
                 input_html=input_html,
                 output_file=output_file_name,
                 timeout_seconds=3600,
                 doc_id=doc_id,
+                use_deepseek=False,
             )
 
             # Persist to file
@@ -196,6 +197,7 @@ async def main() -> None:
                     gemini_feedback_text,
                     3600,
                     doc_id,
+                    use_deepseek=False,
                 )
 
                 # Only persist if we got back text (don't overwrite if we errored!)

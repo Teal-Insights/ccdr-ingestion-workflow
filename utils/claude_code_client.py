@@ -389,6 +389,7 @@ class ClaudeCodeClient:
         config_files: Optional[List[FileInput]] = None,
         timeout_s: int = 3600,
         doc_id: Optional[int] = None,
+        use_deepseek: bool = False,
     ) -> str:
         """
         Execute a complete restructuring job with session management.
@@ -426,7 +427,7 @@ class ClaudeCodeClient:
                 timeout_s,
             )
             # Create session
-            self.create_session(files, ttl_seconds=max(timeout_s * 2, 3600))
+            self.create_session(files, ttl_seconds=max(timeout_s * 2, 3600), use_deepseek=use_deepseek)
             logger.info("doc_id=%s: Session created session_id=%s", doc_id, self.session_id)
             
             # Run job
@@ -475,6 +476,7 @@ class ClaudeCodeClient:
         config_files: Optional[List[FileInput]] = None,
         timeout_s: int = 3600,
         doc_id: Optional[int] = None,
+        use_deepseek: bool = False,
     ) -> str:
         """
         Execute a fixup job to correct issues in existing output.
@@ -512,7 +514,7 @@ class ClaudeCodeClient:
                 timeout_s,
             )
             # Create session
-            self.create_session(files, ttl_seconds=max(timeout_s * 2, 3600))
+            self.create_session(files, ttl_seconds=max(timeout_s * 2, 3600), use_deepseek=use_deepseek)
             logger.info("doc_id=%s: Session created session_id=%s", doc_id, self.session_id)
             
             # Run fixup job

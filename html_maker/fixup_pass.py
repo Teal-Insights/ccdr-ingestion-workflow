@@ -62,6 +62,7 @@ def run_fixup_pass(
     gemini_feedback: str | None = None,
     timeout_seconds: int = 600,
     doc_id: int | None = None,
+    use_deepseek: bool = False,
 ) -> str:
     """Execute a single fixup pass using the Claude Code service and return updated HTML."""
 
@@ -93,6 +94,7 @@ def run_fixup_pass(
             config_files=config_files,
             timeout_s=timeout_seconds,
             doc_id=doc_id,
+            use_deepseek=use_deepseek,
         )
 
     return updated_html

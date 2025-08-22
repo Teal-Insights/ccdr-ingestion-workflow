@@ -51,6 +51,7 @@ async def run_first_pass(
     output_file: str,
     timeout_seconds: int = 3600,
     doc_id: int | None = None,
+    use_deepseek: bool = False,
 ) -> str:
     """Run the initial restructuring pass via the Claude Code service.
 
@@ -83,6 +84,7 @@ async def run_first_pass(
             config_files=config_files,
             timeout_s=timeout_seconds,
             doc_id=doc_id,
+            use_deepseek=use_deepseek,
         )
 
     return restructured_html
