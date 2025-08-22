@@ -19,6 +19,8 @@ Options:
     --block    Use blocking error codes (exit 2) for failures instead of non-blocking (exit 3)
 """
 
+# TODO: Validate that every leaf node has data-sources
+
 import re
 import sys
 import argparse
