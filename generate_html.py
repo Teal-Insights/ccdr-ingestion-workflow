@@ -29,7 +29,7 @@ from utils.schema import Document, Node
 from utils.aws import sync_s3_to_folder, sync_folder_to_s3
 from utils.html import validate_data_sources, validate_html_tags
 from litellm import Router
-from utils.litellm_router import create_router
+from html_maker.restructure_with_recursion import create_router
 from utils.file_editor import file_starts_with
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ async def main() -> None:
     dotenv.load_dotenv(override=True)
 
     # Configure
-    LIMIT: int = 2
+    LIMIT: int = 3
     USE_S3: bool = True
     content_blocks_dir: str = "./data/content_blocks"
     html_dir: str = "./data/html"
@@ -48,12 +48,12 @@ async def main() -> None:
     check_schema_sync()
 
     # Setup LLM router
-    gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+    api_key = os.getenv("API_KEY", "")
     openai_api_key = os.getenv("OPENAI_API_KEY", "")
     deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
     router: Router = create_router(
-        gemini_api_key=gemini_api_key,
+        api_key=api_key,
         openai_api_key=openai_api_key,
         deepseek_api_key=deepseek_api_key,
         openrouter_api_key=openrouter_api_key,
@@ -130,45 +130,45 @@ async def main() -> None:
             with open(output_html_path, "r") as rf:
                 current_html = rf.read()
 
-        # Validate and iterate fixups up to 5 times, incorporating Gemini feedback when mechanical checks pass
+        # Validate and iterate fixups up to 3 times, incorporating feedback when mechanical checks pass
         fixup_attempt: int = 0
-        while fixup_attempt < 5:
+        while fixup_attempt < 3:
             missing_ids, extra_ids = validate_data_sources(input_html, current_html)
             is_valid_html, invalid_tags = validate_html_tags(current_html)
 
-            # If mechanical checks pass, request Gemini feedback
-            gemini_feedback_text: str | None = None
+            # If mechanical checks pass, request feedback
+            feedback_text: str | None = None
             if (
                 current_html
                 and len(missing_ids) + len(extra_ids) == 0
                 and is_valid_html
                 and not invalid_tags
             ):
-                # On the 5th loop, if mechanical validation passes, auto-approve regardless of Gemini feedback
-                if fixup_attempt >= 4:
+                # On the 3rd loop, if mechanical validation passes, auto-approve regardless of feedback
+                if fixup_attempt >= 2:
                     if not current_html.startswith("<!-- Approved -->"):
                         current_html = "<!-- Approved -->\n" + current_html
                     with open(output_html_path, "w") as wf:
                         wf.write(current_html)
                     return
                 try:
-                    gemini_feedback: list[Feedback] = await provide_feedback(
+                    feedback: list[Feedback] = await provide_feedback(
                         input_html=input_html, output_html=current_html, router=router
                     )
                 except Exception:
-                    gemini_feedback = []
+                    feedback = []
 
                 # Parse feedback and filter critical items
-                gemini_criticals: list[Feedback] = [item for item in gemini_feedback if item.severity == "critical"]
-                logger.info("Gemini critical feedback count: %d", len(gemini_criticals))
-                for idx, item in enumerate(gemini_criticals, start=1):
+                criticals: list[Feedback] = [item for item in feedback if item.severity == "critical"]
+                logger.info("Critical feedback count: %d", len(criticals))
+                for idx, item in enumerate(criticals, start=1):
                     msg = str(item.message)
                     ids = item.affected_ids
                     if ids:
                         logger.info("Critical %d: %s affected_ids=%s", idx, msg, ids)
                     else:
                         logger.info("Critical %d: %s", idx, msg)
-                if not gemini_criticals:
+                if not criticals:
                     if not current_html.startswith("<!-- Approved -->"):
                         current_html = "<!-- Approved -->\n" + current_html
                     with open(output_html_path, "w") as wf:
@@ -177,12 +177,12 @@ async def main() -> None:
 
                 # Build feedback text for fixup prompt
                 feedback_lines: list[str] = []
-                for item in gemini_criticals:
+                for item in criticals:
                     msg = str(item.message)
                     ids = item.affected_ids
                     ids_repr = f" affected_ids={ids}" if ids else ""
                     feedback_lines.append(f"- {msg}{ids_repr}")
-                gemini_feedback_text = "\n".join(feedback_lines)
+                feedback_text = "\n".join(feedback_lines)
 
                 fixup_attempt += 1
                 current_html = await asyncio.to_thread(
@@ -194,7 +194,7 @@ async def main() -> None:
                     extra_ids,
                     not is_valid_html,
                     invalid_tags,
-                    gemini_feedback_text,
+                    feedback_text,
                     3600,
                     doc_id,
                     use_deepseek=False,

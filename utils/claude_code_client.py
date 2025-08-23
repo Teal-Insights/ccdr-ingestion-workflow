@@ -5,6 +5,8 @@ This module provides a reusable client for interacting with the Claude Code API 
 handling session lifecycle, job execution, and result retrieval.
 """
 
+# TODO: Maybe we provide the PDF and content blocks to the client in case they're needed to resolve table formatting issues?
+
 import logging
 import os
 import time

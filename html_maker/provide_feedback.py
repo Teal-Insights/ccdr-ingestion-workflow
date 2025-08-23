@@ -37,6 +37,8 @@ Issues to flag:
 
 Note that the original agent was instructed to include every input id as a data source on at least one leaf node (even if the input element was empty or garbage), so we allow empty/garbage input ids to be tacked onto a neighboring element as a data source to satisfy this constraint.
 
+Also note that the fixup agent that acts on your feedback will have access only to the input HTML and output HTML, not the original PDF, so you should only give feedback that is actionable on that basis.
+
 ## Output format
 
 Please provide your feedback as a JSON array of objects with the following schema:
