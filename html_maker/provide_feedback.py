@@ -71,7 +71,7 @@ async def provide_feedback(
     ]
 
     response: Any = await router.acompletion(
-        model="gemini/gemini-2.5-flash",
+        model="openrouter/openai/gpt-5-mini",
         messages=cast(Any, messages),
         response_format=FeedbackResponse,
         stream=False,
