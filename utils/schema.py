@@ -9,7 +9,43 @@ from sqlalchemy.orm import Session as SASession
 from pydantic import HttpUrl, field_validator
 from sqlalchemy.dialects.postgresql import ARRAY, FLOAT, JSONB
 from sqlalchemy.orm import Mapped
-from utils.ranges import list_to_ranges
+
+
+def list_to_ranges(nums):
+    """
+    Helper to convert a list of numbers into a string of ranges.
+    Used for the `data-pages` attribute on HTML elements.
+    """
+    if not nums:
+        return ""
+    
+    # Sort the list to handle unsorted input
+    nums = sorted(set(nums))  # Remove duplicates and sort
+    
+    ranges = []
+    start = nums[0]
+    end = nums[0]
+    
+    for i in range(1, len(nums)):
+        if nums[i] == end + 1:
+            # Continue the current range
+            end = nums[i]
+        else:
+            # End the current range and start a new one
+            if start == end:
+                ranges.append(str(start))
+            else:
+                ranges.append(f"{start}-{end}")
+            start = nums[i]
+            end = nums[i]
+    
+    # Handle the last range
+    if start == end:
+        ranges.append(str(start))
+    else:
+        ranges.append(f"{start}-{end}")
+    
+    return ",".join(ranges)
 
 
 # Enums for document and node types
