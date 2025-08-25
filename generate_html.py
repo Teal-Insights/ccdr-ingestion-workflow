@@ -39,21 +39,22 @@ async def main() -> None:
     dotenv.load_dotenv(override=True)
 
     # Configure
-    LIMIT: int = 3
+    LIMIT: int = 5
     USE_S3: bool = True
     content_blocks_dir: str = "./data/content_blocks"
     html_dir: str = "./data/html"
     
     # Fail fast if DB schema is out of sync
-    check_schema_sync()
+    if not check_schema_sync():
+        raise Exception("DB schema is out of sync.")
 
     # Setup LLM router
-    api_key = os.getenv("API_KEY", "")
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "")
     openai_api_key = os.getenv("OPENAI_API_KEY", "")
     deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
     router: Router = create_router(
-        api_key=api_key,
+        gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
         deepseek_api_key=deepseek_api_key,
         openrouter_api_key=openrouter_api_key,
@@ -91,120 +92,124 @@ async def main() -> None:
         return
 
     async def process_document(document: Document) -> None:
-        assert document.id, "Document ID is required"
-        doc_id: int = int(document.id)
+        try:
+            assert document.id, "Document ID is required"
+            doc_id: int = int(document.id)
 
-        print(f"Processing content blocks for document {doc_id}...")
+            print(f"Processing content blocks for document {doc_id}...")
 
-        # Per-document output location
-        doc_output_dir = Path(html_dir) / f"doc_{doc_id}"
-        doc_output_dir.mkdir(parents=True, exist_ok=True)
-        output_file_name: str = "output.html"
-        output_html_path = doc_output_dir / output_file_name
+            # Per-document output location
+            doc_output_dir = Path(html_dir) / f"doc_{doc_id}"
+            doc_output_dir.mkdir(parents=True, exist_ok=True)
+            output_file_name: str = "output.html"
+            output_html_path = doc_output_dir / output_file_name
 
-        # Load the content blocks from the file
-        content_blocks_file = Path(content_blocks_dir) / f"doc_{doc_id}_content_blocks.json"
-        with open(content_blocks_file, "r") as f:
-            content_blocks_data = json.load(f)
-            content_blocks: list[ContentBlock] = [
-                ContentBlock.model_validate(block) for block in content_blocks_data
-            ]
+            # Load the content blocks from the file
+            content_blocks_file = Path(content_blocks_dir) / f"doc_{doc_id}_content_blocks.json"
+            with open(content_blocks_file, "r") as f:
+                content_blocks_data = json.load(f)
+                content_blocks: list[ContentBlock] = [
+                    ContentBlock.model_validate(block) for block in content_blocks_data
+                ]
 
-        # Generate input HTML
-        input_html = "\n".join([block.to_html(block_id=i) for i, block in enumerate(content_blocks)])
+            # Generate input HTML
+            input_html = "\n".join([block.to_html(block_id=i) for i, block in enumerate(content_blocks)])
 
-        # If output.html exists, skip first pass; otherwise run first pass
-        if not output_html_path.exists():
-            current_html = await detect_nested_structure(
-                flat_html=input_html,
-                context=Context(),
-                router=router,
-                max_depth=7,
-            )
-
-            # Persist to file
-            with open(output_html_path, "w") as wf:
-                wf.write(current_html)
-
-        else:
-            with open(output_html_path, "r") as rf:
-                current_html = rf.read()
-
-        # Validate and iterate fixups up to 3 times, incorporating feedback when mechanical checks pass
-        fixup_attempt: int = 0
-        while fixup_attempt < 3:
-            missing_ids, extra_ids = validate_data_sources(input_html, current_html)
-            is_valid_html, invalid_tags = validate_html_tags(current_html)
-
-            # If mechanical checks pass, request feedback
-            feedback_text: str | None = None
-            if (
-                current_html
-                and len(missing_ids) + len(extra_ids) == 0
-                and is_valid_html
-                and not invalid_tags
-            ):
-                # On the 3rd loop, if mechanical validation passes, auto-approve regardless of feedback
-                if fixup_attempt >= 2:
-                    if not current_html.startswith("<!-- Approved -->"):
-                        current_html = "<!-- Approved -->\n" + current_html
-                    with open(output_html_path, "w") as wf:
-                        wf.write(current_html)
-                    return
-                try:
-                    feedback: list[Feedback] = await provide_feedback(
-                        input_html=input_html, output_html=current_html, router=router
-                    )
-                except Exception:
-                    feedback = []
-
-                # Parse feedback and filter critical items
-                criticals: list[Feedback] = [item for item in feedback if item.severity == "critical"]
-                logger.info("Critical feedback count: %d", len(criticals))
-                for idx, item in enumerate(criticals, start=1):
-                    msg = str(item.message)
-                    ids = item.affected_ids
-                    if ids:
-                        logger.info("Critical %d: %s affected_ids=%s", idx, msg, ids)
-                    else:
-                        logger.info("Critical %d: %s", idx, msg)
-                if not criticals:
-                    if not current_html.startswith("<!-- Approved -->"):
-                        current_html = "<!-- Approved -->\n" + current_html
-                    with open(output_html_path, "w") as wf:
-                        wf.write(current_html)
-                    return
-
-                # Build feedback text for fixup prompt
-                feedback_lines: list[str] = []
-                for item in criticals:
-                    msg = str(item.message)
-                    ids = item.affected_ids
-                    ids_repr = f" affected_ids={ids}" if ids else ""
-                    feedback_lines.append(f"- {msg}{ids_repr}")
-                feedback_text = "\n".join(feedback_lines)
-
-                fixup_attempt += 1
-                current_html = await asyncio.to_thread(
-                    run_fixup_pass,
-                    input_html,
-                    current_html,
-                    output_file_name,
-                    missing_ids,
-                    extra_ids,
-                    not is_valid_html,
-                    invalid_tags,
-                    feedback_text,
-                    3600,
-                    doc_id,
-                    use_deepseek=False,
+            # If output.html exists, skip first pass; otherwise run first pass
+            if not output_html_path.exists():
+                current_html = await detect_nested_structure(
+                    flat_html=input_html,
+                    context=Context(),
+                    router=router,
+                    max_depth=7,
                 )
 
-                # Only persist if we got back text (don't overwrite if we errored!)
-                if current_html:
-                    with open(output_html_path, "w") as wf:
-                        wf.write(current_html)
-                continue
+                # Persist to file
+                with open(output_html_path, "w") as wf:
+                    wf.write(current_html)
+
+            else:
+                with open(output_html_path, "r") as rf:
+                    current_html = rf.read()
+
+            # Validate and iterate fixups up to 3 times, incorporating feedback when mechanical checks pass
+            fixup_attempt: int = 0
+            while fixup_attempt < 3:
+                missing_ids, extra_ids = validate_data_sources(input_html, current_html)
+                is_valid_html, invalid_tags = validate_html_tags(current_html)
+
+                # If mechanical checks pass, request feedback
+                feedback_text: str | None = None
+                if (
+                    current_html
+                    and len(missing_ids) + len(extra_ids) == 0
+                    and is_valid_html
+                    and not invalid_tags
+                ):
+                    # On the 3rd loop, if mechanical validation passes, auto-approve regardless of feedback
+                    if fixup_attempt >= 2:
+                        if not current_html.startswith("<!-- Approved -->"):
+                            current_html = "<!-- Approved -->\n" + current_html
+                        with open(output_html_path, "w") as wf:
+                            wf.write(current_html)
+                        return
+                    try:
+                        feedback: list[Feedback] = await provide_feedback(
+                            input_html=input_html, output_html=current_html, router=router
+                        )
+                    except Exception:
+                        feedback = []
+
+                    # Parse feedback and filter critical items
+                    criticals: list[Feedback] = [item for item in feedback if item.severity == "critical"]
+                    logger.info("Critical feedback count: %d", len(criticals))
+                    for idx, item in enumerate(criticals, start=1):
+                        msg = str(item.message)
+                        ids = item.affected_ids
+                        if ids:
+                            logger.info("Critical %d: %s affected_ids=%s", idx, msg, ids)
+                        else:
+                            logger.info("Critical %d: %s", idx, msg)
+                    if not criticals:
+                        if not current_html.startswith("<!-- Approved -->"):
+                            current_html = "<!-- Approved -->\n" + current_html
+                        with open(output_html_path, "w") as wf:
+                            wf.write(current_html)
+                        return
+
+                    # Build feedback text for fixup prompt
+                    feedback_lines: list[str] = []
+                    for item in criticals:
+                        msg = str(item.message)
+                        ids = item.affected_ids
+                        ids_repr = f" affected_ids={ids}" if ids else ""
+                        feedback_lines.append(f"- {msg}{ids_repr}")
+                    feedback_text = "\n".join(feedback_lines)
+
+                    fixup_attempt += 1
+                    current_html = await asyncio.to_thread(
+                        run_fixup_pass,
+                        input_html,
+                        current_html,
+                        output_file_name,
+                        missing_ids,
+                        extra_ids,
+                        not is_valid_html,
+                        invalid_tags,
+                        feedback_text,
+                        3600,
+                        doc_id,
+                        use_deepseek=False,
+                    )
+
+                    # Only persist if we got back text (don't overwrite if we errored!)
+                    if current_html:
+                        with open(output_html_path, "w") as wf:
+                            wf.write(current_html)
+                    continue
+        except Exception as e:
+            logger.error("Error processing document %s: %s", document.id, e)
+
 
     # Convert the content blocks into HTML for up to LIMIT docs concurrently
     tasks: list[asyncio.Task] = []
