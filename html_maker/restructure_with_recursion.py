@@ -427,7 +427,7 @@ def create_router(
     return Router(
         model_list=model_list,
         routing_strategy="simple-shuffle",  # Weighted random selection
-        fallbacks=[{"html-parser": ["html-parser-fallback"]}],  # Falls back within the same group
+        fallbacks=[{"html-parser": ["html-parser-fallback"]}, {"html-feedback": ["html-parser-fallback"]}],  # Falls back within the same group
         num_retries=2,
         allowed_fails=5,
         cooldown_time=30,

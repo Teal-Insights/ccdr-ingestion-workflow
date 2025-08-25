@@ -1,6 +1,8 @@
 import logging
 import json
 import time
+import os
+import asyncio
 from pathlib import Path
 
 from utils.models import ContentBlock
@@ -51,7 +53,8 @@ Remember:
 async def restructure_with_claude_code(
     input_html: str,
     output_file: str = "output.html",
-    timeout_seconds: int = 3600  # 60 minutes default for document restructuring
+    timeout_seconds: int = 3600,  # 60 minutes default for document restructuring
+    semaphore: asyncio.BoundedSemaphore | None = None,
 ) -> str:
     """
     Restructure HTML using Claude Code API service.
@@ -86,13 +89,25 @@ You were given the following prompt:
 
     # Execute the restructuring job using the client
     with ClaudeCodeClient() as client:
-        restructured_html = client.execute_restructuring_job(
-            input_html=input_html,
-            prompt=file_prompt,
-            output_file=output_file,
-            config_files=config_files,
-            timeout_s=timeout_seconds
-        )
+        if semaphore is not None:
+            async with semaphore:
+                restructured_html = await asyncio.to_thread(
+                    client.execute_restructuring_job,
+                    input_html,
+                    file_prompt,
+                    output_file,
+                    config_files,
+                    timeout_seconds,
+                )
+        else:
+            restructured_html = await asyncio.to_thread(
+                client.execute_restructuring_job,
+                input_html,
+                file_prompt,
+                output_file,
+                config_files,
+                timeout_seconds,
+            )
 
     # Create fixup prompt to address validation issues
     fixup_prompt = """Please fix the data-sources validation issues in current_output.html.
@@ -135,14 +150,27 @@ Please review current_output.html and fix the tags to ensure the HTML contains o
         logger.info("Running fixup job to address validation issues...")
         
         with ClaudeCodeClient() as fixup_client:
-            restructured_html = fixup_client.execute_fixup_job(
-                original_html=input_html,
-                current_output=restructured_html,
-                fixup_prompt=fixup_prompt,
-                output_file=output_file,
-                config_files=config_files,
-                timeout_s=600  # Shorter timeout for fixup
-            )
+            if semaphore is not None:
+                async with semaphore:
+                    restructured_html = await asyncio.to_thread(
+                        fixup_client.execute_fixup_job,
+                        input_html,
+                        restructured_html,
+                        fixup_prompt,
+                        output_file,
+                        config_files,
+                        600,  # Shorter timeout for fixup
+                    )
+            else:
+                restructured_html = await asyncio.to_thread(
+                    fixup_client.execute_fixup_job,
+                    input_html,
+                    restructured_html,
+                    fixup_prompt,
+                    output_file,
+                    config_files,
+                    600,  # Shorter timeout for fixup
+                )
         
         # Re-validate after fixup
         missing_ids, extra_ids = validate_data_sources(input_html, restructured_html)
@@ -185,10 +213,14 @@ if __name__ == "__main__":
     # Run restructuring
     start_time = time.time()
     try:
+        MAX_CONCURRENT_CC = int(os.getenv("CLAUDE_CODE_CONCURRENCY", "2"))
+        cc_sem = asyncio.BoundedSemaphore(MAX_CONCURRENT_CC)
+
         restructured_html = asyncio.run(restructure_with_claude_code(
             input_html,
             output_file="output.html",
-            timeout_seconds=3600  # 60 minutes for complex document restructuring
+            timeout_seconds=3600,  # 60 minutes for complex document restructuring
+            semaphore=cc_sem,
         ))
         end_time = time.time()
         

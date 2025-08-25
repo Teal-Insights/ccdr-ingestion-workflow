@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from typing import Iterable
 
 from utils.html import ALLOWED_TAGS
@@ -51,7 +52,7 @@ def _build_fixup_prompt(
     return prompt
 
 
-def run_fixup_pass(
+async def run_fixup_pass(
     original_html: str,
     current_output: str,
     output_file: str,
@@ -63,6 +64,7 @@ def run_fixup_pass(
     timeout_seconds: int = 600,
     doc_id: int | None = None,
     use_deepseek: bool = False,
+    semaphore: asyncio.BoundedSemaphore | None = None,
 ) -> str:
     """Execute a single fixup pass using the Claude Code service and return updated HTML."""
 
@@ -86,15 +88,30 @@ def run_fixup_pass(
     )
 
     with ClaudeCodeClient() as client:
-        updated_html: str = client.execute_fixup_job(
-            original_html=original_html,
-            current_output=current_output,
-            fixup_prompt=fixup_prompt,
-            output_file=output_file,
-            config_files=config_files,
-            timeout_s=timeout_seconds,
-            doc_id=doc_id,
-            use_deepseek=use_deepseek,
-        )
+        if semaphore is not None:
+            async with semaphore:
+                updated_html: str = await asyncio.to_thread(
+                    client.execute_fixup_job,
+                    original_html,
+                    current_output,
+                    fixup_prompt,
+                    output_file,
+                    config_files,
+                    timeout_seconds,
+                    doc_id,
+                    use_deepseek,
+                )
+        else:
+            updated_html = await asyncio.to_thread(
+                client.execute_fixup_job,
+                original_html,
+                current_output,
+                fixup_prompt,
+                output_file,
+                config_files,
+                timeout_seconds,
+                doc_id,
+                use_deepseek,
+            )
 
     return updated_html

@@ -60,6 +60,10 @@ async def main() -> None:
         openrouter_api_key=openrouter_api_key,
     )
     
+    # Shared semaphore for Claude Code service concurrency
+    MAX_CONCURRENT_CC = int(os.getenv("CLAUDE_CODE_CONCURRENCY", "3"))
+    cc_sem = asyncio.BoundedSemaphore(MAX_CONCURRENT_CC)
+    
     # Get Documents from the database where the count of child nodes is 0 (meaning nodes have not been uploaded yet)
     with Session(engine) as session:
         get_missing = (
@@ -187,19 +191,19 @@ async def main() -> None:
                     feedback_text = "\n".join(feedback_lines)
 
                     fixup_attempt += 1
-                    current_html = await asyncio.to_thread(
-                        run_fixup_pass,
-                        input_html,
-                        current_html,
-                        output_file_name,
-                        missing_ids,
-                        extra_ids,
-                        not is_valid_html,
-                        invalid_tags,
-                        feedback_text,
-                        3600,
-                        doc_id,
+                    current_html = await run_fixup_pass(
+                        original_html=input_html,
+                        current_output=current_html,
+                        output_file=output_file_name,
+                        missing_ids=missing_ids,
+                        extra_ids=extra_ids,
+                        html_invalid=not is_valid_html,
+                        invalid_tags=invalid_tags,
+                        gemini_feedback=feedback_text,
+                        timeout_seconds=3600,
+                        doc_id=doc_id,
                         use_deepseek=False,
+                        semaphore=cc_sem,
                     )
 
                     # Only persist if we got back text (don't overwrite if we errored!)
