@@ -22,8 +22,11 @@ An AI agent was asked to convert an HTML partial with a flat structure comprised
 
 - Only these tags are allowed: {", ".join(f"`{tag}`" for tag in ALLOWED_TAGS)}.
 - Only `header` (front matter), `main` (body content), and `footer` (back matter) are allowed at the top level; all other tags should be nested within one of these.
-- Whitespace and encoding issues should be cleaned up; otherwise maintain the identical wording/spelling of the text content and of image descriptions and source URLs.
-- Assign elements a `data-sources` attribute with a comma-separated list of ids of the source elements (for attribute mapping and content validation). This can include ranges, e.g., `data-sources="0-5,7,9-12"`. Inline style tags `b`, `i`, `u`, `s`, `sup`, `sub`, and `br` do not need `data-sources`.
+- Whitespace, encoding, and formatting mess should be cleaned up; otherwise maintain the identical wording/spelling of the text content and of image descriptions and source URLs.
+- Assign elements a `data-sources` attribute with a comma-separated list of ids of the source elements (for attribute mapping and content validation).
+  - This can include inclusive ranges, e.g., `data-sources="0-5,7,9-12"`.
+  - Inline style tags `b`, `i`, `u`, `s`, `sup`, `sub`, and `br` do not need `data-sources`.
+  - It's fine for an input id to be reused by `data-sources` across multiple elements.
 - The document should be unstyled.
 
 ## Output instructions
@@ -45,7 +48,7 @@ Please provide your feedback as a JSON array of objects with the following schem
 
 {Feedback.model_json_schema()}
 
-If there are no issues, please return an empty array."""
+If there are no issues, great! Please return an empty array."""
 
 async def provide_feedback(
     input_html: str,
@@ -73,7 +76,7 @@ async def provide_feedback(
     ]
 
     response: Any = await router.acompletion(
-        model="openrouter/openai/gpt-5-mini",
+        model="html-feedback",
         messages=cast(Any, messages),
         response_format=FeedbackResponse,
         stream=False,
