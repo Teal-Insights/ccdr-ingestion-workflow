@@ -1,5 +1,7 @@
 from datetime import date, datetime, UTC
 from typing import List, Optional, Dict, Any
+from html import escape
+from bs4 import BeautifulSoup
 from enum import Enum
 from sqlmodel import Field, Relationship, SQLModel, Column
 from pydantic import HttpUrl, field_validator
@@ -19,7 +21,8 @@ class NodeType(str, Enum):
     ELEMENT_NODE = "ELEMENT_NODE"
 
 
-# TODO: Create helper methods to return tags of a given type, e.g., top-level, structural, headings, etc.
+# TODO: Create helper methods to return tags of a given type, e.g., top-level, structural, headings, and inline styles
+# TODO: Consider storing table children as plain text content
 class TagName(str, Enum):
     # Only structural elements
     HEADER = "header"
@@ -86,6 +89,8 @@ class SectionType(str, Enum):
     TITLE_PAGE = "TITLE_PAGE"
 
 
+# TODO: Given that code can be its own node or an in-line style, we might want a None value for this to use when code is a child of p
+# TODO: Similarly, we might skip embedding for children of table elements and add an ALL_CHILDREN value for the parent
 class EmbeddingSource(str, Enum):
     TEXT_CONTENT = "TEXT_CONTENT"
     DESCRIPTION = "DESCRIPTION"
@@ -148,7 +153,6 @@ class Publication(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True, index=True)
     title: str = Field(max_length=500)
     abstract: Optional[str] = None
-    citation: str
     authors: str
     publication_date: date = Field(index=True)
     source: str = Field(max_length=100)
@@ -167,6 +171,46 @@ class Publication(SQLModel, table=True):
     documents: Mapped[List["Document"]] = Relationship(
         back_populates="publication", cascade_delete=True
     )
+
+    @property
+    def citation(self) -> str:
+        def cleaned(s: Optional[str]) -> Optional[str]:
+            if s is None:
+                return None
+            s = s.strip()
+            return s or None
+
+        parts: List[str] = []
+
+        authors = cleaned(self.authors)
+        year = f"({self.publication_date.year})" if getattr(self, "publication_date", None) else None
+        author_year = " ".join(p for p in (authors, year) if p)
+        if author_year:
+            parts.append(author_year + ".")
+
+        title = cleaned(self.title)
+        if title:
+            parts.append(title + ".")
+
+        source = cleaned(self.source)
+        if source:
+            parts.append(source + ".")
+
+        # Prefer version from a MAIN document; fall back to any document with a version.
+        version: Optional[str] = None
+        docs = list(self.documents or [])
+        if docs:
+            main_with_version = next((d for d in docs if d.type == DocumentType.MAIN and cleaned(d.version)), None)
+            any_with_version = next((d for d in docs if cleaned(d.version)), None)
+            version = cleaned(main_with_version.version if main_with_version else (any_with_version.version if any_with_version else None))
+        if version:
+            parts.append(f"Version {version}.")
+
+        url = cleaned(self.source_url) or cleaned(self.uri)
+        if url:
+            parts.append(url)
+
+        return " ".join(parts).strip()
 
 
 class Document(SQLModel, table=True):
@@ -212,6 +256,42 @@ class Document(SQLModel, table=True):
         back_populates="document", cascade_delete=True
     )
 
+    def to_html(
+        self,
+        *,
+        include_descriptions: bool = True,
+        separator: str = "\n",
+        include_html_wrapper: bool = False,
+        pretty: bool = True,
+    ) -> str:
+        """Render the document as HTML, traversing nodes in DOM order.
+
+        This preserves the hierarchical structure using each node's `tag_name` when present.
+        Descriptions may be included for certain elements (e.g., used as alt for images).
+        """
+        root_nodes: List["Node"] = sorted(
+            (n for n in self.nodes if n.parent_id is None),
+            key=lambda n: n.sequence_in_parent,
+        )
+
+        parts: List[str] = []
+        for root in root_nodes:
+            html_fragment = root.to_html(
+                include_descriptions=include_descriptions,
+                separator=separator,
+                pretty=False,
+            )
+            if html_fragment:
+                parts.append(html_fragment)
+
+        body = separator.join(p for p in parts if p)
+        result = f"<html>\n<body>\n{body}\n</body>\n</html>" if include_html_wrapper else body
+
+        if pretty:
+            soup = BeautifulSoup(result, "html.parser")
+            return soup.prettify(formatter="html")
+        return result
+
 
 class Node(SQLModel, table=True):
     __table_args__ = {
@@ -254,6 +334,82 @@ class Node(SQLModel, table=True):
         sa_relationship_kwargs={"foreign_keys": "Relation.target_node_id"},
         cascade_delete=True,
     )
+
+    def to_html(
+        self,
+        *,
+        include_descriptions: bool = True,
+        separator: str = "\n",
+        pretty: bool = True,
+    ) -> str:
+        """Render this node and its subtree to HTML.
+
+        - For element nodes with children, wrap children in the element tag when available.
+        - For leaf nodes with `ContentData`, render within the element tag when available;
+          otherwise return escaped text or element markup.
+        - Captions are intentionally not rendered.
+        """
+        result: str
+        # If the node has children, render the children in order
+        if self.children:
+            ordered_children: List["Node"] = sorted(
+                list(self.children), key=lambda n: n.sequence_in_parent
+            )
+            child_html: List[str] = [
+                child.to_html(
+                    include_descriptions=include_descriptions,
+                    separator=separator,
+                    pretty=False,
+                )
+                for child in ordered_children
+            ]
+            children_joined = separator.join(s for s in child_html if s)
+
+            if self.tag_name is not None:
+                tag = self.tag_name.value
+                result = f"<{tag}>{children_joined}</{tag}>"
+            else:
+                # No tag name; return children concatenated
+                result = children_joined
+        else:
+            # Leaf node: render from ContentData
+            content = self.content_data
+            if content is None:
+                result = ""
+            elif self.tag_name == TagName.IMG:
+                # Special case for images
+                src = content.storage_url or ""
+                alt = content.description if (include_descriptions and content.description) else ""
+                # Self-contained img element; no caption rendering
+                result = f"<img src=\"{escape(src)}\" alt=\"{escape(alt)}\"/>"
+            else:
+                text_parts: List[str] = []
+                if content.text_content:
+                    text_parts.append(escape(content.text_content))
+                if include_descriptions and content.description:
+                    # Inline description; minimal styling to differentiate
+                    text_parts.append(f"<em>{escape(content.description)}</em>")
+
+                text_html = separator.join(p for p in text_parts if p)
+
+                if self.tag_name is not None:
+                    tag = self.tag_name.value
+                    result = f"<{tag}>{text_html}</{tag}>"
+                else:
+                    # No tag name; default to span for inline/leaf content
+                    result = f"<span>{text_html}</span>"
+
+        if pretty:
+            soup = BeautifulSoup(f"<div>{result}</div>", "html.parser")
+            div = soup.div
+            parts: List[str] = []
+            for child in div.contents:
+                if hasattr(child, "prettify"):
+                    parts.append(child.prettify(formatter="html"))
+                else:
+                    parts.append(str(child))
+            return "".join(parts)
+        return result
 
 
 class ContentData(SQLModel, table=True):
