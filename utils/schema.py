@@ -4,9 +4,12 @@ from html import escape
 from bs4 import BeautifulSoup
 from enum import Enum
 from sqlmodel import Field, Relationship, SQLModel, Column
+from sqlalchemy import event
+from sqlalchemy.orm import Session as SASession
 from pydantic import HttpUrl, field_validator
 from sqlalchemy.dialects.postgresql import ARRAY, FLOAT, JSONB
 from sqlalchemy.orm import Mapped
+from utils.ranges import list_to_ranges
 
 
 # Enums for document and node types
@@ -14,11 +17,6 @@ class DocumentType(str, Enum):
     MAIN = "MAIN"
     SUPPLEMENTAL = "SUPPLEMENTAL"
     OTHER = "OTHER"
-
-
-class NodeType(str, Enum):
-    TEXT_NODE = "TEXT_NODE"
-    ELEMENT_NODE = "ELEMENT_NODE"
 
 
 # TODO: Create helper methods to return tags of a given type, e.g., top-level, structural, headings, and inline styles
@@ -259,7 +257,7 @@ class Document(SQLModel, table=True):
     def to_html(
         self,
         *,
-        include_descriptions: bool = True,
+        include_citation_data: bool = False,
         separator: str = "\n",
         include_html_wrapper: bool = False,
         pretty: bool = True,
@@ -267,7 +265,7 @@ class Document(SQLModel, table=True):
         """Render the document as HTML, traversing nodes in DOM order.
 
         This preserves the hierarchical structure using each node's `tag_name` when present.
-        Descriptions may be included for certain elements (e.g., used as alt for images).
+        Descriptions may be used as alt text for images, but are never emitted as plain text.
         """
         root_nodes: List["Node"] = sorted(
             (n for n in self.nodes if n.parent_id is None),
@@ -277,7 +275,8 @@ class Document(SQLModel, table=True):
         parts: List[str] = []
         for root in root_nodes:
             html_fragment = root.to_html(
-                include_descriptions=include_descriptions,
+                include_citation_data=include_citation_data,
+                is_top_level=True,
                 separator=separator,
                 pretty=False,
             )
@@ -302,8 +301,7 @@ class Node(SQLModel, table=True):
     document_id: Optional[int] = Field(
         default=None, foreign_key="document.id", index=True, ondelete="CASCADE"
     )
-    node_type: NodeType
-    tag_name: Optional[TagName] = Field(default=None, index=True)
+    tag_name: TagName = Field(index=True)
     section_type: Optional[SectionType] = Field(default=None, index=True)
     parent_id: Optional[int] = Field(
         default=None, foreign_key="node.id", index=True, ondelete="CASCADE"
@@ -338,7 +336,8 @@ class Node(SQLModel, table=True):
     def to_html(
         self,
         *,
-        include_descriptions: bool = True,
+        include_citation_data: bool = False,
+        is_top_level: bool = False,
         separator: str = "\n",
         pretty: bool = True,
     ) -> str:
@@ -351,13 +350,67 @@ class Node(SQLModel, table=True):
         """
         result: str
         # If the node has children, render the children in order
+        def cleaned_string(value: Optional[str]) -> Optional[str]:
+            if value is None:
+                return None
+            v = value.strip()
+            return v or None
+
+        # Build attributes for this node render
+        attr_parts: List[str] = []
+        # Citation attributes only on top-level elements and only when a tag is present
+        if include_citation_data and is_top_level and self.tag_name is not None:
+            doc = self.document
+            if doc is not None:
+                pub = doc.publication
+                if pub is not None:
+                    authors = cleaned_string(getattr(pub, "authors", None))
+                    if authors:
+                        attr_parts.append(f'data-publication-authors="{escape(authors)}"')
+                    title = cleaned_string(getattr(pub, "title", None))
+                    if title:
+                        attr_parts.append(f'data-publication-title="{escape(title)}"')
+                    pub_date = getattr(pub, "publication_date", None)
+                    if pub_date is not None:
+                        attr_parts.append(f'data-publication-date="{pub_date.isoformat()}"')
+                    source = cleaned_string(getattr(pub, "source", None))
+                    if source:
+                        attr_parts.append(f'data-publication-source="{escape(source)}"')
+                    pub_url = cleaned_string(getattr(pub, "source_url", None)) or cleaned_string(getattr(pub, "uri", None))
+                    if pub_url:
+                        attr_parts.append(f'data-publication-url="{escape(pub_url)}"')
+                doc_desc = cleaned_string(getattr(doc, "description", None))
+                if doc_desc:
+                    attr_parts.append(f'data-document-description="{escape(doc_desc)}"')
+
+        # Pages attribute on any emitted element that has positional data
+        pages: List[int] = []
+        for pos in (self.positional_data or []):
+            page_value = None
+            if isinstance(pos, dict):
+                page_value = pos.get("page_pdf")
+            else:
+                page_value = getattr(pos, "page_pdf", None)
+            if page_value is not None:
+                try:
+                    pages.append(int(page_value))
+                except (TypeError, ValueError):
+                    continue
+        if include_citation_data and pages:
+            pages_str = list_to_ranges(pages)
+            if pages_str:
+                attr_parts.append(f'data-pages="{pages_str}"')
+
+        attrs: str = (" " + " ".join(attr_parts)) if attr_parts else ""
+
         if self.children:
             ordered_children: List["Node"] = sorted(
                 list(self.children), key=lambda n: n.sequence_in_parent
             )
             child_html: List[str] = [
                 child.to_html(
-                    include_descriptions=include_descriptions,
+                    include_citation_data=include_citation_data,
+                    is_top_level=False,
                     separator=separator,
                     pretty=False,
                 )
@@ -367,7 +420,7 @@ class Node(SQLModel, table=True):
 
             if self.tag_name is not None:
                 tag = self.tag_name.value
-                result = f"<{tag}>{children_joined}</{tag}>"
+                result = f"<{tag}{attrs}>{children_joined}</{tag}>"
             else:
                 # No tag name; return children concatenated
                 result = children_joined
@@ -379,25 +432,22 @@ class Node(SQLModel, table=True):
             elif self.tag_name == TagName.IMG:
                 # Special case for images
                 src = content.storage_url or ""
-                alt = content.description if (include_descriptions and content.description) else ""
+                alt = content.description or ""
                 # Self-contained img element; no caption rendering
-                result = f"<img src=\"{escape(src)}\" alt=\"{escape(alt)}\"/>"
+                result = f"<img src=\"{escape(src)}\" alt=\"{escape(alt)}\"{attrs}/>"
             else:
                 text_parts: List[str] = []
                 if content.text_content:
                     text_parts.append(escape(content.text_content))
-                if include_descriptions and content.description:
-                    # Inline description; minimal styling to differentiate
-                    text_parts.append(f"<em>{escape(content.description)}</em>")
 
                 text_html = separator.join(p for p in text_parts if p)
 
                 if self.tag_name is not None:
                     tag = self.tag_name.value
-                    result = f"<{tag}>{text_html}</{tag}>"
+                    result = f"<{tag}{attrs}>{text_html}</{tag}>"
                 else:
                     # No tag name; default to span for inline/leaf content
-                    result = f"<span>{text_html}</span>"
+                    result = f"<span{attrs}>{text_html}</span>"
 
         if pretty:
             soup = BeautifulSoup(f"<div>{result}</div>", "html.parser")
@@ -445,6 +495,52 @@ class ContentData(SQLModel, table=True):
         if self.node is None:
             return None
         return self.node.document_id
+
+
+def _has_nonempty_text(value: Optional[str]) -> bool:
+    """Return True if the provided string has non-whitespace content."""
+    if value is None:
+        return False
+    return value.strip() != ""
+
+
+def ensure_description_caption_allowed(
+    node_tag: Optional[TagName],
+    description: Optional[str],
+    caption: Optional[str],
+) -> None:
+    """Enforce that description/caption only exist for IMG or TABLE nodes.
+
+    This is an application-level rule that we cannot express as a single
+    database CHECK constraint because it involves a cross-table relationship
+    (ContentData -> Node.tag_name).
+    """
+    if not (_has_nonempty_text(description) or _has_nonempty_text(caption)):
+        return
+    if node_tag not in (TagName.IMG, TagName.TABLE):
+        raise ValueError(
+            "ContentData.description and caption are only allowed when the linked Node.tag_name is IMG or TABLE."
+        )
+
+
+@event.listens_for(SASession, "before_flush")
+def _validate_contentdata_fields(
+    session: SASession, flush_context, instances
+) -> None:
+    """Session hook to enforce ContentData description/caption constraints.
+
+    This runs for both new and updated rows, regardless of how they are created.
+    """
+    # Collect candidates from new and dirty instances
+    candidates = list(getattr(session, "new", ())) + list(getattr(session, "dirty", ()))
+    for obj in candidates:
+        if isinstance(obj, ContentData):
+            node = obj.node
+            if node is None and getattr(obj, "node_id", None) is not None:
+                # Fallback to load node if relationship not populated
+                node = session.get(Node, obj.node_id)
+            node_tag: Optional[TagName] = getattr(node, "tag_name", None) if node is not None else None
+            ensure_description_caption_allowed(node_tag, obj.description, obj.caption)
 
 
 class Relation(SQLModel, table=True):
