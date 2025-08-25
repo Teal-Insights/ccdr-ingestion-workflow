@@ -2,7 +2,7 @@
 
 from utils.models import ContentBlock, StructuredNode, BlockType
 from bs4 import BeautifulSoup, Tag, NavigableString
-from utils.schema import TagName
+from utils.schema import TagName, PositionalData, BoundingBox
 from utils.range_parser import parse_range_string
 from dataclasses import dataclass
 from typing import Any, Iterable
@@ -207,6 +207,39 @@ def create_nodes_from_html(html: str, content_blocks: list[ContentBlock]) -> lis
         """Get positional data from content blocks at given indices."""
         return [content_blocks[i].positional_data for i in indices if i < len(content_blocks)]
     
+    def _aggregate_positional_data_by_page(pos_list: list[PositionalData]) -> list[PositionalData]:
+        """Merge positional data that share the same page into a single bbox per page.
+
+        For each unique page_pdf in pos_list, compute the bounding rectangle that
+        encompasses all bboxes for that page using min(x1,y1) and max(x2,y2).
+        """
+        if not pos_list:
+            return []
+
+        by_page: dict[int, list[PositionalData]] = {}
+        for pd in pos_list:
+            by_page.setdefault(pd.page_pdf, []).append(pd)
+
+        aggregated: list[PositionalData] = []
+        for page_pdf, group in by_page.items():
+            x1 = min(p.bbox.x1 for p in group)
+            y1 = min(p.bbox.y1 for p in group)
+            x2 = max(p.bbox.x2 for p in group)
+            y2 = max(p.bbox.y2 for p in group)
+            # Choose the first non-null logical page label if any
+            page_logical = next((p.page_logical for p in group if p.page_logical is not None), None)
+            aggregated.append(
+                PositionalData(
+                    page_pdf=page_pdf,
+                    page_logical=page_logical,
+                    bbox=BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2),
+                )
+            )
+
+        # Keep deterministic order by page number
+        aggregated.sort(key=lambda p: p.page_pdf)
+        return aggregated
+    
     def _convert_element_to_node(element: Tag) -> StructuredNode:
         """Convert a BeautifulSoup Tag to a StructuredNode."""
         # Inline styling tags to treat as flat text
@@ -221,6 +254,7 @@ def create_nodes_from_html(html: str, content_blocks: list[ContentBlock]) -> lis
             raise ValueError(f"data-sources attribute is not a string: {data_sources_str}")
         source_indices = parse_range_string(data_sources_str)
         positional_data = _get_positional_data(source_indices)
+        positional_data = _aggregate_positional_data_by_page(positional_data)
         
         # Handle img tags specially to extract storage_url, description, and caption
         if element.name.lower() == 'img':
@@ -468,8 +502,11 @@ def test_create_nodes_from_html_list_merging():
                 )
             ],
             positional_data=[
-                content_blocks[0].positional_data,
-                content_blocks[1].positional_data
+                PositionalData(
+                    page_pdf=1,
+                    page_logical=1,
+                    bbox=BoundingBox(x1=100, y1=200, x2=500, y2=310),
+                )
             ]
         ),
         StructuredNode(
