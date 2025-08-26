@@ -38,7 +38,7 @@ async def main() -> None:
     dotenv.load_dotenv(override=True)
 
     # Configure
-    LIMIT: int = 5
+    LIMIT: int = 50
     USE_S3: bool = True
     content_blocks_dir: str = "./data/content_blocks"
     html_dir: str = "./data/html"

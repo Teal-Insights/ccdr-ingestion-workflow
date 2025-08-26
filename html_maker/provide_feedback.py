@@ -76,7 +76,7 @@ async def provide_feedback(
     ]
 
     response: Any = await router.acompletion(
-        model="html-feedback",
+        model="html-parser",
         messages=cast(Any, messages),
         response_format=FeedbackResponse,
         stream=False,

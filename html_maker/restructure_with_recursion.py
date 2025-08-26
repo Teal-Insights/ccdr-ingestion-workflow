@@ -388,7 +388,16 @@ def create_router(
         {
             "model_name": "html-parser-fallback",
             "litellm_params": {
-                "model": "openrouter/x-ai/grok-3-mini",
+                "model": "gemini/gemini-2.5-flash",
+                "api_key": gemini_api_key,
+                "max_parallel_requests": 10,
+                "weight": 1,
+            }
+        },
+        {
+            "model_name": "html-parser-fallback",
+            "litellm_params": {
+                "model": "openrouter/deepseek/deepseek-chat",
                 "api_key": openrouter_api_key,
                 "max_parallel_requests": 10,
                 "weight": 1,
@@ -397,10 +406,10 @@ def create_router(
         {
             "model_name": "html-parser-fallback",
             "litellm_params": {
-                "model": "openrouter/deepseek/deepseek-chat-v3.1",
+                "model": "openrouter/anthropic/claude-sonnet-4",
                 "api_key": openrouter_api_key,
                 "max_parallel_requests": 10,
-                "weight": 1,
+                "weight": 3,
             }
         },
         {
@@ -413,10 +422,10 @@ def create_router(
             }
         },
         {
-            "model_name": "html-feedback",
+            "model_name": "html-parser",
             "litellm_params": {
-                "model": "openrouter/openai/gpt-5-mini",
-                "api_key": openrouter_api_key,
+                "model": "gemini/gemini-2.5-pro",
+                "api_key": gemini_api_key,
                 "max_parallel_requests": 10,
                 "weight": 1,
             }
@@ -427,7 +436,7 @@ def create_router(
     return Router(
         model_list=model_list,
         routing_strategy="simple-shuffle",  # Weighted random selection
-        fallbacks=[{"html-parser": ["html-parser-fallback"]}, {"html-feedback": ["html-parser-fallback"]}],  # Falls back within the same group
+        fallbacks=[{"html-parser": ["html-parser-fallback"]}],
         num_retries=2,
         allowed_fails=5,
         cooldown_time=30,
