@@ -1,14 +1,13 @@
 from utils.models import StructuredNode
 from sqlmodel import Session
 from utils.db import engine
-from utils.schema import Node as DBNode, ContentData, EmbeddingSource, NodeType, TagName
+from utils.schema import Node as DBNode, ContentData, EmbeddingSource, TagName
 
 def upload_structured_nodes_to_db(nested_structure: list[StructuredNode], document_id: int) -> None:
     with Session(engine) as session:
         def _upload(node: StructuredNode, parent_id: int | None, seq: int):
             db_node = DBNode(
                 document_id=int(document_id),
-                node_type=NodeType.ELEMENT_NODE,
                 tag_name=node.tag,
                 section_type=node.section_type,
                 parent_id=parent_id,
