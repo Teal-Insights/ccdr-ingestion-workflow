@@ -103,7 +103,12 @@ def generate_embeddings(document_ids: list[int] | None = None, limit: int | None
                     texts.append(cd.caption)
             
             # Generate embeddings for the batch
-            vectors, model_name = generate_embeddings_batch(texts, api_key)
+            try:
+                vectors, model_name = generate_embeddings_batch(texts, api_key)
+            except Exception as e:
+                logger.error(f"Error generating embeddings for batch: {e}")
+                logger.error(f"Skipping ids: {','.join([str(cd.node_id) for cd in batch])}")
+                continue
 
             # Create Embedding objects maintaining one-to-one relationship
             for cd, vector in zip(batch, vectors):

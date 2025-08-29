@@ -84,6 +84,7 @@ async def main() -> None:
 
     # Process the documents
     counter: int = 0
+    failures: list[int] = []
     for document in processable_documents:
         if counter >= LIMIT:
             break
@@ -106,7 +107,7 @@ async def main() -> None:
         with open(html_file, "r") as f:
             html = f.read()
 
-        # Process the content blocks into structured nodes
+        # Process the html into structured nodes
         if "<body>" in html and "</body>" in html:
             html = html.split("<body>")[1].split("</body>")[0]
     
@@ -119,8 +120,12 @@ async def main() -> None:
         logger.info(f"Document {document.id}: Section types classified successfully!")
 
         # 10. Convert the Pydantic models to our schema and ingest it into our database
-        upload_structured_nodes_to_db(nested_structure, document.id)
-        print(f"Document {document.id}: Structured nodes uploaded to database successfully!")
+        try:
+            upload_structured_nodes_to_db(nested_structure, document.id)
+            print(f"Document {document.id}: Structured nodes uploaded to database successfully!")
+        except Exception as e:
+            failures.append(document.id)
+            print(f"Document {document.id}: Structured nodes failed to upload to database: {e}")
 
     # 11. Enrich the database records by generating relations from anchor tags
     # TODO: Implement this

@@ -128,7 +128,7 @@ def create_router(
             {"html-parser": ["html-parser"]},
             {"structure-detector": ["structure-detector"]},
             {"page-mapper": ["page-mapper"]},
-            {"text-classifier": ["text-classifier"]}
+            {"text-classifier": ["page-mapper", "html-parser"]}
         ],  # Falls back within the same group
         num_retries=2,
         allowed_fails=5,

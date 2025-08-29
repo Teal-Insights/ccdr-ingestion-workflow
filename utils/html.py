@@ -200,9 +200,12 @@ def create_nodes_from_html(html: str, content_blocks: list[ContentBlock]) -> lis
     """
     soup = BeautifulSoup(html, 'html.parser')
     nodes: list[StructuredNode] = []
-    
 
-    
+    def _strip_control_chars(s: str) -> str:
+        CONTROL_CHARS = "".join(chr(c) for c in range(32) if c not in (9, 10, 13)) + chr(127)
+        TRANSLATOR = str.maketrans("", "", CONTROL_CHARS)
+        return s.translate(TRANSLATOR)
+
     def _get_positional_data(indices: list[int]) -> list:
         """Get positional data from content blocks at given indices."""
         return [content_blocks[i].positional_data for i in indices if i < len(content_blocks)]
@@ -305,7 +308,7 @@ def create_nodes_from_html(html: str, content_blocks: list[ContentBlock]) -> lis
                 elif isinstance(child, Tag):
                     # This is a structural tag, process as child
                     children.append(_convert_element_to_node(child))
-            text_content = text_content.strip() if text_content else None
+            text_content = _strip_control_chars(text_content.strip()) if text_content else None
         else:
             # Process children normally (no inline styling)
             for child in element.children:
@@ -313,8 +316,8 @@ def create_nodes_from_html(html: str, content_blocks: list[ContentBlock]) -> lis
                     children.append(_convert_element_to_node(child))
                 elif isinstance(child, NavigableString) and child.strip():
                     if not text_content:
-                        text_content = child.strip()
-        
+                        text_content = _strip_control_chars(child.strip())
+
         return StructuredNode(
             tag=tag_name,
             children=children,

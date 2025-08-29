@@ -412,19 +412,19 @@ def create_router(
                 "weight": 3,
             }
         },
+        # {
+        #     "model_name": "html-parser",
+        #     "litellm_params": {
+        #         "model": "openrouter/openai/gpt-5-mini",
+        #         "api_key": openrouter_api_key,
+        #         "max_parallel_requests": 10,
+        #         "weight": 1,
+        #     }
+        # },
         {
             "model_name": "html-parser",
             "litellm_params": {
-                "model": "openrouter/openai/gpt-5-mini",
-                "api_key": openrouter_api_key,
-                "max_parallel_requests": 10,
-                "weight": 1,
-            }
-        },
-        {
-            "model_name": "html-parser",
-            "litellm_params": {
-                "model": "gemini/gemini-2.5-pro",
+                "model": "gemini/gemini-2.5-flash",
                 "api_key": gemini_api_key,
                 "max_parallel_requests": 10,
                 "weight": 1,
@@ -442,7 +442,7 @@ def create_router(
         cooldown_time=30,
         enable_pre_call_checks=True,  # Enable context window and rate limit checks
         default_max_parallel_requests=50,  # Global default
-        set_verbose=False,  # Set to True for debugging
+        set_verbose=True,  # Set to True for debugging
     )
 
 
