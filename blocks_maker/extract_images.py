@@ -45,7 +45,7 @@ def extract_images_from_pdf(
 
             content_block.storage_url = storage_url
             content_blocks_with_images.append(content_block)
-        except MemoryError as e:
+        except MemoryError:
             has_meaningful_text = bool(content_block.text_content and content_block.text_content.strip())
             if has_meaningful_text:
                 # Reclassify to TEXT (keep block, but not as an image)

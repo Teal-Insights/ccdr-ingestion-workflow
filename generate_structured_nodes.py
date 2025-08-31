@@ -78,10 +78,6 @@ async def main() -> None:
         and file_starts_with((Path(html_dir) / f"doc_{document.id}" / "output.html"), "<!-- Approved -->")
     ]
 
-    if not processable_documents:
-        print("No documents with content blocks found to process. Run generate_content_blocks.py and generate_html.py first.")
-        return
-
     # Process the documents
     counter: int = 0
     failures: list[int] = []

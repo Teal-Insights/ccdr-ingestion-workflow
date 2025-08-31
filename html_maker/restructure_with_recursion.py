@@ -412,15 +412,15 @@ def create_router(
                 "weight": 3,
             }
         },
-        # {
-        #     "model_name": "html-parser",
-        #     "litellm_params": {
-        #         "model": "openrouter/openai/gpt-5-mini",
-        #         "api_key": openrouter_api_key,
-        #         "max_parallel_requests": 10,
-        #         "weight": 1,
-        #     }
-        # },
+        {
+            "model_name": "html-parser",
+            "litellm_params": {
+                "model": "openrouter/openai/gpt-5-mini",
+                "api_key": openrouter_api_key,
+                "max_parallel_requests": 10,
+                "weight": 1,
+            }
+        },
         {
             "model_name": "html-parser",
             "litellm_params": {

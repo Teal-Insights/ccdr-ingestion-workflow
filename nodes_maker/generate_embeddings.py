@@ -1,7 +1,6 @@
 import os
 import logging
 from typing import List, Tuple
-from dotenv import load_dotenv
 from litellm import embedding, EmbeddingResponse
 from sqlmodel import Session, select
 from utils.db import engine
@@ -14,11 +13,6 @@ from utils.schema import (
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-load_dotenv()
-
-DEFAULT_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "openai/text-embedding-3-small")
-BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))  # Adjust based on input sizes and provider
 
 def iter_content_without_embeddings(session: Session, document_ids: list[int] | None = None, limit: int | None = None):
     # Base filters for content that actually needs embeddings
@@ -68,6 +62,7 @@ def iter_content_without_embeddings(session: Session, document_ids: list[int] | 
 
 def generate_embeddings_batch(texts: List[str], api_key: str) -> Tuple[List[List[float]], str]:
     """Generate embedding vectors for a batch of texts and return (vectors, model_name)."""
+    DEFAULT_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "openai/text-embedding-3-small")
     response: EmbeddingResponse = embedding(model=DEFAULT_EMBEDDING_MODEL, input=texts, api_key=api_key)
     # Sort by index to preserve input order
     vectors: List[List[float]] = [item["embedding"] for item in sorted(response.data, key=lambda d: d["index"])]
@@ -82,6 +77,8 @@ def batch_items(items: List, size: int) -> List[List]:
 
 def generate_embeddings(document_ids: list[int] | None = None, limit: int | None = None, api_key: str | None = None) -> None:
     """Generate and persist embeddings for all content without embeddings."""
+    BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "1"))  # Adjust based on input sizes and provider
+    
     with Session(engine) as session:
         # Collect all content items that need embeddings
         content_items = list(iter_content_without_embeddings(session, document_ids, limit))
@@ -121,9 +118,10 @@ def generate_embeddings(document_ids: list[int] | None = None, limit: int | None
 
 
 if __name__ == "__main__":
+    from dotenv import load_dotenv
     load_dotenv()
 
     api_key = os.getenv("OPENAI_API_KEY")
     assert api_key, "OPENAI_API_KEY is not set"
     
-    generate_embeddings(limit=1, api_key=api_key)
+    generate_embeddings(api_key=api_key)

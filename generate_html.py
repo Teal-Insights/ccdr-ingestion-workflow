@@ -174,6 +174,7 @@ async def main() -> None:
                             logger.info("Critical %d: %s affected_ids=%s", idx, msg, ids)
                         else:
                             logger.info("Critical %d: %s", idx, msg)
+
                     if not criticals:
                         if not current_html.startswith("<!-- Approved -->"):
                             current_html = "<!-- Approved -->\n" + current_html
@@ -190,27 +191,27 @@ async def main() -> None:
                         feedback_lines.append(f"- {msg}{ids_repr}")
                     feedback_text = "\n".join(feedback_lines)
 
-                    fixup_attempt += 1
-                    current_html = await run_fixup_pass(
-                        original_html=input_html,
-                        current_output=current_html,
-                        output_file=output_file_name,
-                        missing_ids=missing_ids,
-                        extra_ids=extra_ids,
-                        html_invalid=not is_valid_html,
-                        invalid_tags=invalid_tags,
-                        gemini_feedback=feedback_text,
-                        timeout_seconds=3600,
-                        doc_id=doc_id,
-                        use_deepseek=False,
-                        semaphore=cc_sem,
-                    )
+                fixup_attempt += 1
+                current_html = await run_fixup_pass(
+                    original_html=input_html,
+                    current_output=current_html,
+                    output_file=output_file_name,
+                    missing_ids=missing_ids,
+                    extra_ids=extra_ids,
+                    html_invalid=not is_valid_html,
+                    invalid_tags=invalid_tags,
+                    gemini_feedback=feedback_text,
+                    timeout_seconds=3600,
+                    doc_id=doc_id,
+                    use_deepseek=False,
+                    semaphore=cc_sem,
+                )
 
-                    # Only persist if we got back text (don't overwrite if we errored!)
-                    if current_html:
-                        with open(output_html_path, "w") as wf:
-                            wf.write(current_html)
-                    continue
+                # Only persist if we got back text (don't overwrite if we errored!)
+                if current_html:
+                    with open(output_html_path, "w") as wf:
+                        wf.write(current_html)
+                continue
         except Exception as e:
             logger.error("Error processing document %s: %s", document.id, e)
 
