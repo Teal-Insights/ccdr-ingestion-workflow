@@ -93,12 +93,18 @@ def generate_embeddings(document_ids: list[int] | None = None, limit: int | None
             texts = []
             for cd in batch:
                 if cd.embedding_source == EmbeddingSource.TEXT_CONTENT:
+                    if not cd.text_content:
+                        continue
                     texts.append(cd.text_content)
                 elif cd.embedding_source == EmbeddingSource.DESCRIPTION:
+                    if not cd.description:
+                        continue
                     texts.append(cd.description)
                 else:
+                    if not cd.caption:
+                        continue
                     texts.append(cd.caption)
-            
+
             # Generate embeddings for the batch
             try:
                 vectors, model_name = generate_embeddings_batch(texts, api_key)
@@ -110,10 +116,9 @@ def generate_embeddings(document_ids: list[int] | None = None, limit: int | None
             # Create Embedding objects maintaining one-to-one relationship
             for cd, vector in zip(batch, vectors):
                 session.add(Embedding(content_data_id=cd.id, embedding_vector=vector, model_name=model_name))
-            
+            session.commit()
             logger.info(f"Generated embeddings for batch of {len(batch)} items")
         
-        session.commit()
         logger.info(f"Successfully generated embeddings for {len(content_items)} content items")
 
 
